@@ -1,17 +1,25 @@
-//! Milestone 2 demo: load everything from SQLite and print each post's prep
-//! schedule. On the first run the database is empty, so we save the Halloween
-//! example into it first; later runs read it straight back from the file.
+//! Milestone 3 demo: sync the holidays file into SQLite, list what's coming
+//! up, and print each post's prep schedule. On the first run there are no
+//! posts, so we save the Halloween example first; later runs read it back.
 //! This gets replaced by the web server in Milestone 4.
 
 use std::error::Error;
+use std::path::Path;
 
-use chrono::{Local, NaiveDate};
-use munchiko_calendar::db::{NewAccessory, NewEvent, NewFabric, NewPostPlan, Repository};
+use chrono::{Datelike, Duration, Local};
+use munchiko_calendar::db::{NewAccessory, NewFabric, NewPostPlan, Repository};
+use munchiko_calendar::holidays;
 use munchiko_calendar::models::*;
 use munchiko_calendar::planner::{Inventory, LeadTimes, TaskStatus, build_timeline};
 
 /// Where the data lives unless `DATABASE_URL` says otherwise.
 const DEFAULT_DATABASE_URL: &str = "sqlite:munchiko.db";
+
+/// The editable holidays list (the built-in copy is used if it's missing).
+const HOLIDAYS_FILE: &str = "data/holidays.toml";
+
+/// How far ahead the "coming up" list looks.
+const LOOK_AHEAD_DAYS: i64 = 60;
 
 #[tokio::main]
 async fn main() {
@@ -24,11 +32,42 @@ async fn main() {
 async fn run() -> Result<(), Box<dyn Error>> {
     let url = std::env::var("DATABASE_URL").unwrap_or_else(|_| DEFAULT_DATABASE_URL.into());
     let db = Repository::connect(&url).await?;
+    let today = Local::now().date_naive();
+
+    // Keep this year's and next year's holidays in step with the file.
+    let (rules, loaded_from) = holidays::load(Path::new(HOLIDAYS_FILE))?;
+    let this_year = today.year();
+    let sync = db.sync_holidays(&rules, this_year..=this_year + 1).await?;
+    println!(
+        "Holidays from {loaded_from}: {} added, {} updated, {} removed",
+        sync.added, sync.updated, sync.removed
+    );
+    if sync.kept_for_plans > 0 {
+        println!(
+            "  ({} no longer in the file but kept because a post is planned)",
+            sync.kept_for_plans
+        );
+    }
 
     if db.list_post_plans().await?.is_empty() {
-        seed_halloween(&db).await?;
-        println!("(First run: saved the Halloween example to {url})\n");
+        seed_halloween(&db, this_year).await?;
+        println!("(First run: saved the Halloween example to {url})");
     }
+
+    let horizon = today + Duration::days(LOOK_AHEAD_DAYS);
+    println!("\nComing up in the next {LOOK_AHEAD_DAYS} days:");
+    for event in db.list_events_between(today, horizon).await? {
+        let when = match event.end {
+            Some(end) => format!(
+                "{} – {}",
+                event.start.format("%b %-d"),
+                end.format("%b %-d")
+            ),
+            None => event.start.format("%a %b %-d").to_string(),
+        };
+        println!("  {when:<16} {}", event.name);
+    }
+    println!();
 
     let fabrics = db.list_fabrics().await?;
     let accessories = db.list_accessories().await?;
@@ -36,8 +75,6 @@ async fn run() -> Result<(), Box<dyn Error>> {
         accessories: &accessories,
         fabrics: &fabrics,
     };
-    let today = Local::now().date_naive();
-
     for plan in db.list_post_plans().await? {
         let event = db.get_event(plan.event_id).await?;
         let timeline = build_timeline(&plan, &inventory, &LeadTimes::default())?;
@@ -79,8 +116,14 @@ async fn run() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// The M1 Halloween example, saved through the repository.
-async fn seed_halloween(db: &Repository) -> Result<(), Box<dyn Error>> {
+/// The M1 Halloween example, saved through the repository and attached to
+/// this year's Halloween from the holidays file.
+async fn seed_halloween(db: &Repository, year: i32) -> Result<(), Box<dyn Error>> {
+    let halloween = db
+        .find_holiday("Halloween", year)
+        .await?
+        .ok_or("the holidays file has no Halloween")?;
+
     let velvet = db
         .create_fabric(&NewFabric {
             name: "Orange velvet".into(),
@@ -152,21 +195,9 @@ async fn seed_halloween(db: &Repository) -> Result<(), Box<dyn Error>> {
         })
         .await?;
 
-    let halloween_day = NaiveDate::from_ymd_opt(2026, 10, 31).unwrap();
-    let halloween = db
-        .create_event(&NewEvent {
-            name: "Halloween".into(),
-            description: "Costumes, pumpkins and spooky backdrops".into(),
-            kind: EventKind::Holiday,
-            start: halloween_day,
-            end: None,
-            keywords: vec!["halloween".into(), "pumpkin".into(), "spooky".into()],
-        })
-        .await?;
-
     db.create_post_plan(&NewPostPlan {
-        event_id: halloween,
-        post_date: halloween_day,
+        event_id: halloween.id,
+        post_date: halloween.start,
         looks: vec![
             Look {
                 pet: Pet::Mochi,

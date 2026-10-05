@@ -24,6 +24,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::ops::RangeInclusive;
 use std::str::FromStr;
 
 use chrono::NaiveDate;
@@ -33,7 +34,18 @@ use sqlx::migrate::Migrator;
 use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
 use sqlx::types::Json;
 
+use crate::holidays::HolidayRule;
 use crate::models::*;
+
+/// What `Repository::sync_holidays` changed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct HolidaySync {
+    pub added: usize,
+    pub updated: usize,
+    pub removed: usize,
+    /// No longer in the file, but kept because a post is planned for it.
+    pub kept_for_plans: usize,
+}
 
 /// The migrations in `migrations/`, embedded into the binary at compile time,
 /// so the app can bring any database file up to date when it starts.
@@ -753,6 +765,123 @@ impl Repository {
         rows.into_iter().map(EventRow::into_model).collect()
     }
 
+    /// The event made from the holidays-file entry `name` for `year`, if any.
+    pub async fn find_holiday(&self, name: &str, year: i32) -> Result<Option<Event>> {
+        let row: Option<EventRow> = sqlx::query_as(
+            "SELECT id, name, description, kind, start_date, end_date, keywords
+             FROM events WHERE holiday_key = ? AND holiday_year = ?",
+        )
+        .bind(name)
+        .bind(year)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(EventRow::into_model).transpose()
+    }
+
+    /// Make the holiday events for `years` match the holiday rules:
+    /// - a holiday with no row for that year yet is added;
+    /// - an existing row whose name, dates, kind etc. changed is updated in
+    ///   place, keeping its id so post plans stay attached;
+    /// - a row whose holiday was removed from the file (or has no date that
+    ///   year) is deleted, unless a post is planned for it.
+    ///
+    /// Years outside `years` are left alone, so past holidays stay on the
+    /// calendar as history. Running it twice in a row changes nothing.
+    pub async fn sync_holidays(
+        &self,
+        rules: &[HolidayRule],
+        years: RangeInclusive<i32>,
+    ) -> Result<HolidaySync> {
+        let mut report = HolidaySync::default();
+        // One transaction: the calendar is never seen half-synced.
+        let mut tx = self.pool.begin().await?;
+
+        let existing: Vec<(i64, String, i32)> = sqlx::query_as(
+            "SELECT id, holiday_key, holiday_year FROM events
+             WHERE holiday_key IS NOT NULL AND holiday_year BETWEEN ? AND ?",
+        )
+        .bind(years.start())
+        .bind(years.end())
+        .fetch_all(&mut *tx)
+        .await?;
+        // (name, year) -> event id. Entries still left at the end are stale.
+        let mut existing: HashMap<(String, i32), i64> = existing
+            .into_iter()
+            .map(|(id, key, year)| ((key, year), id))
+            .collect();
+
+        for year in years.clone() {
+            for rule in rules {
+                let Some(when) = rule.occurrence(year) else {
+                    continue;
+                };
+                match existing.remove(&(rule.name.clone(), year)) {
+                    Some(id) => {
+                        // The second condition compares all six columns at
+                        // once ("row values"), so rows that already match
+                        // aren't rewritten or counted as updated.
+                        let result = sqlx::query(
+                            "UPDATE events
+                             SET name = ?1, description = ?2, kind = ?3,
+                                 start_date = ?4, end_date = ?5, keywords = ?6
+                             WHERE id = ?7
+                               AND (name, description, kind, start_date, end_date, keywords)
+                                   IS NOT (?1, ?2, ?3, ?4, ?5, ?6)",
+                        )
+                        .bind(&rule.name)
+                        .bind(&rule.description)
+                        .bind(rule.kind.to_sql())
+                        .bind(when.start)
+                        .bind(when.end)
+                        .bind(Json(&rule.keywords))
+                        .bind(id)
+                        .execute(&mut *tx)
+                        .await?;
+                        report.updated += result.rows_affected() as usize;
+                    }
+                    None => {
+                        sqlx::query(
+                            "INSERT INTO events (name, description, kind, start_date, end_date,
+                                                 keywords, holiday_key, holiday_year)
+                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        )
+                        .bind(&rule.name)
+                        .bind(&rule.description)
+                        .bind(rule.kind.to_sql())
+                        .bind(when.start)
+                        .bind(when.end)
+                        .bind(Json(&rule.keywords))
+                        .bind(&rule.name)
+                        .bind(year)
+                        .execute(&mut *tx)
+                        .await?;
+                        report.added += 1;
+                    }
+                }
+            }
+        }
+
+        // Whatever is left no longer comes from the file.
+        for id in existing.into_values() {
+            let result = sqlx::query(
+                "DELETE FROM events
+                 WHERE id = ?1
+                   AND NOT EXISTS (SELECT 1 FROM post_plans WHERE event_id = ?1)",
+            )
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+            if result.rows_affected() == 1 {
+                report.removed += 1;
+            } else {
+                report.kept_for_plans += 1;
+            }
+        }
+
+        tx.commit().await?;
+        Ok(report)
+    }
+
     /// Fails with `InUse` while a post is planned for this event.
     pub async fn delete_event(&self, id: EventId) -> Result<()> {
         let result = sqlx::query("DELETE FROM events WHERE id = ?")
@@ -877,6 +1006,7 @@ impl Repository {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::holidays;
     use crate::planner::{Inventory, LeadTimes, TaskKind, build_timeline};
 
     fn d(y: i32, m: u32, day: u32) -> NaiveDate {
@@ -1248,5 +1378,155 @@ mod tests {
             .find(|t| t.kind == TaskKind::BuyFabric)
             .unwrap();
         assert_eq!((buy.start, buy.due), (d(2026, 10, 21), d(2026, 10, 23)));
+    }
+
+    const HOLIDAYS: &str = r#"
+        [[holiday]]
+        name = "Halloween"
+        date = "10-31"
+        keywords = ["spooky"]
+
+        [[holiday]]
+        name = "Thanksgiving"
+        nth_weekday = { n = 4, weekday = "thu", month = 11 }
+
+        [[holiday]]
+        name = "Shark Week"
+        kind = "notable_day"
+        days = 7
+        by_year = { 2027 = "07-11" }
+    "#;
+
+    #[tokio::test]
+    async fn syncing_holidays_adds_each_year_once() {
+        let db = Repository::in_memory().await.unwrap();
+        let rules = holidays::parse(HOLIDAYS).unwrap();
+
+        let first = db.sync_holidays(&rules, 2026..=2027).await.unwrap();
+        // Halloween and Thanksgiving both years; Shark Week only has a 2027 date.
+        assert_eq!(
+            first,
+            HolidaySync {
+                added: 5,
+                ..Default::default()
+            }
+        );
+
+        let again = db.sync_holidays(&rules, 2026..=2027).await.unwrap();
+        assert_eq!(
+            again,
+            HolidaySync::default(),
+            "a second sync changes nothing"
+        );
+
+        let thanksgiving = db
+            .find_holiday("Thanksgiving", 2027)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(thanksgiving.start, d(2027, 11, 25));
+        let shark_week = db.find_holiday("Shark Week", 2027).await.unwrap().unwrap();
+        assert_eq!(shark_week.kind, EventKind::NotableDay);
+        assert_eq!(shark_week.end, Some(d(2027, 7, 17)));
+        assert!(db.find_holiday("Shark Week", 2026).await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn editing_the_file_updates_rows_in_place() {
+        let db = Repository::in_memory().await.unwrap();
+        db.sync_holidays(&holidays::parse(HOLIDAYS).unwrap(), 2027..=2027)
+            .await
+            .unwrap();
+        let before = db.find_holiday("Shark Week", 2027).await.unwrap().unwrap();
+
+        // The 2027 date was wrong; fix it in the "file".
+        let fixed = HOLIDAYS.replace("07-11", "07-25");
+        let report = db
+            .sync_holidays(&holidays::parse(&fixed).unwrap(), 2027..=2027)
+            .await
+            .unwrap();
+        assert_eq!(
+            report,
+            HolidaySync {
+                updated: 1,
+                ..Default::default()
+            }
+        );
+
+        let after = db.find_holiday("Shark Week", 2027).await.unwrap().unwrap();
+        assert_eq!(after.id, before.id, "same row, so post plans stay attached");
+        assert_eq!(
+            (after.start, after.end),
+            (d(2027, 7, 25), Some(d(2027, 7, 31)))
+        );
+    }
+
+    #[tokio::test]
+    async fn removed_holidays_go_unless_a_post_is_planned() {
+        let db = Repository::in_memory().await.unwrap();
+        db.sync_holidays(&holidays::parse(HOLIDAYS).unwrap(), 2026..=2027)
+            .await
+            .unwrap();
+        let outing = db
+            .create_event(&event("Beach trip", d(2026, 11, 7), None))
+            .await
+            .unwrap();
+        let thanksgiving_2026 = db
+            .find_holiday("Thanksgiving", 2026)
+            .await
+            .unwrap()
+            .unwrap();
+        db.create_post_plan(&NewPostPlan {
+            event_id: thanksgiving_2026.id,
+            post_date: d(2026, 11, 26),
+            looks: vec![],
+            backdrop: String::new(),
+            notes: String::new(),
+        })
+        .await
+        .unwrap();
+
+        // Only Halloween is left in the file.
+        let only_halloween =
+            "[[holiday]]\nname = \"Halloween\"\ndate = \"10-31\"\nkeywords = [\"spooky\"]";
+        let report = db
+            .sync_holidays(&holidays::parse(only_halloween).unwrap(), 2026..=2027)
+            .await
+            .unwrap();
+        assert_eq!(
+            report,
+            HolidaySync {
+                removed: 2,
+                kept_for_plans: 1,
+                ..Default::default()
+            }
+        );
+        assert!(
+            db.find_holiday("Thanksgiving", 2026)
+                .await
+                .unwrap()
+                .is_some()
+        );
+        assert!(
+            db.find_holiday("Thanksgiving", 2027)
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(db.find_holiday("Shark Week", 2027).await.unwrap().is_none());
+        // Events you entered yourself are never touched.
+        assert_eq!(db.get_event(outing).await.unwrap().name, "Beach trip");
+    }
+
+    #[tokio::test]
+    async fn sync_leaves_years_outside_the_range_alone() {
+        let db = Repository::in_memory().await.unwrap();
+        let rules = holidays::parse(HOLIDAYS).unwrap();
+        db.sync_holidays(&rules, 2026..=2026).await.unwrap();
+
+        // A year later the app syncs 2027-2028; 2026 stays as history.
+        db.sync_holidays(&rules, 2027..=2028).await.unwrap();
+        assert!(db.find_holiday("Halloween", 2026).await.unwrap().is_some());
+        assert!(db.find_holiday("Halloween", 2028).await.unwrap().is_some());
     }
 }

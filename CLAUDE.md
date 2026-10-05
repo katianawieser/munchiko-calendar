@@ -33,8 +33,17 @@ See README.md for the planning rules, data model and roadmap.
   accessory sets are two-way; `ON DELETE NO ACTION` (not RESTRICT, whose error code
   sqlx doesn't map to a foreign-key violation); runtime-checked queries, not `query!`.
   Full edit/update methods are deferred to M4 when the forms need them.
-- **Next: M3 — holidays seed file with date rules.**
-- Then M4 Axum web UI, M5 suggestions ("for Earth Day, consider the leaf bow"
+- **M3 done:** `data/holidays.toml` (~45 entries incl. Mochi's birthday 10-15 and
+  adoption day 01-11, Momo's birthday 03-03 and adoption day 07-05), `src/holidays.rs`
+  (rules: date / nth_weekday / easter_offset / by_year, plus days and offset_days;
+  validated with clear errors), migration 0002 (`holiday_key` + `holiday_year`),
+  `Repository::sync_holidays` (this year + next on startup; updates in place, deletes
+  removed holidays unless a post is planned). Name is the holiday's identity.
+  Built-in copy via `include_str!` is used only if the file is missing.
+  Shark Week's `by_year` is empty until Discovery announces 2027 dates.
+- **Next: M4 — Axum web UI** (calendar view, forms; add full edit/update methods
+  to `Repository` as the forms need them). Propose the page layout before building.
+- Then M5 suggestions ("for Earth Day, consider the leaf bow"
   by matching keywords and colors).
 
 ## Original notes (summary of my handwritten outline)

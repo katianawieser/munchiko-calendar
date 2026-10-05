@@ -3,11 +3,13 @@
 //! The crate is split into layers:
 //! - [`models`]: the things the app knows about (fabric, accessories, events, post plans).
 //! - [`planner`]: the scheduling engine that works backward from a post date.
+//! - [`holidays`]: reads the holidays file and works out each holiday's dates.
 //! - [`db`]: SQLite storage that loads and saves the model types.
 //!
-//! `models` and `planner` know nothing about databases or web servers; the
+//! `models`, `planner` and `holidays` know nothing about databases or web servers; the
 //! outer layers only *use* their types. That keeps the core logic easy to test.
 
 pub mod db;
+pub mod holidays;
 pub mod models;
 pub mod planner;

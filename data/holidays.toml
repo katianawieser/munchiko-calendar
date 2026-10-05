@@ -1,0 +1,299 @@
+# Holidays and notable days for Mochi & Momo's calendar.
+#
+# Edit freely: the app reads this file every time it starts and updates the
+# calendar to match. (A copy is also built into the app, used only when this
+# file is missing.)
+#
+# Each [[holiday]] needs a `name` (it's also the holiday's identity, so renaming
+# one counts as removing it and adding a new one) and exactly ONE date rule:
+#
+#   date          = "MM-DD"                                   same day every year
+#   nth_weekday   = { n = 4, weekday = "thu", month = 11 }    4th Thursday of November
+#                   (n = -1 means the last one, -2 second to last...)
+#   easter_offset = -47                                       days from Easter Sunday
+#   by_year       = { 2027 = "02-06" }                        dates you look up each year;
+#                   years without a date are skipped
+#
+# Optional:
+#   kind        = "holiday" (default), "notable_day", "seasonal" or "outing"
+#   description = "..."
+#   keywords    = ["..."]   used for bow suggestions later (M5)
+#   days        = 7         length of a multi-day event (default 1)
+#   offset_days = 1         shift the date the rule gives, e.g. day after Thanksgiving
+
+# ---------------------------------------------------------------------------
+# Mochi & Momo
+# ---------------------------------------------------------------------------
+
+[[holiday]]
+name = "Mochi's Birthday"
+kind = "notable_day"
+date = "10-15"
+keywords = ["mochi", "birthday", "party", "cake"]
+
+[[holiday]]
+name = "Mochi's Adoption Day"
+kind = "notable_day"
+date = "01-11"
+keywords = ["mochi", "adoption", "gotcha day", "family"]
+
+[[holiday]]
+name = "Momo's Birthday"
+kind = "notable_day"
+date = "03-03"
+keywords = ["momo", "birthday", "party", "cake"]
+
+[[holiday]]
+name = "Momo's Adoption Day"
+kind = "notable_day"
+date = "07-05"
+keywords = ["momo", "adoption", "gotcha day", "family"]
+
+# ---------------------------------------------------------------------------
+# Holidays
+# ---------------------------------------------------------------------------
+
+[[holiday]]
+name = "New Year's Day"
+date = "01-01"
+keywords = ["new year", "sparkle", "gold", "party"]
+
+[[holiday]]
+name = "Martin Luther King Jr. Day"
+nth_weekday = { n = 3, weekday = "mon", month = 1 }
+keywords = ["community", "kindness"]
+
+[[holiday]]
+name = "Lunar New Year"
+description = "Follows the lunar calendar, so the date is looked up each year."
+by_year = { 2026 = "02-17", 2027 = "02-06", 2028 = "01-26" }
+keywords = ["lunar new year", "red", "gold", "lantern"]
+
+[[holiday]]
+name = "Valentine's Day"
+date = "02-14"
+keywords = ["valentine", "love", "heart", "red", "pink"]
+
+[[holiday]]
+name = "Presidents' Day"
+nth_weekday = { n = 3, weekday = "mon", month = 2 }
+keywords = ["patriotic", "red", "white", "blue"]
+
+[[holiday]]
+name = "Mardi Gras"
+easter_offset = -47
+keywords = ["mardi gras", "purple", "green", "gold", "beads", "mask"]
+
+[[holiday]]
+name = "St. Patrick's Day"
+date = "03-17"
+keywords = ["st patrick", "green", "shamrock", "irish", "clover"]
+
+[[holiday]]
+name = "Easter"
+easter_offset = 0
+keywords = ["easter", "spring", "bunny", "egg", "pastel"]
+
+[[holiday]]
+name = "Mother's Day"
+nth_weekday = { n = 2, weekday = "sun", month = 5 }
+keywords = ["mom", "flowers", "pink"]
+
+[[holiday]]
+name = "Memorial Day"
+nth_weekday = { n = -1, weekday = "mon", month = 5 }
+keywords = ["patriotic", "red", "white", "blue"]
+
+[[holiday]]
+name = "Father's Day"
+nth_weekday = { n = 3, weekday = "sun", month = 6 }
+keywords = ["dad", "tie", "plaid"]
+
+[[holiday]]
+name = "Juneteenth"
+date = "06-19"
+keywords = ["freedom", "red", "green", "black"]
+
+[[holiday]]
+name = "Independence Day"
+date = "07-04"
+keywords = ["patriotic", "fireworks", "red", "white", "blue", "stars"]
+
+[[holiday]]
+name = "Labor Day"
+nth_weekday = { n = 1, weekday = "mon", month = 9 }
+keywords = ["end of summer", "picnic"]
+
+[[holiday]]
+name = "Halloween"
+date = "10-31"
+keywords = ["halloween", "spooky", "pumpkin", "orange", "black", "ghost", "bat"]
+
+[[holiday]]
+name = "Thanksgiving"
+nth_weekday = { n = 4, weekday = "thu", month = 11 }
+keywords = ["thanksgiving", "autumn", "turkey", "harvest", "orange", "brown"]
+
+[[holiday]]
+name = "Christmas Eve"
+date = "12-24"
+keywords = ["christmas", "cozy", "red", "green", "plaid"]
+
+[[holiday]]
+name = "Christmas"
+date = "12-25"
+keywords = ["christmas", "red", "green", "plaid", "snow", "gift"]
+
+[[holiday]]
+name = "New Year's Eve"
+date = "12-31"
+keywords = ["new year", "sparkle", "gold", "silver", "party"]
+
+# ---------------------------------------------------------------------------
+# Notable and fun days
+# ---------------------------------------------------------------------------
+
+[[holiday]]
+name = "Groundhog Day"
+kind = "notable_day"
+date = "02-02"
+keywords = ["groundhog", "winter", "shadow"]
+
+[[holiday]]
+name = "Pi Day"
+kind = "notable_day"
+date = "03-14"
+keywords = ["pi", "pie", "math", "nerdy"]
+
+[[holiday]]
+name = "Ides of March"
+kind = "notable_day"
+date = "03-15"
+keywords = ["ides of march", "roman", "toga", "history"]
+
+[[holiday]]
+name = "National Puppy Day"
+kind = "notable_day"
+date = "03-23"
+keywords = ["puppy", "dog", "mochi"]
+
+[[holiday]]
+name = "April Fools' Day"
+kind = "notable_day"
+date = "04-01"
+keywords = ["silly", "prank", "costume swap"]
+
+[[holiday]]
+name = "National Pet Day"
+kind = "notable_day"
+date = "04-11"
+keywords = ["pets", "dog", "cat", "mochi", "momo"]
+
+[[holiday]]
+name = "Earth Day"
+kind = "notable_day"
+date = "04-22"
+keywords = ["earth", "green", "blue", "leaf", "nature", "flowers"]
+
+[[holiday]]
+name = "Star Wars Day"
+kind = "notable_day"
+date = "05-04"
+description = "May the 4th be with you."
+keywords = ["star wars", "space", "costume"]
+
+[[holiday]]
+name = "Cinco de Mayo"
+kind = "notable_day"
+date = "05-05"
+keywords = ["fiesta", "bright", "colorful", "flowers"]
+
+[[holiday]]
+name = "National Pet Week"
+kind = "notable_day"
+description = "First full week of May, Sunday to Saturday."
+nth_weekday = { n = 1, weekday = "sun", month = 5 }
+days = 7
+keywords = ["pets", "dog", "cat", "mochi", "momo"]
+
+[[holiday]]
+name = "National Donut Day"
+kind = "notable_day"
+nth_weekday = { n = 1, weekday = "fri", month = 6 }
+keywords = ["donut", "sprinkles", "pink", "food"]
+
+[[holiday]]
+name = "Shark Week"
+kind = "notable_day"
+description = "Discovery announces the dates each year (usually July)."
+days = 7
+# Add the start date once it's announced, e.g. by_year = { 2027 = "07-11" }
+by_year = {}
+keywords = ["shark", "ocean", "blue", "fin", "beach"]
+
+[[holiday]]
+name = "International Cat Day"
+kind = "notable_day"
+date = "08-08"
+keywords = ["cat", "momo"]
+
+[[holiday]]
+name = "National Dog Day"
+kind = "notable_day"
+date = "08-26"
+keywords = ["dog", "mochi"]
+
+[[holiday]]
+name = "Talk Like a Pirate Day"
+kind = "notable_day"
+date = "09-19"
+keywords = ["pirate", "costume", "stripes", "ocean"]
+
+[[holiday]]
+name = "National Black Cat Day"
+kind = "notable_day"
+date = "10-27"
+keywords = ["black cat", "cat", "momo", "black", "spooky"]
+
+[[holiday]]
+name = "Black Friday"
+kind = "notable_day"
+nth_weekday = { n = 4, weekday = "thu", month = 11 }
+offset_days = 1
+keywords = ["shopping", "sale"]
+
+[[holiday]]
+name = "Twelve Days of Christmas"
+kind = "seasonal"
+date = "12-25"
+days = 12
+keywords = ["christmas", "festive", "red", "green", "gold"]
+
+# ---------------------------------------------------------------------------
+# Seasons (astronomical start dates shift by a day between years; these are
+# the usual dates, so adjust by hand if you want them exact)
+# ---------------------------------------------------------------------------
+
+[[holiday]]
+name = "First Day of Spring"
+kind = "seasonal"
+date = "03-20"
+keywords = ["spring", "flowers", "pastel", "floral"]
+
+[[holiday]]
+name = "First Day of Summer"
+kind = "seasonal"
+date = "06-21"
+keywords = ["summer", "sun", "beach", "bright"]
+
+[[holiday]]
+name = "First Day of Autumn"
+kind = "seasonal"
+date = "09-22"
+keywords = ["autumn", "fall", "leaves", "orange", "plaid"]
+
+[[holiday]]
+name = "First Day of Winter"
+kind = "seasonal"
+date = "12-21"
+keywords = ["winter", "snow", "cozy", "white", "blue"]
