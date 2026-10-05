@@ -1,1 +1,4 @@
 /target
+
+# Local SQLite database (plus its write-ahead log files)
+/munchiko.db*

@@ -27,11 +27,14 @@ See README.md for the planning rules, data model and roadmap.
 ## Status
 - **M1 done and verified:** `src/models.rs`, `src/planner.rs` (7 tests, all passing,
   clippy clean), demo in `src/main.rs`. Needs Rust 1.85+ (2024 edition).
-- **Next: M2 — SQLite storage.** Suggested approach: `sqlx` with SQLite and migrations
-  under `migrations/`, tables for fabrics, accessories, accessory_fabrics, events,
-  post_plans and looks, plus a repository module that loads data into the existing
-  model types. Explain the schema before writing it.
-- Then M3 holidays, M4 Axum web UI, M5 suggestions ("for Earth Day, consider the leaf bow"
+- **M2 done:** `migrations/0001_initial_schema.sql` (7 STRICT tables), `src/db.rs`
+  (`Repository` over sqlx, 11 tests on in-memory SQLite), `main.rs` seeds/loads
+  `munchiko.db`. Decisions: colors/keywords as JSON arrays; fabric pairings and
+  accessory sets are two-way; `ON DELETE NO ACTION` (not RESTRICT, whose error code
+  sqlx doesn't map to a foreign-key violation); runtime-checked queries, not `query!`.
+  Full edit/update methods are deferred to M4 when the forms need them.
+- **Next: M3 — holidays seed file with date rules.**
+- Then M4 Axum web UI, M5 suggestions ("for Earth Day, consider the leaf bow"
   by matching keywords and colors).
 
 ## Original notes (summary of my handwritten outline)
