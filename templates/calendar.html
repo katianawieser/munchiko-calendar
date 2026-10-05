@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}{{ view.title }}{% endblock %}
+{% block content %}
+<div class="month-nav">
+  <a href="{{ view.prev_href }}" role="button" class="outline secondary">◀ {{ view.prev_label }}</a>
+  <h2>{{ view.title }}</h2>
+  <a href="{{ view.next_href }}" role="button" class="outline secondary">{{ view.next_label }} ▶</a>
+</div>
+
+{% for problem in problems %}
+<p class="notice bad">⚠ {{ problem }}</p>
+{% endfor %}
+
+<article class="agenda">
+  {% if agenda.now.is_empty() %}
+    {% if let Some(next) = agenda.next %}
+      <strong>Nothing due today.</strong>
+      Next up: <a href="{{ next.href }}">{{ next.label }}</a>, {{ next.when }}.
+    {% else %}
+      <strong>Nothing planned.</strong> Enjoy the day off with Mochi &amp; Momo!
+    {% endif %}
+  {% else %}
+    <strong>To do today:</strong>
+    <ul>
+      {% for item in agenda.now %}
+      <li class="{% if item.overdue %}overdue{% endif %}">
+        <a href="{{ item.href }}">{{ item.label }}</a> ({{ item.when }})
+      </li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</article>
+
+<div class="calendar-scroll">
+<table class="calendar">
+  <thead>
+    <tr><th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th></tr>
+  </thead>
+  <tbody>
+    {% for week in view.weeks %}
+    <tr>
+      {% for day in week %}
+      <td class="{% if !day.in_month %}other-month{% endif %}{% if day.is_today %} today{% endif %}">
+        <div class="day-number">{{ day.number }}</div>
+        {% for e in day.entries %}
+          {% if let Some(href) = e.href %}
+          <a class="entry {{ e.class }}{% if e.overdue %} overdue{% endif %}" href="{{ href }}" title="{{ e.label }}">{{ e.icon }} {{ e.label }}</a>
+          {% else %}
+          <span class="entry {{ e.class }}" title="{{ e.label }}">{{ e.icon }} {{ e.label }}</span>
+          {% endif %}
+        {% endfor %}
+      </td>
+      {% endfor %}
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<p class="legend">
+  <span class="entry holiday">🎉 Holiday</span>
+  <span class="entry notable">⭐ Notable day</span>
+  <span class="entry seasonal">🌿 Season</span>
+  <span class="entry outing">🚗 Outing</span>
+  <span class="entry task-fabric">🧵 Buy fabric</span>
+  <span class="entry task-order">📦 Order</span>
+  <span class="entry task-make">✂️ Make</span>
+  <span class="entry task-backdrop">🎨 Backdrop</span>
+  <span class="entry task-shoot">📷 Shoot</span>
+  <span class="entry post">📤 Post</span>
+  <span class="entry overdue">Overdue</span>
+</p>
+{% endblock %}

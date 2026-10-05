@@ -6,8 +6,13 @@ rust-version = "1.85"  # minimum for the 2024 edition
 description = "Content planner for Mochi & Momo's social media account: works backward from post dates to schedule bow-making, backdrops and photo shoots."
 
 [dependencies]
+askama = "0.14.0"
+axum = "0.8.9"
 chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros", "chrono", "json"] }
-tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "signal"] }
 toml = "1.1.6"
+
+[dev-dependencies]
+tower = { version = "0.5.3", features = ["util"] }

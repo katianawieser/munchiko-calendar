@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Posts{% endblock %}
+{% block content %}
+<h2>Planned posts</h2>
+{% if upcoming.is_empty() %}
+<p>No upcoming posts.</p>
+{% else %}
+<table>
+  <thead><tr><th>Post date</th><th>For</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for row in upcoming %}
+    <tr>
+      <td>{{ row.post_date }}</td>
+      <td><a href="{{ row.href }}">{{ row.event_name }}</a></td>
+      <td><span class="badge {{ row.health.class }}">{{ row.health.text }}</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if !past.is_empty() %}
+<h3>Past posts</h3>
+<table>
+  <thead><tr><th>Post date</th><th>For</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for row in past %}
+    <tr>
+      <td>{{ row.post_date }}</td>
+      <td><a href="{{ row.href }}">{{ row.event_name }}</a></td>
+      <td><span class="badge {{ row.health.class }}">{{ row.health.text }}</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% endblock %}

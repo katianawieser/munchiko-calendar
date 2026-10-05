@@ -745,6 +745,18 @@ impl Repository {
         .into_model()
     }
 
+    /// All events, sorted by start date.
+    pub async fn list_events(&self) -> Result<Vec<Event>> {
+        let rows: Vec<EventRow> = sqlx::query_as(
+            "SELECT id, name, description, kind, start_date, end_date, keywords
+             FROM events
+             ORDER BY start_date, id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(EventRow::into_model).collect()
+    }
+
     /// Every event that touches the range `from..=to`, sorted by start date.
     /// A multi-day event counts if any of its days fall in the range, so Shark
     /// Week shows up on a calendar page even if it started last month.

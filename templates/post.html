@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ event_name }} post{% endblock %}
+{% block content %}
+<hgroup>
+  <h2>{{ event_name }} post</h2>
+  <p>Publishes {{ post_date }}{% if let Some(shoot) = shoot_date %} · Photo shoot {{ shoot }}{% endif %}</p>
+</hgroup>
+<p><span class="badge {{ health.class }}">{{ health.text }}</span></p>
+
+<div class="grid">
+  <article>
+    <header><strong>Looks</strong></header>
+    {% if looks.is_empty() %}
+    <p>No looks chosen yet.</p>
+    {% else %}
+    <dl>
+      {% for look in looks %}
+      <dt>{{ look.pet }}</dt><dd>{{ look.items }}</dd>
+      {% endfor %}
+    </dl>
+    {% endif %}
+  </article>
+  <article>
+    <header><strong>Backdrop</strong></header>
+    <p>{% if backdrop.is_empty() %}Not decided yet.{% else %}{{ backdrop }}{% endif %}</p>
+    {% if !notes.is_empty() %}<p><em>{{ notes }}</em></p>{% endif %}
+  </article>
+</div>
+
+<h3>Prep timeline</h3>
+{% if tasks.is_empty() %}
+<p>No schedule: fix the problem above first.</p>
+{% else %}
+<table class="timeline">
+  <thead><tr><th>When</th><th>Task</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for task in tasks %}
+    <tr class="{{ task.class }}">
+      <td>{{ task.when }}</td>
+      <td>{{ task.title }}</td>
+      <td><span class="badge {{ task.class }}">{{ task.status }}</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<p><a href="/posts">← All posts</a></p>
+{% endblock %}

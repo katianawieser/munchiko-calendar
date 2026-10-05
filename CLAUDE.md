@@ -41,8 +41,17 @@ See README.md for the planning rules, data model and roadmap.
   removed holidays unless a post is planned). Name is the holiday's identity.
   Built-in copy via `include_str!` is used only if the file is missing.
   Shark Week's `by_year` is empty until Discovery announces 2027 dates.
-- **Next: M4 — Axum web UI** (calendar view, forms; add full edit/update methods
-  to `Repository` as the forms need them). Propose the page layout before building.
+- **M4 decisions:** server-rendered Askama 0.14 templates (newer needs Rust 1.88) +
+  plain HTML forms, no JS framework; Pico CSS vendored in `static/`; holiday events
+  read-only in the UI ("edit holidays.toml"); localhost only, no auth. Split into
+  M4a/b/c with a check-in and commit after each.
+- **M4a done:** `src/web/` (router, `AppState` with `today_override` for tests,
+  `AppError` → 404/500 pages), `month.rs` (pure grid + agenda, unit tested),
+  calendar + posts list + post timeline pages, request tests in `web/tests.rs`,
+  `demo.rs` seed. Posts whose date has passed count as finished (never "overdue").
+- **Next: M4b — fabric and accessory pages/forms** (list, new, edit, status buttons,
+  pairing, fabric roles; add `update_*` methods to `Repository`). Then M4c events
+  (holidays read-only) and post plan forms.
 - Then M5 suggestions ("for Earth Day, consider the leaf bow"
   by matching keywords and colors).
 

@@ -1,0 +1,107 @@
+/* Munchiko Calendar styles, on top of Pico CSS.
+   Colors are variables so dark mode only has to swap the palette. */
+
+:root {
+  --mc-holiday: #fde2e4;
+  --mc-notable: #fff1c1;
+  --mc-seasonal: #dcf2dc;
+  --mc-outing: #dbeafe;
+  --mc-task: #ede9fe;
+  --mc-shoot: #fce7f3;
+  --mc-post: #c7f0e5;
+  --mc-overdue: #dc2626;
+  --mc-text: #1f2937;
+  --mc-muted-bg: rgba(127, 127, 127, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mc-holiday: #5b2a31;
+    --mc-notable: #57491b;
+    --mc-seasonal: #23452a;
+    --mc-outing: #1e3a5f;
+    --mc-task: #3b3263;
+    --mc-shoot: #5a2848;
+    --mc-post: #1d4d44;
+    --mc-overdue: #f87171;
+    --mc-text: #f3f4f6;
+  }
+}
+
+.brand { font-weight: 700; }
+
+/* Month header: ◀ October 2026 ▶ */
+.month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+.month-nav h2 { margin: 0; text-align: center; }
+
+.agenda ul { margin-bottom: 0; }
+
+/* The grid. On narrow screens it scrolls sideways instead of squashing. */
+.calendar-scroll { overflow-x: auto; }
+table.calendar {
+  table-layout: fixed;
+  min-width: 46rem;
+}
+table.calendar th { text-align: center; }
+table.calendar td {
+  vertical-align: top;
+  height: 7rem;
+  padding: 0.25rem;
+}
+table.calendar td.other-month { opacity: 0.45; }
+table.calendar td.today { box-shadow: inset 0 0 0 2px var(--pico-primary); }
+.day-number { font-weight: 600; font-size: 0.85rem; }
+
+/* One colored line per holiday or task. */
+.entry {
+  margin-top: 0.15rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 0.25rem;
+  font-size: 0.72rem;
+  line-height: 1.3;
+  color: var(--mc-text);
+  text-decoration: none;
+  /* Wrap long names onto a second line, then cut off with "…". */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+a.entry:hover { filter: brightness(0.95); text-decoration: underline; }
+.entry.holiday { background: var(--mc-holiday); }
+.entry.notable { background: var(--mc-notable); }
+.entry.seasonal { background: var(--mc-seasonal); }
+.entry.outing { background: var(--mc-outing); }
+.entry.task-fabric,
+.entry.task-order,
+.entry.task-make,
+.entry.task-backdrop { background: var(--mc-task); }
+.entry.task-shoot { background: var(--mc-shoot); }
+.entry.post { background: var(--mc-post); font-weight: 600; }
+.entry.overdue { outline: 2px solid var(--mc-overdue); background: var(--mc-muted-bg); }
+
+.legend .entry { display: inline-block; margin-right: 0.3rem; }
+
+/* Status badges on the post pages. */
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  background: var(--mc-muted-bg);
+}
+.badge.good, .badge.upcoming { background: var(--mc-seasonal); color: var(--mc-text); }
+.badge.warn, .badge.active { background: var(--mc-notable); color: var(--mc-text); }
+.badge.bad, .badge.overdue { background: var(--mc-overdue); color: #fff; }
+.badge.done { opacity: 0.7; }
+.overdue a, li.overdue { color: var(--mc-overdue); }
+.notice.bad { color: var(--mc-overdue); font-weight: 600; }
+
+table.timeline tr.done td { opacity: 0.6; }

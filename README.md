@@ -88,9 +88,15 @@ still uses, or an event or accessory that a planned post still uses.
 
 ## Running it
 
+On startup the app runs any new database migrations, syncs holidays from
+`data/holidays.toml`, and on the very first run adds the Halloween example
+post so there's something to look at. Settings (all optional):
+`DATABASE_URL` (default `sqlite:munchiko.db`) and `ADDRESS` (default
+`127.0.0.1:3000`; only this computer can reach it, and there's no login).
+
 ```bash
-cargo test   # planner, holiday and database tests (database tests use in-memory SQLite)
-cargo run    # sync holidays, show the next 60 days, and print the Halloween example's schedule
+cargo test   # planner, holiday, database and web tests (all on in-memory SQLite)
+cargo run    # start the web app at http://127.0.0.1:3000
 ```
 
 ## Roadmap
@@ -99,6 +105,9 @@ cargo run    # sync holidays, show the next 60 days, and print the Halloween exa
 - [x] **M2** — SQLite storage with migrations
 - [x] **M3** — Editable list of holidays & notable days (fixed dates, "4th Thursday of November", Easter, multi-day events like Shark Week)
 - [ ] **M4** — Web app (Axum) with a calendar view and forms for inventory and events
+  - [x] **M4a** — server, month calendar, "to do today" box, post list and timeline pages
+  - [ ] **M4b** — fabric and accessory pages and forms
+  - [ ] **M4c** — event and post plan forms, edits and deletes
 - [ ] **M5** — Suggestions: "for Earth Day, consider the leaf-print bow" based on keywords and colors
 
 ## Project layout
@@ -113,6 +122,14 @@ src/
   planner.rs  the scheduling engine + its tests
   holidays.rs reads holidays.toml and calculates dates (Easter, nth weekday...) + tests
   db.rs       SQLite repository: saves and loads the models + its tests
-  main.rs     demo binary (becomes the web server in M4)
+  demo.rs     the example Halloween post
+  web/        the Axum web app
+    mod.rs      router, shared state, error pages
+    month.rs    month-grid layout and "to do today" (pure logic + tests)
+    calendar.rs, posts.rs   page handlers
+    tests.rs    request-level tests against an in-memory app
+  main.rs     starts the server
+templates/    Askama HTML templates
+static/       Pico CSS (v2.1.1, MIT) and the app's stylesheet
 build.rs      rebuilds when a migration changes
 ```
