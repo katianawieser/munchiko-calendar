@@ -164,6 +164,9 @@ pub struct Event {
     pub start: NaiveDate,
     pub end: Option<NaiveDate>,
     pub keywords: Vec<String>,
+    /// True for events created from `data/holidays.toml`. The file is their
+    /// source of truth, so the app treats them as read-only.
+    pub from_holidays_file: bool,
 }
 
 impl Event {

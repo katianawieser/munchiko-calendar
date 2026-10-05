@@ -16,6 +16,7 @@
 
 mod accessories;
 mod calendar;
+mod events;
 mod fabrics;
 pub mod forms;
 pub mod month;
@@ -66,8 +67,16 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(calendar::this_month))
         .route("/calendar/{year}/{month}", get(calendar::month))
-        .route("/posts", get(posts::list))
-        .route("/posts/{id}", get(posts::show))
+        .route("/posts", get(posts::list).post(posts::create))
+        .route("/posts/new", get(posts::new_form))
+        .route("/posts/{id}", get(posts::show).post(posts::update))
+        .route("/posts/{id}/edit", get(posts::edit_form))
+        .route("/posts/{id}/delete", post(posts::delete))
+        .route("/events", get(events::list).post(events::create))
+        .route("/events/new", get(events::new_form))
+        .route("/events/{id}", get(events::show).post(events::update))
+        .route("/events/{id}/edit", get(events::edit_form))
+        .route("/events/{id}/delete", post(events::delete))
         .route("/fabrics", get(fabrics::list).post(fabrics::create))
         .route("/fabrics/new", get(fabrics::new_form))
         .route(
@@ -146,6 +155,8 @@ pub enum AppError {
     /// The request doesn't make sense (e.g. an unknown status value), which
     /// only happens if someone crafts it by hand.
     BadRequest,
+    /// Trying to change a holiday that comes from holidays.toml.
+    ReadOnly,
     Internal(String),
 }
 
@@ -153,6 +164,7 @@ impl From<DbError> for AppError {
     fn from(e: DbError) -> Self {
         match e {
             DbError::NotFound { .. } => AppError::NotFound,
+            DbError::ReadOnly { .. } => AppError::ReadOnly,
             other => AppError::Internal(other.to_string()),
         }
     }
@@ -186,6 +198,13 @@ impl IntoResponse for AppError {
                 ErrorPage {
                     heading: "That didn't work",
                     message: "The request had a value the app doesn't understand.",
+                },
+            ),
+            AppError::ReadOnly => (
+                StatusCode::FORBIDDEN,
+                ErrorPage {
+                    heading: "Holidays are edited in a file",
+                    message: "This holiday comes from data/holidays.toml. Change it there and restart the app.",
                 },
             ),
             AppError::Internal(detail) => {

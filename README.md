@@ -37,6 +37,16 @@ Example — Halloween (post Oct 31, default lead times):
 | Oct 28 | Photo shoot |
 | Oct 31 | Publish |
 
+## Using the app
+
+| Page | What you can do |
+|---|---|
+| **Calendar** | Month view of holidays, outings and every post's prep tasks; "to do today" box; overdue work outlined in red |
+| **Posts** | Plan a post for an event, choose who wears what, see its prep timeline and slack |
+| **Events** | Upcoming / past holidays and outings; "Plan a post" from any event; add and edit your own outings (holidays are edited in `data/holidays.toml`) |
+| **Accessories** | Bows, scarves, costumes: filter, one-click status, fabrics by role, matching sets |
+| **Fabrics** | Stash and shopping list, pairings, what each fabric is used by |
+
 ## Data model
 
 | Model | Key fields |
@@ -104,10 +114,10 @@ cargo run    # start the web app at http://127.0.0.1:3000
 - [x] **M1** — Domain models and the backward-planning engine, with tests
 - [x] **M2** — SQLite storage with migrations
 - [x] **M3** — Editable list of holidays & notable days (fixed dates, "4th Thursday of November", Easter, multi-day events like Shark Week)
-- [ ] **M4** — Web app (Axum) with a calendar view and forms for inventory and events
+- [x] **M4** — Web app (Axum) with a calendar view and forms for inventory and events
   - [x] **M4a** — server, month calendar, "to do today" box, post list and timeline pages
   - [x] **M4b** — fabric and accessory pages and forms
-  - [ ] **M4c** — event and post plan forms, edits and deletes
+  - [x] **M4c** — event and post plan forms, edits and deletes
 - [ ] **M5** — Suggestions: "for Earth Day, consider the leaf-print bow" based on keywords and colors
 
 ## Project layout
@@ -127,7 +137,7 @@ src/
     mod.rs      router, shared state, error pages
     month.rs    month-grid layout and "to do today" (pure logic + tests)
     forms.rs    reading form submissions + choices for selects
-    calendar.rs, posts.rs, fabrics.rs, accessories.rs   page handlers
+    calendar.rs, posts.rs, events.rs, fabrics.rs, accessories.rs   page handlers
     tests.rs    request-level tests against an in-memory app
   main.rs     starts the server
 templates/    Askama HTML templates

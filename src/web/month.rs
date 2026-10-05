@@ -168,7 +168,7 @@ pub fn month_view(
                 icon,
                 label: event.name.clone(),
                 class,
-                href: None,
+                href: Some(format!("/events/{}", event.id.0)),
                 overdue: false,
             });
         }
@@ -301,6 +301,7 @@ mod tests {
             start,
             end,
             keywords: vec![],
+            from_holidays_file: true,
         }
     }
 

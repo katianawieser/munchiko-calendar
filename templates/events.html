@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Events{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h2>{% if showing_past %}Past events{% else %}Upcoming events{% endif %}</h2>
+  <a href="/events/new" role="button">+ New event</a>
+</div>
+
+<form method="get" action="/events" class="filters">
+  <select name="show" aria-label="When">
+    <option value="upcoming" {% if !showing_past %}selected{% endif %}>Upcoming</option>
+    <option value="past" {% if showing_past %}selected{% endif %}>Past</option>
+  </select>
+  <select name="kind" aria-label="Kind">
+    {% for c in kind_filter %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="secondary">Filter</button>
+</form>
+
+{% if rows.is_empty() %}
+<p class="muted">No events here.</p>
+{% else %}
+<div class="table-scroll">
+<table>
+  <thead><tr><th>When</th><th>Event</th><th>Kind</th><th>Posts</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td class="nowrap">{{ row.when }}</td>
+      <td><a href="{{ row.href }}">{{ row.name }}</a></td>
+      <td><span class="entry inline-entry {{ row.kind_class }}">{{ row.kind }}</span></td>
+      <td>
+        {% for post in row.posts %}<a href="{{ post.href }}">{{ post.label }}</a><br>{% endfor %}
+        {% if row.posts.is_empty() %}<a href="{{ row.plan_href }}" class="muted">Plan a post</a>{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

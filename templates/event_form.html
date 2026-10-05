@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+<h2>{{ heading }}</h2>
+{% include "form_errors.html" %}
+
+<form method="post" action="{{ action }}">
+  <div class="grid">
+    <label>Name
+      <input name="name" value="{{ name }}" required autofocus placeholder="Pumpkin patch trip">
+    </label>
+    <label>Kind
+      <select name="kind">
+        {% for c in kind_choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+  <div class="grid">
+    <label>Starts
+      <input type="date" name="start" value="{{ start }}" required>
+    </label>
+    <label>Ends (optional)
+      <input type="date" name="end" value="{{ end }}">
+      <small>Leave empty for a one-day event.</small>
+    </label>
+  </div>
+  <label>Description
+    <textarea name="description" rows="2">{{ description }}</textarea>
+  </label>
+  <label>Keywords
+    <input name="keywords" value="{{ keywords }}" placeholder="autumn, pumpkin">
+    <small>Separate with commas. Used to suggest bows later.</small>
+  </label>
+
+  <div class="form-actions">
+    <button type="submit">Save</button>
+    <a href="{{ cancel_href }}" role="button" class="secondary outline">Cancel</a>
+  </div>
+</form>
+
+{% if let Some(delete) = delete_action %}
+<form method="post" action="{{ delete }}" onsubmit="return confirm('Delete this event?')">
+  <button type="submit" class="danger outline">Delete event</button>
+</form>
+{% endif %}
+{% endblock %}

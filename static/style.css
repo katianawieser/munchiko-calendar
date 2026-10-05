@@ -140,3 +140,8 @@ button.small, [role="button"].small {
 .form-errors ul { margin: 0; }
 .form-errors li { color: var(--mc-overdue); }
 button.danger { --pico-color: var(--mc-overdue); border-color: var(--mc-overdue); color: var(--mc-overdue); width: auto; }
+
+/* Events and post forms (M4c). */
+.entry.inline-entry { display: inline-block; font-size: 0.8rem; }
+a.plain { color: inherit; text-decoration: none; }
+a.plain:hover { text-decoration: underline; }

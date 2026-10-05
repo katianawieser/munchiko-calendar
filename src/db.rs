@@ -67,6 +67,8 @@ pub enum DbError {
     /// A stored value doesn't fit the model, such as an unknown enum label.
     /// The schema's CHECK rules should make this impossible.
     Corrupt(String),
+    /// The row comes from `holidays.toml` and can only be changed there.
+    ReadOnly { what: &'static str, id: i64 },
     /// Anything else from SQLite, including a CHECK rule rejecting an insert.
     Sqlx(sqlx::Error),
 }
@@ -77,6 +79,9 @@ impl fmt::Display for DbError {
             DbError::NotFound { what, id } => write!(f, "there's no {what} #{id}"),
             DbError::InUse { what, id } => {
                 write!(f, "{what} #{id} is still in use, so it can't be deleted")
+            }
+            DbError::ReadOnly { what, id } => {
+                write!(f, "{what} #{id} comes from holidays.toml; edit it there")
             }
             DbError::Corrupt(msg) => write!(f, "unexpected data in the database: {msg}"),
             DbError::Sqlx(e) => write!(f, "database error: {e}"),
@@ -242,6 +247,7 @@ struct EventRow {
     start_date: NaiveDate,
     end_date: Option<NaiveDate>,
     keywords: Json<Vec<String>>,
+    holiday_key: Option<String>,
 }
 
 #[derive(FromRow)]
@@ -306,6 +312,7 @@ impl EventRow {
             start: self.start_date,
             end: self.end_date,
             keywords: self.keywords.0,
+            from_holidays_file: self.holiday_key.is_some(),
         })
     }
 }
@@ -348,6 +355,23 @@ async fn insert_fabric_uses(
         .bind(fabric_use.role.to_sql())
         .execute(&mut *conn)
         .await?;
+    }
+    Ok(())
+}
+
+/// Insert a post plan's looks, inside the caller's transaction.
+async fn insert_looks(
+    conn: &mut SqliteConnection,
+    post_plan_id: i64,
+    looks: &[Look],
+) -> Result<()> {
+    for look in looks {
+        sqlx::query("INSERT INTO looks (post_plan_id, pet, accessory_id) VALUES (?, ?, ?)")
+            .bind(post_plan_id)
+            .bind(look.pet.to_sql())
+            .bind(look.accessory_id.0)
+            .execute(&mut *conn)
+            .await?;
     }
     Ok(())
 }
@@ -847,7 +871,7 @@ impl Repository {
 
     pub async fn get_event(&self, id: EventId) -> Result<Event> {
         let row: Option<EventRow> = sqlx::query_as(
-            "SELECT id, name, description, kind, start_date, end_date, keywords
+            "SELECT id, name, description, kind, start_date, end_date, keywords, holiday_key
              FROM events WHERE id = ?",
         )
         .bind(id.0)
@@ -863,7 +887,7 @@ impl Repository {
     /// All events, sorted by start date.
     pub async fn list_events(&self) -> Result<Vec<Event>> {
         let rows: Vec<EventRow> = sqlx::query_as(
-            "SELECT id, name, description, kind, start_date, end_date, keywords
+            "SELECT id, name, description, kind, start_date, end_date, keywords, holiday_key
              FROM events
              ORDER BY start_date, id",
         )
@@ -880,7 +904,7 @@ impl Repository {
         // COALESCE(end_date, start_date) treats a single-day event as ending
         // the day it starts. ISO dates compare correctly as text.
         let rows: Vec<EventRow> = sqlx::query_as(
-            "SELECT id, name, description, kind, start_date, end_date, keywords
+            "SELECT id, name, description, kind, start_date, end_date, keywords, holiday_key
              FROM events
              WHERE start_date <= ?2 AND COALESCE(end_date, start_date) >= ?1
              ORDER BY start_date, id",
@@ -895,7 +919,7 @@ impl Repository {
     /// The event made from the holidays-file entry `name` for `year`, if any.
     pub async fn find_holiday(&self, name: &str, year: i32) -> Result<Option<Event>> {
         let row: Option<EventRow> = sqlx::query_as(
-            "SELECT id, name, description, kind, start_date, end_date, keywords
+            "SELECT id, name, description, kind, start_date, end_date, keywords, holiday_key
              FROM events WHERE holiday_key = ? AND holiday_year = ?",
         )
         .bind(name)
@@ -1009,20 +1033,52 @@ impl Repository {
         Ok(report)
     }
 
-    /// Fails with `InUse` while a post is planned for this event.
+    /// Save edits to an event you entered yourself. Holiday events fail with
+    /// `ReadOnly`: the next sync would overwrite any change anyway.
+    pub async fn update_event(&self, id: EventId, new: &NewEvent) -> Result<()> {
+        let result = sqlx::query(
+            "UPDATE events
+             SET name = ?, description = ?, kind = ?, start_date = ?, end_date = ?, keywords = ?
+             WHERE id = ? AND holiday_key IS NULL",
+        )
+        .bind(&new.name)
+        .bind(&new.description)
+        .bind(new.kind.to_sql())
+        .bind(new.start)
+        .bind(new.end)
+        .bind(Json(&new.keywords))
+        .bind(id.0)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(self.why_event_unchanged(id).await);
+        }
+        Ok(())
+    }
+
+    /// Fails with `InUse` while a post is planned for this event, and with
+    /// `ReadOnly` for holiday events (the next sync would just add it back).
     pub async fn delete_event(&self, id: EventId) -> Result<()> {
-        let result = sqlx::query("DELETE FROM events WHERE id = ?")
+        let result = sqlx::query("DELETE FROM events WHERE id = ? AND holiday_key IS NULL")
             .bind(id.0)
             .execute(&self.pool)
             .await
             .map_err(|e| in_use(e, "event", id.0))?;
         if result.rows_affected() == 0 {
-            return Err(DbError::NotFound {
-                what: "event",
-                id: id.0,
-            });
+            return Err(self.why_event_unchanged(id).await);
         }
         Ok(())
+    }
+
+    /// After an UPDATE/DELETE matched no row: was it missing or a holiday?
+    async fn why_event_unchanged(&self, id: EventId) -> DbError {
+        match self.get_event(id).await {
+            Ok(_) => DbError::ReadOnly {
+                what: "event",
+                id: id.0,
+            },
+            Err(e) => e,
+        }
     }
 
     // -- Post plans ----------------------------------------------------------
@@ -1043,14 +1099,7 @@ impl Repository {
         .fetch_one(&mut *tx)
         .await?;
 
-        for look in &new.looks {
-            sqlx::query("INSERT INTO looks (post_plan_id, pet, accessory_id) VALUES (?, ?, ?)")
-                .bind(id)
-                .bind(look.pet.to_sql())
-                .bind(look.accessory_id.0)
-                .execute(&mut *tx)
-                .await?;
-        }
+        insert_looks(&mut tx, id, &new.looks).await?;
 
         tx.commit().await?;
         Ok(PostPlanId(id))
@@ -1108,6 +1157,37 @@ impl Repository {
                 row.into_model(looks)
             })
             .collect())
+    }
+
+    /// Save edits to a post plan, replacing its looks.
+    pub async fn update_post_plan(&self, id: PostPlanId, new: &NewPostPlan) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let result = sqlx::query(
+            "UPDATE post_plans SET event_id = ?, post_date = ?, backdrop = ?, notes = ?
+             WHERE id = ?",
+        )
+        .bind(new.event_id.0)
+        .bind(new.post_date)
+        .bind(&new.backdrop)
+        .bind(&new.notes)
+        .bind(id.0)
+        .execute(&mut *tx)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(DbError::NotFound {
+                what: "post plan",
+                id: id.0,
+            });
+        }
+
+        sqlx::query("DELETE FROM looks WHERE post_plan_id = ?")
+            .bind(id.0)
+            .execute(&mut *tx)
+            .await?;
+        insert_looks(&mut tx, id.0, &new.looks).await?;
+
+        tx.commit().await?;
+        Ok(())
     }
 
     /// Deletes the plan and its looks (ON DELETE CASCADE).
@@ -1741,5 +1821,90 @@ mod tests {
             db.get_accessory(pumpkin).await.unwrap().name,
             "Pumpkin deluxe"
         );
+    }
+
+    #[tokio::test]
+    async fn your_own_events_can_be_edited_but_holidays_cannot() {
+        let db = Repository::in_memory().await.unwrap();
+        let trip = db
+            .create_event(&event("Beach trip", d(2026, 7, 4), None))
+            .await
+            .unwrap();
+        assert!(!db.get_event(trip).await.unwrap().from_holidays_file);
+
+        let moved = event("Beach weekend", d(2026, 7, 11), Some(d(2026, 7, 12)));
+        db.update_event(trip, &moved).await.unwrap();
+        let loaded = db.get_event(trip).await.unwrap();
+        assert_eq!(
+            (loaded.name.as_str(), loaded.end),
+            ("Beach weekend", Some(d(2026, 7, 12)))
+        );
+
+        db.sync_holidays(&holidays::parse(HOLIDAYS).unwrap(), 2026..=2026)
+            .await
+            .unwrap();
+        let halloween = db.find_holiday("Halloween", 2026).await.unwrap().unwrap();
+        assert!(halloween.from_holidays_file);
+        assert!(matches!(
+            db.update_event(halloween.id, &moved).await,
+            Err(DbError::ReadOnly { .. })
+        ));
+        assert!(matches!(
+            db.delete_event(halloween.id).await,
+            Err(DbError::ReadOnly { .. })
+        ));
+        assert!(matches!(
+            db.update_event(EventId(999), &moved).await,
+            Err(DbError::NotFound { .. })
+        ));
+
+        db.delete_event(trip).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn updating_a_post_plan_replaces_its_looks() {
+        let db = Repository::in_memory().await.unwrap();
+        let halloween = db
+            .create_event(&event("Halloween", d(2026, 10, 31), None))
+            .await
+            .unwrap();
+        let other = db
+            .create_event(&event("Black Cat Day", d(2026, 10, 27), None))
+            .await
+            .unwrap();
+        let pumpkin = db.create_accessory(&bow("Pumpkin", &[])).await.unwrap();
+        let bat = db.create_accessory(&bow("Bat", &[])).await.unwrap();
+        let plan = db
+            .create_post_plan(&NewPostPlan {
+                event_id: halloween,
+                post_date: d(2026, 10, 31),
+                looks: vec![Look {
+                    pet: Pet::Mochi,
+                    accessory_id: pumpkin,
+                }],
+                backdrop: String::new(),
+                notes: String::new(),
+            })
+            .await
+            .unwrap();
+
+        let edited = NewPostPlan {
+            event_id: other,
+            post_date: d(2026, 10, 27),
+            looks: vec![Look {
+                pet: Pet::Momo,
+                accessory_id: bat,
+            }],
+            backdrop: "black velvet".into(),
+            notes: "Momo solo".into(),
+        };
+        db.update_post_plan(plan, &edited).await.unwrap();
+        let loaded = db.get_post_plan(plan).await.unwrap();
+        assert_eq!(loaded.event_id, other);
+        assert_eq!(loaded.looks, edited.looks);
+        assert_eq!(loaded.notes, "Momo solo");
+
+        // The pumpkin bow is no longer in a look, so it can be deleted now.
+        db.delete_accessory(pumpkin).await.unwrap();
     }
 }

@@ -1,12 +1,19 @@
-//! Post pages: the list of planned posts, and one post's prep timeline.
+//! Post pages: the list of planned posts, one post's prep timeline, and the
+//! form for planning a post (which event, when, and who wears what).
+
+use std::collections::HashMap;
 
 use askama::Template;
-use axum::extract::{Path, State};
-use axum::response::Html;
+use axum::Form;
+use axum::extract::{Path, Query, State};
+use axum::http::StatusCode;
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use chrono::NaiveDate;
 
+use super::forms::{Choice, FormData, KINDS, NotADate, PETS, STATUSES, label_of};
 use super::{AppError, AppState, LoadedPost, load_posts, render};
-use crate::models::{Accessory, Pet};
+use crate::db::NewPostPlan;
+use crate::models::{Accessory, AccessoryId, Event, EventId, Look, Pet, PostPlan, PostPlanId};
 use crate::planner::{TaskStatus, Timeline};
 
 /// How a post is doing, as words plus a CSS class for the color.
@@ -125,6 +132,9 @@ struct TaskRow {
 #[template(path = "post.html")]
 struct PostPage {
     event_name: String,
+    event_href: String,
+    edit_href: String,
+    delete_action: String,
     post_date: String,
     shoot_date: Option<String>,
     health: Health,
@@ -207,6 +217,9 @@ pub async fn show(
 
     render(PostPage {
         event_name: post.event.name.clone(),
+        event_href: format!("/events/{}", post.event.id.0),
+        edit_href: format!("/posts/{id}/edit"),
+        delete_action: format!("/posts/{id}/delete"),
         post_date: date_long(post.plan.post_date),
         shoot_date: post.timeline.as_ref().ok().map(|t| date_long(t.shoot_date)),
         health: health(post, today),
@@ -215,4 +228,255 @@ pub async fn show(
         notes: post.plan.notes.clone(),
         tasks,
     })
+}
+
+// ---------------------------------------------------------------------------
+// The plan-a-post form
+// ---------------------------------------------------------------------------
+
+/// One pet's checkboxes: everything they could wear.
+struct PetLooks {
+    label: &'static str,
+    field: &'static str,
+    choices: Vec<Choice>,
+}
+
+#[derive(Template)]
+#[template(path = "post_form.html")]
+struct PostFormPage {
+    heading: String,
+    action: String,
+    cancel_href: String,
+    event_choices: Vec<Choice>,
+    post_date: String,
+    pets: Vec<PetLooks>,
+    backdrop: String,
+    notes: String,
+    errors: Vec<String>,
+}
+
+/// Events a post can be for: anything not yet over, plus the post's current
+/// event even if it's in the past (so editing an old post still works).
+fn event_choices(events: &[Event], today: NaiveDate, selected: Option<EventId>) -> Vec<Choice> {
+    let mut list = vec![Choice::new("", "— choose an event —", selected.is_none())];
+    for e in events
+        .iter()
+        .filter(|e| e.end_date() >= today || Some(e.id) == selected)
+    {
+        let label = format!("{} · {}", e.start.format("%a %b %-d, %Y"), e.name);
+        list.push(Choice::new(e.id.0, label, Some(e.id) == selected));
+    }
+    list
+}
+
+/// "Pumpkin bow (bow, idea)" checkboxes for each pet.
+fn pet_looks(accessories: &[Accessory], looks: &[Look]) -> Vec<PetLooks> {
+    PETS.iter()
+        .map(|(pet, field, label)| PetLooks {
+            label,
+            field,
+            choices: accessories
+                .iter()
+                .map(|a| {
+                    let text = format!(
+                        "{} ({}, {})",
+                        a.name,
+                        label_of(&KINDS, a.kind).to_lowercase(),
+                        label_of(&STATUSES, a.status).to_lowercase()
+                    );
+                    let worn = looks
+                        .iter()
+                        .any(|l| l.pet == *pet && l.accessory_id == a.id);
+                    Choice::new(a.id.0, text, worn)
+                })
+                .collect(),
+        })
+        .collect()
+}
+
+impl PostFormPage {
+    fn new(
+        editing: Option<&PostPlan>,
+        preselected_event: Option<&Event>,
+        events: &[Event],
+        accessories: &[Accessory],
+        today: NaiveDate,
+    ) -> Self {
+        let event_id = editing
+            .map(|p| p.event_id)
+            .or(preselected_event.map(|e| e.id));
+        // A new post defaults to the day of its event.
+        let post_date = editing
+            .map(|p| p.post_date)
+            .or(preselected_event.map(|e| e.start));
+        Self {
+            heading: match (editing, preselected_event) {
+                (Some(_), _) => "Edit post".into(),
+                (None, Some(e)) => format!("Plan a post for {}", e.name),
+                (None, None) => "Plan a post".into(),
+            },
+            action: editing.map_or("/posts".into(), |p| format!("/posts/{}", p.id.0)),
+            cancel_href: editing.map_or("/posts".into(), |p| format!("/posts/{}", p.id.0)),
+            event_choices: event_choices(events, today, event_id),
+            post_date: post_date
+                .map(|d| d.format("%Y-%m-%d").to_string())
+                .unwrap_or_default(),
+            pets: pet_looks(accessories, editing.map_or(&[], |p| &p.looks)),
+            backdrop: editing.map(|p| p.backdrop.clone()).unwrap_or_default(),
+            notes: editing.map(|p| p.notes.clone()).unwrap_or_default(),
+            errors: Vec::new(),
+        }
+    }
+
+    fn refill(mut self, form: &FormData, errors: Vec<String>) -> Self {
+        let event = form.text("event");
+        for choice in &mut self.event_choices {
+            choice.selected = choice.value == event;
+        }
+        for pet in &mut self.pets {
+            let ticked: Vec<&str> = form.all(pet.field).collect();
+            for choice in &mut pet.choices {
+                choice.selected = ticked.contains(&choice.value.as_str());
+            }
+        }
+        self.post_date = form.text("post_date");
+        self.backdrop = form.text("backdrop");
+        self.notes = form.text("notes");
+        self.errors = errors;
+        self
+    }
+}
+
+fn read_form(
+    form: &FormData,
+    events: &[Event],
+    accessories: &[Accessory],
+) -> Result<NewPostPlan, Vec<String>> {
+    let mut errors = Vec::new();
+
+    let event = match form.optional_id("event") {
+        Ok(Some(id)) => events.iter().find(|e| e.id.0 == id),
+        _ => None,
+    };
+    if event.is_none() {
+        errors.push("Choose which event the post is for.".to_string());
+    }
+
+    // Left empty, the post goes up on the day of the event.
+    let post_date = match form.optional_date("post_date") {
+        Ok(date) => date.or(event.map(|e| e.start)),
+        Err(NotADate) => {
+            errors.push("The post date isn't a real date.".to_string());
+            None
+        }
+    };
+
+    let mut looks = Vec::new();
+    for (pet, field, label) in PETS {
+        for value in form.all(field) {
+            match value
+                .parse::<i64>()
+                .ok()
+                .filter(|id| accessories.iter().any(|a| a.id.0 == *id))
+            {
+                Some(id) => looks.push(Look {
+                    pet,
+                    accessory_id: AccessoryId(id),
+                }),
+                None => errors.push(format!("One of {label}'s items isn't in the inventory.")),
+            }
+        }
+    }
+
+    match (event, post_date) {
+        (Some(event), Some(post_date)) if errors.is_empty() => Ok(NewPostPlan {
+            event_id: event.id,
+            post_date,
+            looks,
+            backdrop: form.text("backdrop"),
+            notes: form.text("notes"),
+        }),
+        _ => Err(errors),
+    }
+}
+
+fn form_response(status: StatusCode, page: PostFormPage) -> Result<Response, AppError> {
+    Ok((status, render(page)?).into_response())
+}
+
+/// `/posts/new`, optionally `?event=12` from an event's "Plan a post" button.
+pub async fn new_form(
+    State(state): State<AppState>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Result<Response, AppError> {
+    let events = state.db.list_events().await?;
+    let accessories = state.db.list_accessories().await?;
+    let preselected = query
+        .get("event")
+        .and_then(|v| v.parse::<i64>().ok())
+        .and_then(|id| events.iter().find(|e| e.id.0 == id));
+    let page = PostFormPage::new(None, preselected, &events, &accessories, state.today());
+    form_response(StatusCode::OK, page)
+}
+
+pub async fn create(
+    State(state): State<AppState>,
+    Form(pairs): Form<Vec<(String, String)>>,
+) -> Result<Response, AppError> {
+    let form = FormData::new(pairs);
+    let events = state.db.list_events().await?;
+    let accessories = state.db.list_accessories().await?;
+    match read_form(&form, &events, &accessories) {
+        Ok(new) => {
+            let id = state.db.create_post_plan(&new).await?;
+            // Straight to the new post's timeline: that's the payoff.
+            Ok(Redirect::to(&format!("/posts/{}", id.0)).into_response())
+        }
+        Err(errors) => {
+            let page = PostFormPage::new(None, None, &events, &accessories, state.today())
+                .refill(&form, errors);
+            form_response(StatusCode::UNPROCESSABLE_ENTITY, page)
+        }
+    }
+}
+
+pub async fn edit_form(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    let plan = state.db.get_post_plan(PostPlanId(id)).await?;
+    let events = state.db.list_events().await?;
+    let accessories = state.db.list_accessories().await?;
+    let page = PostFormPage::new(Some(&plan), None, &events, &accessories, state.today());
+    form_response(StatusCode::OK, page)
+}
+
+pub async fn update(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Form(pairs): Form<Vec<(String, String)>>,
+) -> Result<Response, AppError> {
+    let form = FormData::new(pairs);
+    let plan = state.db.get_post_plan(PostPlanId(id)).await?;
+    let events = state.db.list_events().await?;
+    let accessories = state.db.list_accessories().await?;
+    match read_form(&form, &events, &accessories) {
+        Ok(new) => {
+            state.db.update_post_plan(plan.id, &new).await?;
+            Ok(Redirect::to(&format!("/posts/{id}")).into_response())
+        }
+        Err(errors) => {
+            let page = PostFormPage::new(Some(&plan), None, &events, &accessories, state.today())
+                .refill(&form, errors);
+            form_response(StatusCode::UNPROCESSABLE_ENTITY, page)
+        }
+    }
+}
+
+pub async fn delete(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Redirect, AppError> {
+    state.db.delete_post_plan(PostPlanId(id)).await?;
+    Ok(Redirect::to("/posts"))
 }

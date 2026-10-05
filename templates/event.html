@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}{{ name }}{% endblock %}
+{% block content %}
+<hgroup>
+  <h2>{{ name }}</h2>
+  <p>{{ when }} · <span class="entry inline-entry {{ kind_class }}">{{ kind }}</span></p>
+</hgroup>
+
+{% if !description.is_empty() %}<p>{{ description }}</p>{% endif %}
+{% if !keywords.is_empty() %}<p class="muted">Keywords: {{ keywords }}</p>{% endif %}
+
+<article>
+  <header><strong>Posts</strong></header>
+  {% if posts.is_empty() %}
+  <p>No post planned yet.</p>
+  {% else %}
+  <ul>{% for post in posts %}<li><a href="{{ post.href }}">{{ post.label }}</a></li>{% endfor %}</ul>
+  {% endif %}
+  <a href="{{ plan_href }}" role="button">Plan a post</a>
+</article>
+
+{% if from_holidays_file %}
+<p class="muted">This comes from <code>data/holidays.toml</code>. To change or remove it, edit that file and restart the app.</p>
+{% else %}
+<a href="{{ edit_href }}" role="button" class="secondary outline">Edit event</a>
+{% endif %}
+<p><a href="/events">← All events</a></p>
+{% endblock %}

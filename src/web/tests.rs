@@ -487,3 +487,213 @@ async fn forms_from_other_websites_are_refused() {
     .await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER);
 }
+
+// ---------------------------------------------------------------------------
+// Events and post plans (M4c)
+// ---------------------------------------------------------------------------
+
+use crate::models::{EventId, Pet};
+
+async fn halloween(db: &Repository) -> EventId {
+    db.find_holiday("Halloween", 2026)
+        .await
+        .unwrap()
+        .unwrap()
+        .id
+}
+
+#[tokio::test]
+async fn events_list_shows_upcoming_with_their_posts() {
+    let (app, _, post) = setup(d(2026, 10, 5)).await;
+    let (_, html) = get(&app, "/events").await;
+    assert!(html.contains("Upcoming events"));
+    assert!(html.contains("Halloween"));
+    assert!(
+        html.contains(&format!("href=\"/posts/{}\"", post.0)),
+        "link to the planned post"
+    );
+    // Mochi's adoption day: Jan 11, 2026 is past, Jan 11, 2027 is upcoming.
+    assert!(html.contains("Mon Jan 11, 2027"));
+    assert!(!html.contains("Sun Jan 11, 2026"));
+
+    let (_, html) = get(&app, "/events?show=past&kind=notable_day").await;
+    assert!(html.contains("Sun Jan 11, 2026"));
+    assert!(!html.contains("Halloween"));
+}
+
+#[tokio::test]
+async fn holidays_are_read_only() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let id = halloween(&db).await.0;
+
+    let (_, html) = get(&app, &format!("/events/{id}")).await;
+    assert!(html.contains("data/holidays.toml"));
+    assert!(!html.contains("Edit event"));
+
+    let (status, _) = get(&app, &format!("/events/{id}/edit")).await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    let reply = post(
+        &app,
+        &format!("/events/{id}"),
+        "name=Spooky&kind=holiday&start=2026-10-30",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+    assert_eq!(db.get_event(EventId(id)).await.unwrap().name, "Halloween");
+}
+
+#[tokio::test]
+async fn your_own_events_can_be_added_edited_and_deleted() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let reply = post(
+        &app,
+        "/events",
+        "name=Pumpkin+patch+trip&kind=outing&start=2026-10-17&end=2026-10-18&description=&keywords=Autumn",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let href = reply.location.unwrap();
+    let id: i64 = href.trim_start_matches("/events/").parse().unwrap();
+
+    let trip = db.get_event(EventId(id)).await.unwrap();
+    assert_eq!(
+        (trip.start, trip.end),
+        (d(2026, 10, 17), Some(d(2026, 10, 18)))
+    );
+    assert_eq!(trip.keywords, vec!["autumn"]);
+    let (_, html) = get(&app, "/").await;
+    assert!(html.contains("🚗 Pumpkin patch trip"), "on the calendar");
+    assert!(
+        html.contains(&format!("href=\"/events/{id}\"")),
+        "calendar links to it"
+    );
+
+    // Same start and end date is stored as a one-day event.
+    let reply = post(
+        &app,
+        &href,
+        "name=Pumpkin+patch&kind=outing&start=2026-10-17&end=2026-10-17",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert_eq!(db.get_event(EventId(id)).await.unwrap().end, None);
+
+    let reply = post(&app, &format!("{href}/delete"), "").await;
+    assert_eq!(reply.location.as_deref(), Some("/events"));
+    assert!(db.get_event(EventId(id)).await.is_err());
+}
+
+#[tokio::test]
+async fn event_form_mistakes_are_explained() {
+    let (app, _, _) = setup(d(2026, 10, 5)).await;
+    let reply = post(
+        &app,
+        "/events",
+        "name=Trip&kind=outing&start=2026-10-17&end=2026-10-10",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        reply
+            .html
+            .contains("The end date can&#39;t be before the start date.")
+    );
+    assert!(
+        reply.html.contains("value=\"2026-10-17\""),
+        "typed date kept"
+    );
+
+    let reply = post(&app, "/events", "name=&kind=outing&start=").await;
+    assert!(reply.html.contains("Give the event a name."));
+    assert!(reply.html.contains("Choose the date it starts."));
+}
+
+#[tokio::test]
+async fn planning_a_post_from_an_event() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let birthday = db
+        .find_holiday("Mochi's Birthday", 2026)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let (_, html) = get(&app, &format!("/posts/new?event={}", birthday.id.0)).await;
+    assert!(html.contains("Plan a post for Mochi&#39;s Birthday"));
+    assert!(html.contains(&format!("<option value=\"{}\" selected>", birthday.id.0)));
+    assert!(
+        html.contains("value=\"2026-10-15\""),
+        "date defaults to the event"
+    );
+
+    // Mochi wears the pumpkin bow; Momo the bat bow. Date left empty.
+    let body = format!(
+        "event={}&post_date=&mochi=1&momo=2&backdrop=balloons&notes=",
+        birthday.id.0
+    );
+    let reply = post(&app, "/posts", &body).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let href = reply.location.unwrap();
+    let id: i64 = href.trim_start_matches("/posts/").parse().unwrap();
+
+    let plan = db.get_post_plan(PostPlanId(id)).await.unwrap();
+    assert_eq!(plan.post_date, d(2026, 10, 15));
+    assert_eq!(
+        plan.looks
+            .iter()
+            .map(|l| (l.pet, l.accessory_id.0))
+            .collect::<Vec<_>>(),
+        vec![(Pet::Mochi, 1), (Pet::Momo, 2)]
+    );
+
+    // The redirect lands on the timeline. The bows are needed by Oct 11,
+    // so it's already tight.
+    let (_, html) = get(&app, &href).await;
+    assert!(html.contains("Mochi&#39;s Birthday"));
+    assert!(html.contains("Make Pumpkin bow"));
+}
+
+#[tokio::test]
+async fn post_form_needs_an_event() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let before = db.list_post_plans().await.unwrap().len();
+    let reply = post(&app, "/posts", "event=&post_date=&mochi=1").await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("Choose which event the post is for."));
+    assert!(
+        reply.html.contains("value=\"1\" checked"),
+        "ticked look kept"
+    );
+    assert_eq!(db.list_post_plans().await.unwrap().len(), before);
+}
+
+#[tokio::test]
+async fn editing_and_deleting_a_post() {
+    let (app, db, post_id) = setup(d(2026, 10, 5)).await;
+    let event = halloween(&db).await;
+
+    let (_, html) = get(&app, &format!("/posts/{}/edit", post_id.0)).await;
+    assert!(html.contains("Edit post"));
+    assert!(
+        html.contains("name=\"momo\" value=\"2\" checked"),
+        "Momo's bat bow ticked"
+    );
+
+    // Drop the ghost scarf and post a day early.
+    let body = format!(
+        "event={}&post_date=2026-10-30&mochi=1&momo=2&backdrop=hay+bales&notes=",
+        event.0
+    );
+    let reply = post(&app, &format!("/posts/{}", post_id.0), &body).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let plan = db.get_post_plan(post_id).await.unwrap();
+    assert_eq!(plan.post_date, d(2026, 10, 30));
+    assert_eq!(plan.looks.len(), 2);
+
+    // The scarf is free now, so it can be deleted.
+    let reply = post(&app, "/accessories/3/delete", "").await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+
+    let reply = post(&app, &format!("/posts/{}/delete", post_id.0), "").await;
+    assert_eq!(reply.location.as_deref(), Some("/posts"));
+    assert!(db.get_post_plan(post_id).await.is_err());
+}

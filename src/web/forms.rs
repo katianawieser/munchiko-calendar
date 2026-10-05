@@ -6,11 +6,17 @@
 //! extractor can hand us those pairs as a plain list, and [`FormData`] reads
 //! from it. That avoids an extra dependency just for repeated fields.
 
-use crate::models::{AccessoryKind, AccessoryStatus, FabricRole};
+use chrono::NaiveDate;
+
+use crate::models::{AccessoryKind, AccessoryStatus, EventKind, FabricRole, Pet};
 
 /// A field that should have held a number didn't.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NotANumber;
+
+/// A date field held something that isn't a date.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NotADate;
 
 /// The fields of one form submission.
 #[derive(Debug, Clone, Default)]
@@ -41,6 +47,19 @@ impl FormData {
             .iter()
             .filter(move |(key, _)| key == name)
             .map(|(_, value)| value.as_str())
+    }
+
+    /// A date from an `<input type="date">`, which always sends YYYY-MM-DD.
+    /// `Ok(None)` if left empty.
+    pub fn optional_date(&self, name: &str) -> Result<Option<NaiveDate>, NotADate> {
+        let text = self.text(name);
+        if text.is_empty() {
+            Ok(None)
+        } else {
+            NaiveDate::parse_from_str(&text, "%Y-%m-%d")
+                .map(Some)
+                .map_err(|_| NotADate)
+        }
     }
 
     /// An optional id from a `<select>`: the "none" choice sends "".
@@ -103,6 +122,17 @@ pub const STATUSES: [(AccessoryStatus, &str, &str); 3] = [
     (AccessoryStatus::InProgress, "in_progress", "In progress"),
     (AccessoryStatus::Ready, "ready", "Ready"),
 ];
+
+pub const EVENT_KINDS: [(EventKind, &str, &str); 4] = [
+    (EventKind::Outing, "outing", "Outing"),
+    (EventKind::Holiday, "holiday", "Holiday"),
+    (EventKind::NotableDay, "notable_day", "Notable day"),
+    (EventKind::Seasonal, "seasonal", "Season"),
+];
+
+/// Each pet has its own group of checkboxes on the post form.
+pub const PETS: [(Pet, &str, &str); 2] =
+    [(Pet::Mochi, "mochi", "Mochi"), (Pet::Momo, "momo", "Momo")];
 
 /// Each fabric role has its own `<select>` on the accessory form.
 pub const ROLES: [(FabricRole, &str, &str); 3] = [
@@ -170,6 +200,23 @@ mod tests {
         assert_eq!(f.optional_id("a"), Ok(None));
         assert_eq!(f.optional_id("b"), Ok(Some(7)));
         assert_eq!(f.optional_id("c"), Err(NotANumber));
+    }
+
+    #[test]
+    fn dates_come_from_date_inputs() {
+        let f = form(&[
+            ("a", "2026-10-31"),
+            ("b", ""),
+            ("c", "10/31/2026"),
+            ("d", "2026-02-30"),
+        ]);
+        assert_eq!(
+            f.optional_date("a"),
+            Ok(NaiveDate::from_ymd_opt(2026, 10, 31))
+        );
+        assert_eq!(f.optional_date("b"), Ok(None));
+        assert_eq!(f.optional_date("c"), Err(NotADate));
+        assert_eq!(f.optional_date("d"), Err(NotADate));
     }
 
     #[test]

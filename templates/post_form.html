@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+<h2>{{ heading }}</h2>
+{% include "form_errors.html" %}
+
+<form method="post" action="{{ action }}">
+  <div class="grid">
+    <label>Event
+      <select name="event" required>
+        {% for c in event_choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Post date
+      <input type="date" name="post_date" value="{{ post_date }}">
+      <small>Leave empty to post on the day of the event.</small>
+    </label>
+  </div>
+
+  <div class="grid">
+    {% for pet in pets %}
+    <fieldset>
+      <legend><strong>{{ pet.label }} wears</strong></legend>
+      {% if pet.choices.is_empty() %}
+      <p class="muted">No accessories yet. <a href="/accessories/new">Add one</a>.</p>
+      {% endif %}
+      {% for c in pet.choices %}
+      <label>
+        <input type="checkbox" name="{{ pet.field }}" value="{{ c.value }}" {% if c.selected %}checked{% endif %}>
+        {{ c.label }}
+      </label>
+      {% endfor %}
+    </fieldset>
+    {% endfor %}
+  </div>
+
+  <label>Backdrop idea
+    <input name="backdrop" value="{{ backdrop }}" placeholder="hay bales and mini pumpkins">
+  </label>
+  <label>Notes
+    <textarea name="notes" rows="2">{{ notes }}</textarea>
+  </label>
+
+  <div class="form-actions">
+    <button type="submit">Save and see the timeline</button>
+    <a href="{{ cancel_href }}" role="button" class="secondary outline">Cancel</a>
+  </div>
+</form>
+{% endblock %}

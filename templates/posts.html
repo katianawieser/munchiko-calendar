@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Posts{% endblock %}
 {% block content %}
-<h2>Planned posts</h2>
+<div class="page-head">
+  <h2>Planned posts</h2>
+  <a href="/posts/new" role="button">+ Plan a post</a>
+</div>
 {% if upcoming.is_empty() %}
 <p>No upcoming posts.</p>
 {% else %}

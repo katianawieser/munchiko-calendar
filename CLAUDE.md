@@ -55,10 +55,14 @@ See README.md for the planning rules, data model and roadmap.
   fields), Post/Redirect/Get, 422 on validation errors with input kept, 409 on in-use
   deletes. `reject_cross_site` middleware blocks cross-site POSTs (CSRF). Accessory
   form has one fabric per role (main/middle/accent).
-- **Next: M4c — events (outings editable, holidays read-only) and post plan forms**
-  (new from an event, choose looks per pet, edit, delete).
-- Then M5 suggestions ("for Earth Day, consider the leaf bow"
-  by matching keywords and colors).
+- **M4c done (M4 complete):** events list/detail/new/edit/delete (`events.rs`);
+  `Event.from_holidays_file` (from `holiday_key`), and `update_event`/`delete_event`
+  refuse holidays with `DbError::ReadOnly` → 403 page. Post plan new/edit/delete
+  (`/posts/new?event=ID` pre-fills event + date; empty date = event day);
+  `update_post_plan` replaces looks. Calendar event entries link to `/events/{id}`.
+- **Next: M5 — suggestions** ("for Earth Day, consider the leaf bow") by matching
+  event keywords against accessory/fabric colors and keywords. Propose the scoring
+  approach before building. Possible polish: drop "(bow)" from planner task titles.
 
 ## Original notes (summary of my handwritten outline)
 Planner looks ahead for upcoming events/holidays/notable days; knows bows made, inventory
