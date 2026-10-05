@@ -2,6 +2,7 @@
 name = "munchiko-calendar"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"  # minimum for the 2024 edition
 description = "Content planner for Mochi & Momo's social media account: works backward from post dates to schedule bow-making, backdrops and photo shoots."
 
 [dependencies]

@@ -25,9 +25,8 @@ See README.md for the planning rules, data model and roadmap.
 - `models` and `planner` stay free of database/web code so they remain easy to test.
 
 ## Status
-- **M1 done (written, not yet compiled):** `src/models.rs`, `src/planner.rs` (7 tests),
-  demo in `src/main.rs`. M1 was written in a sandbox that couldn't download crates, so
-  **first run `cargo test` and fix anything that fails** before starting M2.
+- **M1 done and verified:** `src/models.rs`, `src/planner.rs` (7 tests, all passing,
+  clippy clean), demo in `src/main.rs`. Needs Rust 1.85+ (2024 edition).
 - **Next: M2 — SQLite storage.** Suggested approach: `sqlx` with SQLite and migrations
   under `migrations/`, tables for fabrics, accessories, accessory_fabrics, events,
   post_plans and looks, plus a repository module that loads data into the existing
