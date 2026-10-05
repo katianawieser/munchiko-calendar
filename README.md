@@ -130,6 +130,7 @@ src/
   lib.rs      crate root
   models.rs   fabric, accessories, events, post plans
   planner.rs  the scheduling engine + its tests
+  suggest.rs  scores accessories and fabrics for an event, with reasons + tests
   holidays.rs reads holidays.toml and calculates dates (Easter, nth weekday...) + tests
   db.rs       SQLite repository: saves and loads the models + its tests
   demo.rs     the example Halloween post

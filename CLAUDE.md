@@ -60,9 +60,15 @@ See README.md for the planning rules, data model and roadmap.
   refuse holidays with `DbError::ReadOnly` → 403 page. Post plan new/edit/delete
   (`/posts/new?event=ID` pre-fills event + date; empty date = event day);
   `update_post_plan` replaces looks. Calendar event entries link to `/events/{id}`.
-- **Next: M5 — suggestions** ("for Earth Day, consider the leaf bow") by matching
-  event keywords against accessory/fabric colors and keywords. Propose the scoring
-  approach before building. Possible polish: drop "(bow)" from planner task titles.
+- **M5a done:** `src/suggest.rs` (pure, 8 tests). Event words = name + keywords,
+  lowercased, minus filler ("day", "national", "bow"...). Accessory keywords = name
+  words + its fabrics' keywords; colors = own + fabrics'. Per event word: keyword 3,
+  else color 2; bonuses only after a match: matching set +1, ready +1. Ties sorted by
+  name. `suggest_fabrics` adds `start_by` by running the planner on a hypothetical new
+  bow (no duplicated date logic). No stemming (leaf ≠ leaves) — known limitation.
+- **Next: M5b — show suggestions** on the event page ("Ideas for Halloween") and above
+  the post form's checkboxes (not pre-ticked); fabric ideas + "start by" when no
+  accessory fits. Possible polish: drop "(bow)" from planner task titles.
 
 ## Original notes (summary of my handwritten outline)
 Planner looks ahead for upcoming events/holidays/notable days; knows bows made, inventory
