@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+<h2>{{ heading }}</h2>
+{% include "form_errors.html" %}
+
+<form method="post" action="{{ action }}">
+  <label>Name
+    <input name="name" value="{{ name }}" required autofocus>
+  </label>
+  <label>Description
+    <textarea name="description" rows="2">{{ description }}</textarea>
+  </label>
+  <div class="grid">
+    <label>Colors
+      <input name="colors" value="{{ colors }}" placeholder="orange, black">
+      <small>Separate with commas.</small>
+    </label>
+    <label>Keywords
+      <input name="keywords" value="{{ keywords }}" placeholder="halloween, pumpkin">
+      <small>Used to suggest this fabric for holidays later.</small>
+    </label>
+  </div>
+  <label>
+    <input type="checkbox" name="in_stock" role="switch" {% if in_stock %}checked{% endif %}>
+    In the stash (untick if it still needs buying)
+  </label>
+
+  {% if !pair_choices.is_empty() %}
+  <fieldset>
+    <legend>Looks good with</legend>
+    {% for choice in pair_choices %}
+    <label class="inline-check">
+      <input type="checkbox" name="pairs" value="{{ choice.value }}" {% if choice.selected %}checked{% endif %}>
+      {{ choice.label }}
+    </label>
+    {% endfor %}
+  </fieldset>
+  {% endif %}
+
+  {% if !used_by.is_empty() %}
+  <p class="muted">Used by: {{ used_by }}</p>
+  {% endif %}
+
+  <div class="form-actions">
+    <button type="submit">Save</button>
+    <a href="/fabrics" role="button" class="secondary outline">Cancel</a>
+  </div>
+</form>
+
+{% if let Some(delete) = delete_action %}
+<form method="post" action="{{ delete }}" onsubmit="return confirm('Delete this fabric?')">
+  <button type="submit" class="danger outline">Delete fabric</button>
+</form>
+{% endif %}
+{% endblock %}

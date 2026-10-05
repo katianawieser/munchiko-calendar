@@ -10,9 +10,14 @@
 //! - The stylesheets are compiled into the binary with `include_str!`, so the
 //!   app is a single file that needs no internet connection.
 //! - No login: the server only listens on 127.0.0.1, so it's reachable from
-//!   this computer alone.
+//!   this computer alone. Forms are still protected from other websites (see
+//!   [`reject_cross_site`]), because a web page you visit can make your own
+//!   browser send requests to localhost.
 
+mod accessories;
 mod calendar;
+mod fabrics;
+pub mod forms;
 pub mod month;
 mod posts;
 
@@ -20,9 +25,11 @@ use std::collections::HashMap;
 
 use askama::Template;
 use axum::Router;
-use axum::http::{StatusCode, header};
+use axum::extract::Request;
+use axum::http::{HeaderMap, Method, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use chrono::{Local, NaiveDate};
 
 use crate::db::{DbError, Repository};
@@ -61,10 +68,70 @@ pub fn router(state: AppState) -> Router {
         .route("/calendar/{year}/{month}", get(calendar::month))
         .route("/posts", get(posts::list))
         .route("/posts/{id}", get(posts::show))
+        .route("/fabrics", get(fabrics::list).post(fabrics::create))
+        .route("/fabrics/new", get(fabrics::new_form))
+        .route(
+            "/fabrics/{id}",
+            get(fabrics::edit_form).post(fabrics::update),
+        )
+        .route("/fabrics/{id}/stock", post(fabrics::toggle_stock))
+        .route("/fabrics/{id}/delete", post(fabrics::delete))
+        .route(
+            "/accessories",
+            get(accessories::list).post(accessories::create),
+        )
+        .route("/accessories/new", get(accessories::new_form))
+        .route(
+            "/accessories/{id}",
+            get(accessories::edit_form).post(accessories::update),
+        )
+        .route("/accessories/{id}/status", post(accessories::set_status))
+        .route("/accessories/{id}/delete", post(accessories::delete))
         .route("/static/pico.min.css", get(pico_css))
         .route("/static/style.css", get(style_css))
         .fallback(not_found)
+        .layer(middleware::from_fn(reject_cross_site))
         .with_state(state)
+}
+
+/// Refuse form submissions that come from another website.
+///
+/// This defends against "cross-site request forgery": a page on some other
+/// site could contain a hidden form that posts to http://127.0.0.1:3000 and
+/// deletes your fabrics, and your browser would happily send it. Browsers
+/// label every request with where it came from (`Sec-Fetch-Site`, and
+/// `Origin` on form posts), so we only accept changes from our own pages.
+/// Reading pages (GET) is always allowed.
+async fn reject_cross_site(request: Request, next: Next) -> Response {
+    if request.method() != Method::GET
+        && request.method() != Method::HEAD
+        && is_cross_site(request.headers())
+    {
+        return (
+            StatusCode::FORBIDDEN,
+            "Forms can only be submitted from Munchiko Calendar's own pages.",
+        )
+            .into_response();
+    }
+    next.run(request).await
+}
+
+fn is_cross_site(headers: &HeaderMap) -> bool {
+    let text = |name| {
+        headers
+            .get(name)
+            .and_then(|v: &header::HeaderValue| v.to_str().ok())
+    };
+    // "same-origin" is our own page; "none" means typed in or bookmarked.
+    if let Some(site) = text(header::HeaderName::from_static("sec-fetch-site")) {
+        return site != "same-origin" && site != "none";
+    }
+    // Older browsers: compare the Origin header ("http://127.0.0.1:3000")
+    // with the address the request was sent to ("127.0.0.1:3000").
+    match (text(header::ORIGIN), text(header::HOST)) {
+        (Some(origin), Some(host)) => origin.split_once("://").map(|(_, rest)| rest) != Some(host),
+        _ => false,
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -76,6 +143,9 @@ pub fn router(state: AppState) -> Router {
 #[derive(Debug)]
 pub enum AppError {
     NotFound,
+    /// The request doesn't make sense (e.g. an unknown status value), which
+    /// only happens if someone crafts it by hand.
+    BadRequest,
     Internal(String),
 }
 
@@ -109,6 +179,13 @@ impl IntoResponse for AppError {
                 ErrorPage {
                     heading: "Not found",
                     message: "There's nothing at this address.",
+                },
+            ),
+            AppError::BadRequest => (
+                StatusCode::BAD_REQUEST,
+                ErrorPage {
+                    heading: "That didn't work",
+                    message: "The request had a value the app doesn't understand.",
                 },
             ),
             AppError::Internal(detail) => {

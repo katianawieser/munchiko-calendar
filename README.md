@@ -106,7 +106,7 @@ cargo run    # start the web app at http://127.0.0.1:3000
 - [x] **M3** — Editable list of holidays & notable days (fixed dates, "4th Thursday of November", Easter, multi-day events like Shark Week)
 - [ ] **M4** — Web app (Axum) with a calendar view and forms for inventory and events
   - [x] **M4a** — server, month calendar, "to do today" box, post list and timeline pages
-  - [ ] **M4b** — fabric and accessory pages and forms
+  - [x] **M4b** — fabric and accessory pages and forms
   - [ ] **M4c** — event and post plan forms, edits and deletes
 - [ ] **M5** — Suggestions: "for Earth Day, consider the leaf-print bow" based on keywords and colors
 
@@ -126,7 +126,8 @@ src/
   web/        the Axum web app
     mod.rs      router, shared state, error pages
     month.rs    month-grid layout and "to do today" (pure logic + tests)
-    calendar.rs, posts.rs   page handlers
+    forms.rs    reading form submissions + choices for selects
+    calendar.rs, posts.rs, fabrics.rs, accessories.rs   page handlers
     tests.rs    request-level tests against an in-memory app
   main.rs     starts the server
 templates/    Askama HTML templates

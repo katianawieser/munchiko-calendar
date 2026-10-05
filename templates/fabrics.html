@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Fabrics{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h2>Fabrics</h2>
+  <a href="/fabrics/new" role="button">+ New fabric</a>
+</div>
+
+{% for section in sections %}
+<h3>{{ section.heading }}</h3>
+{% if section.rows.is_empty() %}
+<p class="muted">Nothing here.</p>
+{% else %}
+<div class="table-scroll">
+<table>
+  <thead><tr><th>Name</th><th>Colors</th><th>Keywords</th><th>Pairs with</th><th>Used by</th><th></th></tr></thead>
+  <tbody>
+    {% for row in section.rows %}
+    <tr>
+      <td><a href="{{ row.href }}">{{ row.name }}</a></td>
+      <td>{% for color in row.colors %}<span class="chip">{{ color }}</span> {% endfor %}</td>
+      <td>{{ row.keywords }}</td>
+      <td>{{ row.pairs_with }}</td>
+      <td>{{ row.used_by }}</td>
+      <td>
+        <form method="post" action="{{ row.stock_action }}" class="inline">
+          <button type="submit" class="outline secondary small">{{ section.move_label }}</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endfor %}
+{% endblock %}

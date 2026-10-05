@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+<h2>{{ heading }}</h2>
+{% include "form_errors.html" %}
+
+<form method="post" action="{{ action }}">
+  <div class="grid">
+    <label>Kind
+      <select name="kind">
+        {% for c in kind_choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Status
+      <select name="status">
+        {% for c in status_choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+  <label>Name
+    <input name="name" value="{{ name }}" required autofocus>
+  </label>
+  <label>Description
+    <textarea name="description" rows="2">{{ description }}</textarea>
+  </label>
+  <label>Colors
+    <input name="colors" value="{{ colors }}" placeholder="orange, black">
+    <small>Separate with commas.</small>
+  </label>
+
+  <fieldset>
+    <legend>Fabrics</legend>
+    <div class="grid">
+      {% for role in fabric_selects %}
+      <label>{{ role.label }}
+        <select name="{{ role.field }}">
+          {% for c in role.choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+        </select>
+      </label>
+      {% endfor %}
+    </div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Made or bought?</legend>
+    <label class="inline-check"><input type="radio" name="source" value="handmade" {% if !bought %}checked{% endif %}> Handmade</label>
+    <label class="inline-check"><input type="radio" name="source" value="bought" {% if bought %}checked{% endif %}> Bought</label>
+  </fieldset>
+  <div class="grid">
+    <label>Brand (if bought)
+      <input name="brand" value="{{ brand }}">
+    </label>
+    <label>Days to make
+      <input name="make_days" type="number" min="1" value="{{ make_days }}" placeholder="default for its kind">
+    </label>
+  </div>
+
+  <label>Matching Mochi &amp; Momo set
+    <select name="partner">
+      {% for c in partner_choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+    </select>
+    <small>Pairing is two-way. Choosing a partner that's already in a set takes it out of that set.</small>
+  </label>
+
+  <div class="form-actions">
+    <button type="submit">Save</button>
+    <a href="/accessories" role="button" class="secondary outline">Cancel</a>
+  </div>
+</form>
+
+{% if let Some(delete) = delete_action %}
+<form method="post" action="{{ delete }}" onsubmit="return confirm('Delete this accessory?')">
+  <button type="submit" class="danger outline">Delete accessory</button>
+</form>
+{% endif %}
+{% endblock %}

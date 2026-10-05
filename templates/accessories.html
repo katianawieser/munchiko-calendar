@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Accessories{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h2>Accessories</h2>
+  <a href="/accessories/new" role="button">+ New accessory</a>
+</div>
+
+<form method="get" action="/accessories" class="filters">
+  <select name="kind" aria-label="Kind">
+    {% for c in kind_filter %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+  </select>
+  <select name="status" aria-label="Status">
+    {% for c in status_filter %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+  </select>
+  <button type="submit" class="secondary">Filter</button>
+</form>
+
+{% if rows.is_empty() %}
+<p class="muted">No accessories match.</p>
+{% else %}
+<div class="table-scroll">
+<table>
+  <thead><tr><th>Name</th><th>Kind</th><th>Status</th><th>Fabrics</th><th>Colors</th><th>Matching set</th><th>Source</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><a href="{{ row.href }}">{{ row.name }}</a></td>
+      <td>{{ row.kind }}</td>
+      <td class="nowrap">
+        <span class="badge {{ row.status_class }}">{{ row.status }}</span>
+        {% if let Some(step) = row.next_step %}
+        <form method="post" action="{{ step.action }}" class="inline">
+          <input type="hidden" name="status" value="{{ step.status }}">
+          <input type="hidden" name="back" value="{{ back }}">
+          <button type="submit" class="outline small">{{ step.label }}</button>
+        </form>
+        {% endif %}
+      </td>
+      <td>{{ row.fabrics }}</td>
+      <td>{% for color in row.colors %}<span class="chip">{{ color }}</span> {% endfor %}</td>
+      <td>{{ row.partner }}</td>
+      <td>{{ row.source }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

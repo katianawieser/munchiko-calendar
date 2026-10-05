@@ -49,9 +49,14 @@ See README.md for the planning rules, data model and roadmap.
   `AppError` → 404/500 pages), `month.rs` (pure grid + agenda, unit tested),
   calendar + posts list + post timeline pages, request tests in `web/tests.rs`,
   `demo.rs` seed. Posts whose date has passed count as finished (never "overdue").
-- **Next: M4b — fabric and accessory pages/forms** (list, new, edit, status buttons,
-  pairing, fabric roles; add `update_*` methods to `Repository`). Then M4c events
-  (holidays read-only) and post plan forms.
+- **M4b done:** fabric + accessory list/new/edit/delete pages, stock toggle, status
+  buttons, accessory filters; `Repository::update_fabric`, `set_fabric_pairings`,
+  `update_accessory`. Forms read raw pairs via `web/forms.rs` (repeated checkbox
+  fields), Post/Redirect/Get, 422 on validation errors with input kept, 409 on in-use
+  deletes. `reject_cross_site` middleware blocks cross-site POSTs (CSRF). Accessory
+  form has one fabric per role (main/middle/accent).
+- **Next: M4c — events (outings editable, holidays read-only) and post plan forms**
+  (new from an event, choose looks per pet, edit, delete).
 - Then M5 suggestions ("for Earth Day, consider the leaf bow"
   by matching keywords and colors).
 

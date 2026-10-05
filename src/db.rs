@@ -31,7 +31,9 @@ use chrono::NaiveDate;
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use sqlx::migrate::Migrator;
-use sqlx::sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePool, SqlitePoolOptions};
+use sqlx::sqlite::{
+    SqliteConnectOptions, SqliteConnection, SqliteJournalMode, SqlitePool, SqlitePoolOptions,
+};
 use sqlx::types::Json;
 
 use crate::holidays::HolidayRule;
@@ -329,6 +331,27 @@ fn source_columns(source: &Source) -> (&'static str, Option<&str>) {
     }
 }
 
+/// Insert an accessory's fabric list. Takes a connection rather than the
+/// pool so callers can run it inside their own transaction.
+async fn insert_fabric_uses(
+    conn: &mut SqliteConnection,
+    accessory_id: i64,
+    uses: &[FabricUse],
+) -> Result<()> {
+    for fabric_use in uses {
+        sqlx::query(
+            "INSERT INTO accessory_fabrics (accessory_id, fabric_id, role)
+             VALUES (?, ?, ?)",
+        )
+        .bind(accessory_id)
+        .bind(fabric_use.fabric_id.0)
+        .bind(fabric_use.role.to_sql())
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
+}
+
 /// Take the single row a `get_...` query asked for, or report it missing.
 fn exactly_one<T>(mut found: Vec<T>, what: &'static str, id: i64) -> Result<T> {
     found.pop().ok_or(DbError::NotFound { what, id })
@@ -507,6 +530,69 @@ impl Repository {
         Ok(())
     }
 
+    /// Save edits to a fabric's details. Pairings are changed separately
+    /// with `set_fabric_pairings`.
+    pub async fn update_fabric(&self, id: FabricId, new: &NewFabric) -> Result<()> {
+        let result = sqlx::query(
+            "UPDATE fabrics
+             SET name = ?, description = ?, colors = ?, keywords = ?, in_stock = ?
+             WHERE id = ?",
+        )
+        .bind(&new.name)
+        .bind(&new.description)
+        .bind(Json(&new.colors))
+        .bind(Json(&new.keywords))
+        .bind(new.in_stock)
+        .bind(id.0)
+        .execute(&self.pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(DbError::NotFound {
+                what: "fabric",
+                id: id.0,
+            });
+        }
+        Ok(())
+    }
+
+    /// Make `pairs_with` the complete list of fabrics that go with `id`, in
+    /// both directions: fabrics no longer listed lose their link back too.
+    /// This is what the edit form's checkboxes need.
+    pub async fn set_fabric_pairings(&self, id: FabricId, pairs_with: &[FabricId]) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let exists: bool = sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM fabrics WHERE id = ?)")
+            .bind(id.0)
+            .fetch_one(&mut *tx)
+            .await?;
+        if !exists {
+            return Err(DbError::NotFound {
+                what: "fabric",
+                id: id.0,
+            });
+        }
+
+        // Start from nothing, then add each pairing both ways.
+        sqlx::query("DELETE FROM fabric_pairings WHERE fabric_id = ?1 OR paired_fabric_id = ?1")
+            .bind(id.0)
+            .execute(&mut *tx)
+            .await?;
+        for other in pairs_with {
+            for (from, to) in [(id, *other), (*other, id)] {
+                sqlx::query(
+                    "INSERT INTO fabric_pairings (fabric_id, paired_fabric_id)
+                     VALUES (?, ?)
+                     ON CONFLICT (fabric_id, paired_fabric_id) DO NOTHING",
+                )
+                .bind(from.0)
+                .bind(to.0)
+                .execute(&mut *tx)
+                .await?;
+            }
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
     /// Fails with `InUse` while any accessory is made from this fabric.
     /// Its pairings are removed automatically (ON DELETE CASCADE).
     pub async fn delete_fabric(&self, id: FabricId) -> Result<()> {
@@ -548,18 +634,7 @@ impl Repository {
         .bind(new.make_days)
         .fetch_one(&mut *tx)
         .await?;
-
-        for fabric_use in &new.fabrics {
-            sqlx::query(
-                "INSERT INTO accessory_fabrics (accessory_id, fabric_id, role)
-                 VALUES (?, ?, ?)",
-            )
-            .bind(id)
-            .bind(fabric_use.fabric_id.0)
-            .bind(fabric_use.role.to_sql())
-            .execute(&mut *tx)
-            .await?;
-        }
+        insert_fabric_uses(&mut tx, id, &new.fabrics).await?;
 
         // If we returned early with an error above, `tx` is dropped without
         // committing and SQLite rolls everything back.
@@ -621,6 +696,46 @@ impl Repository {
                 row.into_model(fabrics)
             })
             .collect()
+    }
+
+    /// Save edits to an accessory, replacing its list of fabrics. Its matching
+    /// partner is left as it was (see `pair_accessories`).
+    pub async fn update_accessory(&self, id: AccessoryId, new: &NewAccessory) -> Result<()> {
+        let (source, brand) = source_columns(&new.source);
+        let mut tx = self.pool.begin().await?;
+
+        let result = sqlx::query(
+            "UPDATE accessories
+             SET kind = ?, name = ?, description = ?, colors = ?, source = ?, brand = ?,
+                 status = ?, make_days = ?
+             WHERE id = ?",
+        )
+        .bind(new.kind.to_sql())
+        .bind(&new.name)
+        .bind(&new.description)
+        .bind(Json(&new.colors))
+        .bind(source)
+        .bind(brand)
+        .bind(new.status.to_sql())
+        .bind(new.make_days)
+        .bind(id.0)
+        .execute(&mut *tx)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(DbError::NotFound {
+                what: "accessory",
+                id: id.0,
+            });
+        }
+
+        sqlx::query("DELETE FROM accessory_fabrics WHERE accessory_id = ?")
+            .bind(id.0)
+            .execute(&mut *tx)
+            .await?;
+        insert_fabric_uses(&mut tx, id.0, &new.fabrics).await?;
+
+        tx.commit().await?;
+        Ok(())
     }
 
     /// Move an accessory along: idea → in progress → ready.
@@ -1540,5 +1655,91 @@ mod tests {
         db.sync_holidays(&rules, 2027..=2028).await.unwrap();
         assert!(db.find_holiday("Halloween", 2026).await.unwrap().is_some());
         assert!(db.find_holiday("Halloween", 2028).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn updating_a_fabric_keeps_its_pairings() {
+        let db = Repository::in_memory().await.unwrap();
+        let orange = db.create_fabric(&fabric("Orange", false)).await.unwrap();
+        let black = db.create_fabric(&fabric("Black", true)).await.unwrap();
+        db.pair_fabrics(orange, black).await.unwrap();
+
+        let mut edited = fabric("Burnt orange", true);
+        edited.colors = words(&["orange", "brown"]);
+        db.update_fabric(orange, &edited).await.unwrap();
+
+        let loaded = db.get_fabric(orange).await.unwrap();
+        assert_eq!(loaded.name, "Burnt orange");
+        assert_eq!(loaded.colors, words(&["orange", "brown"]));
+        assert!(loaded.in_stock);
+        assert_eq!(loaded.pairings, vec![black]);
+
+        assert!(matches!(
+            db.update_fabric(FabricId(99), &edited).await,
+            Err(DbError::NotFound { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn setting_pairings_replaces_them_in_both_directions() {
+        let db = Repository::in_memory().await.unwrap();
+        let a = db.create_fabric(&fabric("A", true)).await.unwrap();
+        let b = db.create_fabric(&fabric("B", true)).await.unwrap();
+        let c = db.create_fabric(&fabric("C", true)).await.unwrap();
+        db.pair_fabrics(a, b).await.unwrap();
+
+        // The edit form for A now has only C ticked.
+        db.set_fabric_pairings(a, &[c]).await.unwrap();
+        assert_eq!(db.get_fabric(a).await.unwrap().pairings, vec![c]);
+        assert!(
+            db.get_fabric(b).await.unwrap().pairings.is_empty(),
+            "B lost its link back"
+        );
+        assert_eq!(db.get_fabric(c).await.unwrap().pairings, vec![a]);
+
+        db.set_fabric_pairings(a, &[]).await.unwrap();
+        assert!(db.get_fabric(c).await.unwrap().pairings.is_empty());
+        assert!(matches!(
+            db.set_fabric_pairings(FabricId(99), &[a]).await,
+            Err(DbError::NotFound { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn updating_an_accessory_replaces_fabrics_and_keeps_its_partner() {
+        let db = Repository::in_memory().await.unwrap();
+        let velvet = db.create_fabric(&fabric("Velvet", true)).await.unwrap();
+        let satin = db.create_fabric(&fabric("Satin", true)).await.unwrap();
+        let pumpkin = db
+            .create_accessory(&bow("Pumpkin", &[(velvet, FabricRole::Main)]))
+            .await
+            .unwrap();
+        let bat = db.create_accessory(&bow("Bat", &[])).await.unwrap();
+        db.pair_accessories(pumpkin, bat).await.unwrap();
+
+        let mut edited = bow(
+            "Pumpkin deluxe",
+            &[(satin, FabricRole::Main), (velvet, FabricRole::Accent)],
+        );
+        edited.source = Source::Bought {
+            brand: Some("Etsy".into()),
+        };
+        edited.make_days = Some(6);
+        db.update_accessory(pumpkin, &edited).await.unwrap();
+
+        let loaded = db.get_accessory(pumpkin).await.unwrap();
+        assert_eq!(loaded.name, "Pumpkin deluxe");
+        assert_eq!(loaded.fabrics, edited.fabrics);
+        assert_eq!(loaded.source, edited.source);
+        assert_eq!(loaded.make_days, Some(6));
+        assert_eq!(loaded.pair_id, Some(bat));
+
+        // A bad fabric id rolls the whole edit back.
+        let broken = bow("Broken", &[(FabricId(99), FabricRole::Main)]);
+        assert!(db.update_accessory(pumpkin, &broken).await.is_err());
+        assert_eq!(
+            db.get_accessory(pumpkin).await.unwrap().name,
+            "Pumpkin deluxe"
+        );
     }
 }

@@ -105,3 +105,38 @@ a.entry:hover { filter: brightness(0.95); text-decoration: underline; }
 .notice.bad { color: var(--mc-overdue); font-weight: 600; }
 
 table.timeline tr.done td { opacity: 0.6; }
+
+/* Lists and forms (M4b). */
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.table-scroll { overflow-x: auto; }
+.muted { color: var(--pico-muted-color); }
+.nowrap { white-space: nowrap; }
+.chip {
+  display: inline-block;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  background: var(--mc-muted-bg);
+}
+form.inline { display: inline; margin: 0; }
+button.small, [role="button"].small {
+  padding: 0.15rem 0.6rem;
+  font-size: 0.8rem;
+  margin: 0 0 0 0.3rem;
+  width: auto;
+}
+.filters { display: flex; gap: 0.75rem; align-items: center; }
+.filters select, .filters button { margin-bottom: 0; width: auto; }
+.inline-check { display: inline-flex; align-items: center; gap: 0.35rem; margin-right: 1.25rem; }
+.form-actions { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 2rem; }
+.form-actions > * { margin: 0; }
+.form-actions button, .form-actions [role="button"] { width: auto; }
+.form-errors { border-left: 4px solid var(--mc-overdue); }
+.form-errors ul { margin: 0; }
+.form-errors li { color: var(--mc-overdue); }
+button.danger { --pico-color: var(--mc-overdue); border-color: var(--mc-overdue); color: var(--mc-overdue); width: auto; }
