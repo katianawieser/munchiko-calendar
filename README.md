@@ -9,6 +9,26 @@ makes sure the content is *ready on time*. Given a target post date, it works
 backward to tell you when to buy fabric, make each bow, build the backdrop and
 take the photos.
 
+## Screenshots
+
+**Calendar:** holidays, Mochi's birthday, and every prep task for the
+Halloween post, worked backward from Oct 31.
+
+![Month calendar with holidays and prep tasks](docs/screenshots/calendar.png)
+
+**A post's prep timeline:** who wears what, and when each task has to happen.
+
+![Halloween post with its prep timeline](docs/screenshots/post-timeline.png)
+
+**Suggestions:** accessories that fit the event, with the reasons why.
+
+![Ideas for Halloween](docs/screenshots/ideas.png)
+
+**Guided deletes:** instead of a dead-end error, the chain of what's in the
+way and where to start.
+
+![Can't delete this fabric yet, with the chain of what uses it](docs/screenshots/delete-chain.png)
+
 ## How the planning works
 
 ```
