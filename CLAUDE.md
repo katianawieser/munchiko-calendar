@@ -75,9 +75,14 @@ See README.md for the planning rules, data model and roadmap.
   (3) Bug fix: example data is seeded only when `Repository::has_user_data()` is false
   (it used to re-seed whenever there were no posts). Katiana now has real data in
   `munchiko.db` — test schema changes on a `.backup` copy, never the real file.
-- **Next: M5b — show suggestions** on the event page ("Ideas for Halloween") and above
-  the post form's checkboxes (not pre-ticked); fabric ideas + "start by" when no
-  accessory fits. Possible polish: drop "(bow)" from planner task titles.
+- **M5b done (M5 complete; original roadmap done):** `web/ideas.rs` (pure, tested)
+  picks top 5 accessory ideas with readable reasons (keywords, colors, then bonuses);
+  only if none fit, top 3 fabrics with "start by" and a too-late flag. Shown on the
+  event page and above the post form's checkboxes (never pre-ticked; reflects the
+  event the form was opened/submitted with, since there's no JS).
+- **Possible next steps (not started; ask first):** drop "(bow)" from planner task
+  titles; plural matching (leaf/leaves); "upcoming events with no post yet" nudge on
+  the calendar; deploying/screenshots for the portfolio.
 
 ## Original notes (summary of my handwritten outline)
 Planner looks ahead for upcoming events/holidays/notable days; knows bows made, inventory

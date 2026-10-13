@@ -773,3 +773,79 @@ async fn editing_and_deleting_a_post() {
     assert_eq!(reply.location.as_deref(), Some("/posts"));
     assert!(db.get_post_plan(post_id).await.is_err());
 }
+
+// ---------------------------------------------------------------------------
+// Suggestions (M5b)
+// ---------------------------------------------------------------------------
+
+/// The part of the page inside the ideas box.
+fn ideas_box(html: &str) -> &str {
+    let start = html.find("Ideas for").expect("page has an ideas box");
+    let rest = &html[start..];
+    &rest[..rest.find("</article>").unwrap()]
+}
+
+#[tokio::test]
+async fn event_page_suggests_accessories_with_reasons() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let (_, html) = get(&app, &format!("/events/{}", halloween(&db).await.0)).await;
+    let ideas = ideas_box(&html);
+
+    // Best first: pumpkin bow (11 points), bat bow (9), ghost scarf (3).
+    let pumpkin = ideas.find("Pumpkin bow").unwrap();
+    let bat = ideas.find("Bat bow</a>").unwrap();
+    let ghost = ideas.find("Ghost scarf").unwrap();
+    assert!(pumpkin < bat && bat < ghost, "ranked by score");
+    assert!(
+        ideas.contains(
+            "halloween, pumpkin, black (color), orange (color) · matching set with Bat bow"
+        )
+    );
+    assert!(ideas.contains("href=\"/accessories/1\""));
+}
+
+#[tokio::test]
+async fn post_form_shows_ideas_without_ticking_anything() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let event = halloween(&db).await.0;
+    let (_, html) = get(&app, &format!("/posts/new?event={event}")).await;
+    assert!(ideas_box(&html).contains("Pumpkin bow"));
+    assert!(
+        !html.contains("checked"),
+        "suggestions are only suggestions"
+    );
+
+    // A plain new post with no event chosen has no ideas box yet.
+    let (_, html) = get(&app, "/posts/new").await;
+    assert!(!html.contains("Ideas for"));
+}
+
+#[tokio::test]
+async fn editing_a_post_shows_ideas_for_its_event() {
+    let (app, _, post_id) = setup(d(2026, 10, 5)).await;
+    let (_, html) = get(&app, &format!("/posts/{}/edit", post_id.0)).await;
+    assert!(html.contains("Ideas for Halloween"));
+}
+
+#[tokio::test]
+async fn when_nothing_fits_fabrics_are_suggested_with_a_start_date() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    db.create_fabric(&crate::db::NewFabric {
+        name: "Leaf print cotton".into(),
+        description: String::new(),
+        colors: vec!["green".into()],
+        keywords: vec!["leaf".into()],
+        in_stock: true,
+    })
+    .await
+    .unwrap();
+    let earth_day = db.find_holiday("Earth Day", 2027).await.unwrap().unwrap();
+
+    let (_, html) = get(&app, &format!("/events/{}", earth_day.id.0)).await;
+    let ideas = ideas_box(&html);
+    assert!(ideas.contains("Nothing you own fits yet"));
+    assert!(ideas.contains("Leaf print cotton"));
+    assert!(ideas.contains("leaf, green (color)"));
+    // Post Apr 22 → shoot Apr 19 → ready Apr 18 → a 4-day bow starts Apr 15.
+    assert!(ideas.contains("Start by <strong>Thu Apr 15</strong>"));
+}

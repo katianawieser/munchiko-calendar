@@ -11,9 +11,12 @@ use axum::response::{Html, IntoResponse, Redirect, Response};
 use chrono::NaiveDate;
 
 use super::forms::{Choice, FormData, KINDS, NotADate, PETS, STATUSES, label_of};
+use super::ideas::{self, Ideas};
 use super::{AppError, AppState, LoadedPost, load_posts, render};
 use crate::db::NewPostPlan;
-use crate::models::{Accessory, AccessoryId, Event, EventId, Look, Pet, PostPlan, PostPlanId};
+use crate::models::{
+    Accessory, AccessoryId, Event, EventId, Fabric, Look, Pet, PostPlan, PostPlanId,
+};
 use crate::planner::{TaskStatus, Timeline};
 
 /// How a post is doing, as words plus a CSS class for the color.
@@ -252,6 +255,8 @@ struct PostFormPage {
     pets: Vec<PetLooks>,
     backdrop: String,
     notes: String,
+    /// Suggestions for the chosen event, shown above the checkboxes.
+    ideas: Option<Ideas>,
     errors: Vec<String>,
 }
 
@@ -324,6 +329,7 @@ impl PostFormPage {
             pets: pet_looks(accessories, editing.map_or(&[], |p| &p.looks)),
             backdrop: editing.map(|p| p.backdrop.clone()).unwrap_or_default(),
             notes: editing.map(|p| p.notes.clone()).unwrap_or_default(),
+            ideas: None,
             errors: Vec::new(),
         }
     }
@@ -400,6 +406,42 @@ fn read_form(
     }
 }
 
+/// Ideas for the event the form is showing, if one is chosen. Without
+/// JavaScript the box can't follow the dropdown live; it reflects the event
+/// the page was opened (or last submitted) with.
+fn form_ideas(
+    state: &AppState,
+    event: Option<&Event>,
+    post_date: Option<NaiveDate>,
+    accessories: &[Accessory],
+    fabrics: &[Fabric],
+) -> Option<Ideas> {
+    event.map(|e| {
+        ideas::for_event(
+            e,
+            post_date.unwrap_or(e.start),
+            state.today(),
+            accessories,
+            fabrics,
+            &state.lead_times,
+        )
+    })
+}
+
+/// The event and date a submitted form asked for, even if the form had
+/// mistakes, so the ideas box can still be shown.
+fn submitted_event<'a>(
+    form: &FormData,
+    events: &'a [Event],
+) -> (Option<&'a Event>, Option<NaiveDate>) {
+    let event = form
+        .optional_id("event")
+        .ok()
+        .flatten()
+        .and_then(|id| events.iter().find(|e| e.id.0 == id));
+    (event, form.optional_date("post_date").ok().flatten())
+}
+
 fn form_response(status: StatusCode, page: PostFormPage) -> Result<Response, AppError> {
     Ok((status, render(page)?).into_response())
 }
@@ -415,7 +457,9 @@ pub async fn new_form(
         .get("event")
         .and_then(|v| v.parse::<i64>().ok())
         .and_then(|id| events.iter().find(|e| e.id.0 == id));
-    let page = PostFormPage::new(None, preselected, &events, &accessories, state.today());
+    let fabrics = state.db.list_fabrics().await?;
+    let mut page = PostFormPage::new(None, preselected, &events, &accessories, state.today());
+    page.ideas = form_ideas(&state, preselected, None, &accessories, &fabrics);
     form_response(StatusCode::OK, page)
 }
 
@@ -433,8 +477,11 @@ pub async fn create(
             Ok(Redirect::to(&format!("/posts/{}", id.0)).into_response())
         }
         Err(errors) => {
-            let page = PostFormPage::new(None, None, &events, &accessories, state.today())
+            let fabrics = state.db.list_fabrics().await?;
+            let (event, date) = submitted_event(&form, &events);
+            let mut page = PostFormPage::new(None, None, &events, &accessories, state.today())
                 .refill(&form, errors);
+            page.ideas = form_ideas(&state, event, date, &accessories, &fabrics);
             form_response(StatusCode::UNPROCESSABLE_ENTITY, page)
         }
     }
@@ -447,7 +494,10 @@ pub async fn edit_form(
     let plan = state.db.get_post_plan(PostPlanId(id)).await?;
     let events = state.db.list_events().await?;
     let accessories = state.db.list_accessories().await?;
-    let page = PostFormPage::new(Some(&plan), None, &events, &accessories, state.today());
+    let fabrics = state.db.list_fabrics().await?;
+    let event = events.iter().find(|e| e.id == plan.event_id);
+    let mut page = PostFormPage::new(Some(&plan), None, &events, &accessories, state.today());
+    page.ideas = form_ideas(&state, event, Some(plan.post_date), &accessories, &fabrics);
     form_response(StatusCode::OK, page)
 }
 
@@ -466,8 +516,12 @@ pub async fn update(
             Ok(Redirect::to(&format!("/posts/{id}")).into_response())
         }
         Err(errors) => {
-            let page = PostFormPage::new(Some(&plan), None, &events, &accessories, state.today())
-                .refill(&form, errors);
+            let fabrics = state.db.list_fabrics().await?;
+            let (event, date) = submitted_event(&form, &events);
+            let mut page =
+                PostFormPage::new(Some(&plan), None, &events, &accessories, state.today())
+                    .refill(&form, errors);
+            page.ideas = form_ideas(&state, event, date, &accessories, &fabrics);
             form_response(StatusCode::UNPROCESSABLE_ENTITY, page)
         }
     }

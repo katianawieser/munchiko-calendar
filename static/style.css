@@ -153,3 +153,9 @@ a.plain:hover { text-decoration: underline; }
 .blocker-chain li.depth-1 { margin-left: 1.5rem; }
 .blocker-chain li.depth-1::before { content: "↳ "; color: var(--pico-muted-color); }
 .start-here a { margin: 0.2rem 0.4rem 0.2rem 0; }
+
+/* "Ideas for ..." suggestions box (M5b). */
+.ideas { border-left: 4px solid var(--mc-seasonal); }
+.ideas ul { margin-bottom: 0; }
+.ideas li { margin-bottom: 0.4rem; }
+.ideas .late { color: var(--mc-overdue); }

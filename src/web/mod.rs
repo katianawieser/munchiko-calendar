@@ -20,6 +20,7 @@ mod calendar;
 mod events;
 mod fabrics;
 pub mod forms;
+pub mod ideas;
 pub mod month;
 mod posts;
 

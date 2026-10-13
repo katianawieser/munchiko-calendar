@@ -42,10 +42,27 @@ Example — Halloween (post Oct 31, default lead times):
 | Page | What you can do |
 |---|---|
 | **Calendar** | Month view of holidays, outings and every post's prep tasks; "to do today" box; overdue work outlined in red |
-| **Posts** | Plan a post for an event, choose who wears what, see its prep timeline and slack |
-| **Events** | Upcoming / past holidays and outings; "Plan a post" from any event; add and edit your own outings (holidays are edited in `data/holidays.toml`) |
+| **Posts** | Plan a post for an event (with the same ideas shown above the choices), choose who wears what, see its prep timeline and slack |
+| **Events** | Upcoming / past holidays and outings; "Plan a post" from any event; **ideas** for what to wear (or which fabric to make something from, and the date to start by); add and edit your own outings (holidays are edited in `data/holidays.toml`) |
 | **Accessories** | Bows, scarves, costumes: filter, one-click status, fabrics by role, matching sets |
 | **Fabrics** | Stash and shopping list, pairings, what each fabric is used by |
+
+## How suggestions work
+
+For an event, every accessory is scored against the event's name and
+keywords (filler like "day" or "national" ignored):
+
+| Match | Points |
+|---|---|
+| A word in the accessory's name or its fabrics' keywords | 3 |
+| One of its colors (or its fabrics' colors, if it uses them) | 2 |
+| Bonus, once something matched: half of a Mochi & Momo set | +1 |
+| Bonus, once something matched: ready to wear | +1 |
+
+The top five are shown with their reasons ("pumpkin, orange (color) ·
+matching set with Bat bow"). If nothing you own fits, fabrics are scored
+the same way and shown with the last day to start making a new bow, worked
+out by the planner itself.
 
 ## Data model
 
@@ -119,7 +136,7 @@ cargo run    # start the web app at http://127.0.0.1:3000
   - [x] **M4a** — server, month calendar, "to do today" box, post list and timeline pages
   - [x] **M4b** — fabric and accessory pages and forms
   - [x] **M4c** — event and post plan forms, edits and deletes
-- [ ] **M5** — Suggestions: "for Earth Day, consider the leaf-print bow" based on keywords and colors
+- [x] **M5** — Suggestions: "for Earth Day, consider the leaf-print bow" based on keywords and colors
 
 ## Project layout
 
@@ -139,6 +156,8 @@ src/
     mod.rs      router, shared state, error pages
     month.rs    month-grid layout and "to do today" (pure logic + tests)
     forms.rs    reading form submissions + choices for selects
+    ideas.rs    picks which suggestions to show ("Ideas for Halloween") + tests
+    blockers.rs explains what's blocking a delete + tests
     calendar.rs, posts.rs, events.rs, fabrics.rs, accessories.rs   page handlers
     tests.rs    request-level tests against an in-memory app
   main.rs     starts the server

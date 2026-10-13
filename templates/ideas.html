@@ -1,0 +1,30 @@
+{# The "Ideas for Halloween" box. Expects `ideas: Option<Ideas>`. #}
+{% if let Some(ideas) = ideas %}
+<article class="ideas">
+  <header><strong>💡 Ideas for {{ ideas.event_name }}</strong></header>
+  {% if !ideas.accessories.is_empty() %}
+  <ul>
+    {% for idea in ideas.accessories %}
+    <li><a href="{{ idea.href }}">{{ idea.name }}</a><br><small class="muted">{{ idea.reasons }}</small></li>
+    {% endfor %}
+  </ul>
+  {% else if !ideas.fabrics.is_empty() %}
+  <p>Nothing you own fits yet. These fabrics would make a good new bow:</p>
+  <ul>
+    {% for idea in ideas.fabrics %}
+    <li>
+      <a href="{{ idea.href }}">{{ idea.name }}</a>
+      <small class="muted">{{ idea.reasons }}</small><br>
+      {% if idea.too_late %}
+      <small class="late">Too late for a new bow: you'd have needed to start by {{ idea.start_by }}.</small>
+      {% else %}
+      <small>Start by <strong>{{ idea.start_by }}</strong> to make one in time.</small>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">Nothing matches this event's name or keywords yet. Colors and keywords on your fabrics are what the suggestions look at.</p>
+  {% endif %}
+</article>
+{% endif %}

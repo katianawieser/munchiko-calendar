@@ -16,6 +16,7 @@ use super::blockers::{self, Blockers};
 use super::forms::{
     Choice, EVENT_KINDS, FormData, NotADate, choices, join_list, label_of, parse_choice, split_list,
 };
+use super::ideas::{self, Ideas};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewEvent};
 use crate::models::{Event, EventId, EventKind, PostPlan};
@@ -148,6 +149,7 @@ struct EventPage {
     edit_href: String,
     plan_href: String,
     posts: Vec<PostLink>,
+    ideas: Option<Ideas>,
 }
 
 pub async fn show(
@@ -157,6 +159,17 @@ pub async fn show(
     let event = state.db.get_event(EventId(id)).await?;
     let plans = state.db.list_post_plans().await?;
     let planned: Vec<&PostPlan> = plans.iter().filter(|p| p.event_id == event.id).collect();
+    let accessories = state.db.list_accessories().await?;
+    let fabrics = state.db.list_fabrics().await?;
+    // Ideas for a post on the day itself, the usual case.
+    let ideas = ideas::for_event(
+        &event,
+        event.start,
+        state.today(),
+        &accessories,
+        &fabrics,
+        &state.lead_times,
+    );
     Ok(render(EventPage {
         name: event.name.clone(),
         when: describe_when(&event),
@@ -168,6 +181,7 @@ pub async fn show(
         edit_href: format!("/events/{}/edit", event.id.0),
         plan_href: format!("/posts/new?event={}", event.id.0),
         posts: post_links(&planned),
+        ideas: Some(ideas),
     })?
     .into_response())
 }

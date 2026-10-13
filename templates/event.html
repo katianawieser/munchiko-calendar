@@ -9,6 +9,8 @@
 {% if !description.is_empty() %}<p>{{ description }}</p>{% endif %}
 {% if !keywords.is_empty() %}<p class="muted">Keywords: {{ keywords }}</p>{% endif %}
 
+{% include "ideas.html" %}
+
 <article>
   <header><strong>Posts</strong></header>
   {% if posts.is_empty() %}
