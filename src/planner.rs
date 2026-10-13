@@ -364,6 +364,7 @@ mod tests {
             status,
             pair_id: None,
             make_days: None,
+            colors_from_fabrics: false,
         }
     }
 

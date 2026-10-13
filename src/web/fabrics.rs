@@ -11,8 +11,9 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 
+use super::blockers::{self, Blockers};
 use super::forms::{Choice, FormData, join_list, split_list};
-use super::{AppError, AppState, render};
+use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewFabric};
 use crate::models::{Accessory, Fabric, FabricId};
 
@@ -133,14 +134,15 @@ struct FabricFormPage {
     keywords: String,
     in_stock: bool,
     pair_choices: Vec<Choice>,
-    used_by: String,
+    /// What's in the way of deleting it, shown instead of the delete button.
+    blocked: Blockers,
     errors: Vec<String>,
 }
 
 impl FabricFormPage {
     /// The form for `editing` (or a new fabric), with every other fabric
     /// offered as a pairing.
-    fn new(editing: Option<&Fabric>, all: &[Fabric], accessories: &[Accessory]) -> Self {
+    fn new(editing: Option<&Fabric>, all: &[Fabric]) -> Self {
         let pair_choices = all
             .iter()
             .filter(|f| Some(f.id) != editing.map(|e| e.id))
@@ -160,7 +162,7 @@ impl FabricFormPage {
                 keywords: join_list(&f.keywords),
                 in_stock: f.in_stock,
                 pair_choices,
-                used_by: used_by(f.id, accessories).join(", "),
+                blocked: Blockers::default(),
                 errors: Vec::new(),
             },
             None => Self {
@@ -173,7 +175,7 @@ impl FabricFormPage {
                 keywords: String::new(),
                 in_stock: true,
                 pair_choices,
-                used_by: String::new(),
+                blocked: Blockers::default(),
                 errors: Vec::new(),
             },
         }
@@ -230,6 +232,14 @@ fn read_form(form: &FormData) -> Result<FabricInput, Vec<String>> {
     })
 }
 
+/// The edit form for `fabric`, including what would block deleting it.
+async fn edit_page(state: &AppState, fabric: &Fabric) -> Result<FabricFormPage, AppError> {
+    let fabrics = state.db.list_fabrics().await?;
+    let mut page = FabricFormPage::new(Some(fabric), &fabrics);
+    page.blocked = blockers::for_fabric(fabric.id, &load_usage(state).await?);
+    Ok(page)
+}
+
 /// Show the form again with a status code saying what went wrong.
 fn form_response(status: StatusCode, page: FabricFormPage) -> Result<Response, AppError> {
     Ok((status, render(page)?).into_response())
@@ -237,7 +247,7 @@ fn form_response(status: StatusCode, page: FabricFormPage) -> Result<Response, A
 
 pub async fn new_form(State(state): State<AppState>) -> Result<Response, AppError> {
     let fabrics = state.db.list_fabrics().await?;
-    form_response(StatusCode::OK, FabricFormPage::new(None, &fabrics, &[]))
+    form_response(StatusCode::OK, FabricFormPage::new(None, &fabrics))
 }
 
 pub async fn create(
@@ -249,7 +259,7 @@ pub async fn create(
         Ok(input) => input,
         Err(errors) => {
             let fabrics = state.db.list_fabrics().await?;
-            let page = FabricFormPage::new(None, &fabrics, &[]).refill(&form, errors);
+            let page = FabricFormPage::new(None, &fabrics).refill(&form, errors);
             // 422: the request arrived fine, but its content needs fixing.
             return form_response(StatusCode::UNPROCESSABLE_ENTITY, page);
         }
@@ -264,12 +274,7 @@ pub async fn edit_form(
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
     let fabric = state.db.get_fabric(FabricId(id)).await?;
-    let fabrics = state.db.list_fabrics().await?;
-    let accessories = state.db.list_accessories().await?;
-    form_response(
-        StatusCode::OK,
-        FabricFormPage::new(Some(&fabric), &fabrics, &accessories),
-    )
+    form_response(StatusCode::OK, edit_page(&state, &fabric).await?)
 }
 
 pub async fn update(
@@ -282,10 +287,7 @@ pub async fn update(
     let input = match read_form(&form) {
         Ok(input) => input,
         Err(errors) => {
-            let fabrics = state.db.list_fabrics().await?;
-            let accessories = state.db.list_accessories().await?;
-            let page =
-                FabricFormPage::new(Some(&fabric), &fabrics, &accessories).refill(&form, errors);
+            let page = edit_page(&state, &fabric).await?.refill(&form, errors);
             return form_response(StatusCode::UNPROCESSABLE_ENTITY, page);
         }
     };
@@ -304,14 +306,12 @@ pub async fn delete(
     match state.db.delete_fabric(FabricId(id)).await {
         Ok(()) => Ok(Redirect::to("/fabrics").into_response()),
         Err(DbError::InUse { .. }) => {
-            // Explain which accessories are in the way, on the edit page.
+            // Show the edit page with the chain of what's in the way.
             let fabric = state.db.get_fabric(FabricId(id)).await?;
-            let fabrics = state.db.list_fabrics().await?;
-            let accessories = state.db.list_accessories().await?;
-            let mut page = FabricFormPage::new(Some(&fabric), &fabrics, &accessories);
+            let mut page = edit_page(&state, &fabric).await?;
             page.errors = vec![format!(
-                "Can't delete {}: it's used by {}. Change or delete those first.",
-                fabric.name, page.used_by
+                "{} is still in use, so it can't be deleted yet.",
+                fabric.name
             )];
             // 409 Conflict: the request clashes with the current data.
             form_response(StatusCode::CONFLICT, page)

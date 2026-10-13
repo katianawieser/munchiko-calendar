@@ -9,8 +9,9 @@
 //! - The event is turned into a set of words: its name and keywords, in
 //!   lowercase, without filler like "day", "the" or "national".
 //! - An accessory has no keywords of its own, so it borrows: the words in its
-//!   name, plus its fabrics' keywords. Its colors are its own colors plus its
-//!   fabrics' colors.
+//!   name, plus its fabrics' keywords. Its colors are
+//!   [`Accessory::effective_colors`]: its fabrics' colors only if it's set to
+//!   use them, plus any colors of its own.
 //! - Each event word scores once: [`KEYWORD_POINTS`] if it matches a keyword,
 //!   otherwise [`COLOR_POINTS`] if it matches a color.
 //! - Small bonuses, only for accessories that already matched something:
@@ -172,7 +173,7 @@ pub fn suggest_accessories(
                 .collect();
             let keywords =
                 words(std::iter::once(&acc.name).chain(used.iter().flat_map(|f| &f.keywords)));
-            let colors = words(acc.colors.iter().chain(used.iter().flat_map(|f| &f.colors)));
+            let colors = words(&acc.effective_colors(fabrics));
 
             let (mut score, mut reasons) = match_words(&wanted, &keywords, &colors);
             if score == 0 {
@@ -240,7 +241,8 @@ fn start_by_for_new_bow(fabric: &Fabric, post_date: NaiveDate, lead: &LeadTimes)
         kind: AccessoryKind::Bow,
         name: format!("new {} bow", fabric.name),
         description: String::new(),
-        colors: fabric.colors.clone(),
+        colors: vec![],
+        colors_from_fabrics: true,
         fabrics: vec![FabricUse {
             fabric_id: fabric.id,
             role: FabricRole::Main,
@@ -316,6 +318,7 @@ mod tests {
             name: name.into(),
             description: String::new(),
             colors: list(colors),
+            colors_from_fabrics: false,
             fabrics: fabric_ids
                 .iter()
                 .map(|&f| FabricUse {
@@ -448,6 +451,20 @@ mod tests {
                 Reason::Keyword("party".into())
             ]
         );
+    }
+
+    #[test]
+    fn fabric_colors_count_only_when_the_accessory_uses_them() {
+        let fabrics = vec![fabric(1, "Kelly green felt", &["green"], &[], true)];
+        let mut typed = accessory(1, "Plain bow", &["white"], &[1]);
+        let st_patricks = event("St. Patrick's Day", &["green"], d(2027, 3, 17));
+        assert!(
+            suggest_accessories(&st_patricks, std::slice::from_ref(&typed), &fabrics).is_empty()
+        );
+
+        typed.colors_from_fabrics = true;
+        let found = suggest_accessories(&st_patricks, &[typed], &fabrics);
+        assert_eq!(found[0].reasons, vec![Reason::Color("green".into())]);
     }
 
     #[test]

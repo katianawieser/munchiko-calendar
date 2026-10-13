@@ -124,7 +124,11 @@ pub struct Accessory {
     pub kind: AccessoryKind,
     pub name: String,
     pub description: String,
+    /// With `colors_from_fabrics`, only extra colors on top of the fabrics'.
+    /// Use [`Accessory::effective_colors`] rather than reading this directly.
     pub colors: Vec<String>,
+    /// Take colors from the fabrics instead of typing them in.
+    pub colors_from_fabrics: bool,
     /// Empty is allowed (bought scarves often have no tracked fabric).
     pub fabrics: Vec<FabricUse>,
     pub source: Source,
@@ -139,6 +143,25 @@ impl Accessory {
     pub fn effective_make_days(&self) -> u32 {
         self.make_days
             .unwrap_or_else(|| self.kind.default_make_days())
+    }
+
+    /// The accessory's colors: its fabrics' colors (main fabric first) when
+    /// `colors_from_fabrics` is on, then its own extra colors, without repeats.
+    /// `fabrics` may be the whole stash; only the ones this accessory uses count.
+    pub fn effective_colors(&self, fabrics: &[Fabric]) -> Vec<String> {
+        let from_fabrics = self
+            .fabrics
+            .iter()
+            .filter(|_| self.colors_from_fabrics)
+            .filter_map(|used| fabrics.iter().find(|f| f.id == used.fabric_id))
+            .flat_map(|f| &f.colors);
+        let mut colors: Vec<String> = Vec::new();
+        for color in from_fabrics.chain(&self.colors) {
+            if !colors.contains(color) {
+                colors.push(color.clone());
+            }
+        }
+        colors
     }
 }
 
@@ -196,4 +219,66 @@ pub struct PostPlan {
     /// Free-text idea for the seasonal backdrop.
     pub backdrop: String,
     pub notes: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fabric(id: i64, colors: &[&str]) -> Fabric {
+        Fabric {
+            id: FabricId(id),
+            name: format!("Fabric {id}"),
+            description: String::new(),
+            colors: colors.iter().map(|c| c.to_string()).collect(),
+            keywords: vec![],
+            pairings: vec![],
+            in_stock: true,
+        }
+    }
+
+    fn bow(colors: &[&str], from_fabrics: bool) -> Accessory {
+        Accessory {
+            id: AccessoryId(1),
+            kind: AccessoryKind::Bow,
+            name: "Pumpkin bow".into(),
+            description: String::new(),
+            colors: colors.iter().map(|c| c.to_string()).collect(),
+            colors_from_fabrics: from_fabrics,
+            fabrics: vec![
+                FabricUse {
+                    fabric_id: FabricId(1),
+                    role: FabricRole::Main,
+                },
+                FabricUse {
+                    fabric_id: FabricId(2),
+                    role: FabricRole::Middle,
+                },
+            ],
+            source: Source::Handmade,
+            status: AccessoryStatus::Idea,
+            pair_id: None,
+            make_days: None,
+        }
+    }
+
+    #[test]
+    fn colors_can_come_from_fabrics_plus_extras() {
+        let stash = [
+            fabric(1, &["orange"]),
+            fabric(2, &["black", "orange"]),
+            fabric(3, &["teal"]),
+        ];
+        // Fabric colors in order (main first), extras after, no repeats;
+        // fabric 3 isn't used by this bow so teal doesn't appear.
+        assert_eq!(
+            bow(&["white", "black"], true).effective_colors(&stash),
+            vec!["orange", "black", "white"]
+        );
+        // Box unticked: exactly what was typed.
+        assert_eq!(
+            bow(&["white"], false).effective_colors(&stash),
+            vec!["white"]
+        );
+    }
 }

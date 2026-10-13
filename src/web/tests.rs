@@ -252,7 +252,9 @@ async fn editing_a_fabric_saves_details_and_pairings() {
     let (status, html) = get(&app, "/fabrics/1").await;
     assert_eq!(status, StatusCode::OK);
     assert!(html.contains("Edit Orange velvet"));
-    assert!(html.contains("Used by: Pumpkin bow"));
+    // In use, so the delete button is replaced by what's in the way.
+    assert!(html.contains("used by <a href=\"/accessories/1\">Pumpkin bow</a>"));
+    assert!(!html.contains("Delete fabric"));
 
     // Untick the pairing with black satin and rename.
     let reply = post(
@@ -289,11 +291,26 @@ async fn deleting_a_fabric_in_use_explains_why_not() {
     let (app, db, _) = setup(d(2026, 10, 5)).await;
     let reply = post(&app, "/fabrics/2/delete", "").await;
     assert_eq!(reply.status, StatusCode::CONFLICT);
+    assert!(reply.html.contains("Black satin is still in use"));
+    // The whole chain: fabric ← both bows ← the Halloween post, which is
+    // the place to start (listed once even though it blocks both bows).
     assert!(
         reply
             .html
-            .contains("Can&#39;t delete Black satin: it&#39;s used by Bat bow, Pumpkin bow")
+            .contains("used by <a href=\"/accessories/2\">Bat bow</a>")
     );
+    assert!(
+        reply
+            .html
+            .contains("used by <a href=\"/accessories/1\">Pumpkin bow</a>")
+    );
+    assert!(
+        reply
+            .html
+            .contains("which is in <a href=\"/posts/1\">Halloween post (Oct 31)</a>")
+    );
+    let start_here = reply.html.split("Start here:").nth(1).unwrap();
+    assert_eq!(start_here.matches("href=\"/posts/1\"").count(), 1);
 
     let spare = db
         .create_fabric(&crate::db::NewFabric {
@@ -434,7 +451,66 @@ async fn accessory_in_a_planned_post_cannot_be_deleted() {
     let (app, _, _) = setup(d(2026, 10, 5)).await;
     let reply = post(&app, "/accessories/2/delete", "").await;
     assert_eq!(reply.status, StatusCode::CONFLICT);
-    assert!(reply.html.contains("a planned post uses it"));
+    assert!(reply.html.contains("Bat bow is still in use"));
+    assert!(
+        reply
+            .html
+            .contains("in <a href=\"/posts/1\">Halloween post (Oct 31)</a>")
+    );
+}
+
+#[tokio::test]
+async fn unused_things_still_get_a_delete_button() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let trip = db
+        .create_event(&NewEvent {
+            name: "Vet visit".into(),
+            description: String::new(),
+            kind: EventKind::Outing,
+            start: d(2026, 11, 2),
+            end: None,
+            keywords: vec![],
+        })
+        .await
+        .unwrap();
+    let (_, html) = get(&app, &format!("/events/{}/edit", trip.0)).await;
+    assert!(html.contains("Delete event"));
+    assert!(!html.contains("Can&#39;t delete"));
+}
+
+#[tokio::test]
+async fn accessory_colors_can_come_from_its_fabrics() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    // New accessories start with the switch on.
+    let (_, html) = get(&app, "/accessories/new").await;
+    assert!(html.contains("name=\"colors_from_fabrics\" role=\"switch\" checked"));
+
+    // Orange velvet main + black satin accent, plus a white trim typed in.
+    let reply = post(
+        &app,
+        "/accessories",
+        "kind=bow&status=idea&name=Candy+corn+bow&colors_from_fabrics=on&colors=White\
+         &main_fabric=1&middle_fabric=&accent_fabric=2&source=handmade&partner=",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let candy = db.get_accessory(AccessoryId(4)).await.unwrap();
+    assert!(candy.colors_from_fabrics);
+    assert_eq!(
+        candy.colors,
+        vec!["white"],
+        "only the extra color is stored"
+    );
+
+    let (_, html) = get(&app, "/accessories").await;
+    let row = html
+        .split("Candy corn bow")
+        .nth(1)
+        .unwrap()
+        .split("</tr>")
+        .next()
+        .unwrap();
+    assert!(row.contains(">orange<") && row.contains(">black<") && row.contains(">white<"));
 }
 
 #[tokio::test]

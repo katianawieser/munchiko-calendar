@@ -49,9 +49,11 @@ async fn run() -> Result<(), Box<dyn Error>> {
         );
     }
 
-    if db.list_post_plans().await?.is_empty() {
+    // Only a brand-new database gets the example. Checking for "no posts"
+    // isn't enough: once you clear the examples out, they'd come back.
+    if !db.has_user_data().await? {
         demo::seed_halloween(&db, this_year).await?;
-        println!("First run: added the Halloween example post");
+        println!("New database: added the Halloween example (delete it any time)");
     }
 
     let address = std::env::var("ADDRESS").unwrap_or_else(|_| DEFAULT_ADDRESS.into());

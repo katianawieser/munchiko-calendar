@@ -145,3 +145,11 @@ button.danger { --pico-color: var(--mc-overdue); border-color: var(--mc-overdue)
 .entry.inline-entry { display: inline-block; font-size: 0.8rem; }
 a.plain { color: inherit; text-decoration: none; }
 a.plain:hover { text-decoration: underline; }
+
+/* "Can't delete yet" box: the chain of what's in the way. */
+.blockers { border-left: 4px solid var(--mc-notable); }
+.blocker-chain { padding-left: 0; }
+.blocker-chain li { list-style: none; }
+.blocker-chain li.depth-1 { margin-left: 1.5rem; }
+.blocker-chain li.depth-1::before { content: "↳ "; color: var(--pico-muted-color); }
+.start-here a { margin: 0.2rem 0.4rem 0.2rem 0; }

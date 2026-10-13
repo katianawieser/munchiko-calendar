@@ -1,0 +1,24 @@
+{# The delete button, or, if something still uses this item, the chain of
+   what's in the way with links. Expects `delete_action`, `blocked` and
+   `thing` ("fabric", "accessory" or "event"). #}
+{% if let Some(delete) = delete_action %}
+  {% if blocked.is_empty() %}
+  <form method="post" action="{{ delete }}" onsubmit="return confirm('Delete this {{ thing }}?')">
+    <button type="submit" class="danger outline">Delete {{ thing }}</button>
+  </form>
+  {% else %}
+  <article class="blockers">
+    <header><strong>Can't delete this {{ thing }} yet</strong></header>
+    <p>It's still in use:</p>
+    <ul class="blocker-chain">
+      {% for line in blocked.lines %}
+      <li class="depth-{{ line.depth }}">{{ line.relation }} <a href="{{ line.link.href }}">{{ line.link.label }}</a></li>
+      {% endfor %}
+    </ul>
+    <p class="start-here"><strong>Start here:</strong>
+      {% for link in blocked.start_here %}<a href="{{ link.href }}" role="button" class="outline small">{{ link.label }}</a>{% endfor %}
+    </p>
+    <small>Delete it, or edit it so it no longer uses this {{ thing }}, then come back.</small>
+  </article>
+  {% endif %}
+{% endif %}

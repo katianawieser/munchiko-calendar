@@ -12,10 +12,11 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 use chrono::NaiveDate;
 
+use super::blockers::{self, Blockers};
 use super::forms::{
     Choice, EVENT_KINDS, FormData, NotADate, choices, join_list, label_of, parse_choice, split_list,
 };
-use super::{AppError, AppState, render};
+use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewEvent};
 use crate::models::{Event, EventId, EventKind, PostPlan};
 
@@ -188,6 +189,7 @@ struct EventFormPage {
     end: String,
     description: String,
     keywords: String,
+    blocked: Blockers,
     errors: Vec<String>,
 }
 
@@ -210,6 +212,7 @@ impl EventFormPage {
                 end: date_value(e.end),
                 description: e.description.clone(),
                 keywords: join_list(&e.keywords),
+                blocked: Blockers::default(),
                 errors: Vec::new(),
             },
             None => Self {
@@ -223,6 +226,7 @@ impl EventFormPage {
                 end: String::new(),
                 description: String::new(),
                 keywords: String::new(),
+                blocked: Blockers::default(),
                 errors: Vec::new(),
             },
         }
@@ -304,6 +308,13 @@ async fn editable_event(state: &AppState, id: i64) -> Result<Event, AppError> {
     Ok(event)
 }
 
+/// The edit form for `event`, including what would block deleting it.
+async fn edit_page(state: &AppState, event: &Event) -> Result<EventFormPage, AppError> {
+    let mut page = EventFormPage::new(Some(event));
+    page.blocked = blockers::for_event(event.id, &load_usage(state).await?);
+    Ok(page)
+}
+
 pub async fn new_form() -> Result<Response, AppError> {
     form_response(StatusCode::OK, EventFormPage::new(None))
 }
@@ -330,7 +341,7 @@ pub async fn edit_form(
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
     let event = editable_event(&state, id).await?;
-    form_response(StatusCode::OK, EventFormPage::new(Some(&event)))
+    form_response(StatusCode::OK, edit_page(&state, &event).await?)
 }
 
 pub async fn update(
@@ -347,7 +358,7 @@ pub async fn update(
         }
         Err(errors) => form_response(
             StatusCode::UNPROCESSABLE_ENTITY,
-            EventFormPage::new(Some(&event)).refill(&form, errors),
+            edit_page(&state, &event).await?.refill(&form, errors),
         ),
     }
 }
@@ -360,9 +371,9 @@ pub async fn delete(
     match state.db.delete_event(event.id).await {
         Ok(()) => Ok(Redirect::to("/events").into_response()),
         Err(DbError::InUse { .. }) => {
-            let mut page = EventFormPage::new(Some(&event));
+            let mut page = edit_page(&state, &event).await?;
             page.errors = vec![format!(
-                "Can't delete {}: a post is planned for it. Delete or move that post first.",
+                "{} is still in use, so it can't be deleted yet.",
                 event.name
             )];
             form_response(StatusCode::CONFLICT, page)

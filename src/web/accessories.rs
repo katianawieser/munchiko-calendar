@@ -10,11 +10,12 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 
+use super::blockers::{self, Blockers};
 use super::forms::{
     Choice, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, join_list, label_of,
     parse_choice, split_list,
 };
-use super::{AppError, AppState, render};
+use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewAccessory};
 use crate::models::{
     Accessory, AccessoryId, AccessoryKind, AccessoryStatus, Fabric, FabricId, FabricUse, Source,
@@ -137,7 +138,7 @@ pub async fn list(
                     .map(|p| p.name.clone())
                     .unwrap_or_default(),
                 source: describe_source(&a.source),
-                colors: a.colors.clone(),
+                colors: a.effective_colors(&fabrics),
             }
         })
         .collect();
@@ -217,11 +218,13 @@ struct AccessoryFormPage {
     name: String,
     description: String,
     colors: String,
+    colors_from_fabrics: bool,
     bought: bool,
     brand: String,
     make_days: String,
     fabric_selects: Vec<RoleSelect>,
     partner_choices: Vec<Choice>,
+    blocked: Blockers,
     errors: Vec<String>,
 }
 
@@ -291,6 +294,8 @@ impl AccessoryFormPage {
             name: editing.map(|a| a.name.clone()).unwrap_or_default(),
             description: editing.map(|a| a.description.clone()).unwrap_or_default(),
             colors: editing.map(|a| join_list(&a.colors)).unwrap_or_default(),
+            // New accessories start with the box ticked: less typing.
+            colors_from_fabrics: editing.is_none_or(|a| a.colors_from_fabrics),
             bought,
             brand,
             make_days: editing
@@ -299,6 +304,7 @@ impl AccessoryFormPage {
                 .unwrap_or_default(),
             fabric_selects,
             partner_choices,
+            blocked: Blockers::default(),
             errors: Vec::new(),
         }
     }
@@ -319,6 +325,7 @@ impl AccessoryFormPage {
         self.name = form.text("name");
         self.description = form.text("description");
         self.colors = form.text("colors");
+        self.colors_from_fabrics = form.checked("colors_from_fabrics");
         self.bought = form.text("source") == "bought";
         self.brand = form.text("brand");
         self.make_days = form.text("make_days");
@@ -398,6 +405,7 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
                 name,
                 description: form.text("description"),
                 colors: split_list(&form.text("colors")),
+                colors_from_fabrics: form.checked("colors_from_fabrics"),
                 fabrics,
                 source,
                 status,
@@ -422,6 +430,15 @@ async fn apply_partner(
         _ => {}
     }
     Ok(())
+}
+
+/// The edit form for `accessory`, including what would block deleting it.
+async fn edit_page(state: &AppState, accessory: &Accessory) -> Result<AccessoryFormPage, AppError> {
+    let usage = load_usage(state).await?;
+    let fabrics = state.db.list_fabrics().await?;
+    let mut page = AccessoryFormPage::new(Some(accessory), &usage.accessories, &fabrics);
+    page.blocked = blockers::for_accessory(accessory.id, &usage);
+    Ok(page)
 }
 
 fn form_response(status: StatusCode, page: AccessoryFormPage) -> Result<Response, AppError> {
@@ -461,12 +478,7 @@ pub async fn edit_form(
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
     let accessory = state.db.get_accessory(AccessoryId(id)).await?;
-    let accessories = state.db.list_accessories().await?;
-    let fabrics = state.db.list_fabrics().await?;
-    form_response(
-        StatusCode::OK,
-        AccessoryFormPage::new(Some(&accessory), &accessories, &fabrics),
-    )
+    form_response(StatusCode::OK, edit_page(&state, &accessory).await?)
 }
 
 pub async fn update(
@@ -479,10 +491,7 @@ pub async fn update(
     let input = match read_form(&form, Some(accessory.id)) {
         Ok(input) => input,
         Err(errors) => {
-            let accessories = state.db.list_accessories().await?;
-            let fabrics = state.db.list_fabrics().await?;
-            let page = AccessoryFormPage::new(Some(&accessory), &accessories, &fabrics)
-                .refill(&form, errors);
+            let page = edit_page(&state, &accessory).await?.refill(&form, errors);
             return form_response(StatusCode::UNPROCESSABLE_ENTITY, page);
         }
     };
@@ -502,11 +511,9 @@ pub async fn delete(
         Ok(()) => Ok(Redirect::to("/accessories").into_response()),
         Err(DbError::InUse { .. }) => {
             let accessory = state.db.get_accessory(AccessoryId(id)).await?;
-            let accessories = state.db.list_accessories().await?;
-            let fabrics = state.db.list_fabrics().await?;
-            let mut page = AccessoryFormPage::new(Some(&accessory), &accessories, &fabrics);
+            let mut page = edit_page(&state, &accessory).await?;
             page.errors = vec![format!(
-                "Can't delete {}: a planned post uses it. Remove it from that post first.",
+                "{} is still in use, so it can't be deleted yet.",
                 accessory.name
             )];
             form_response(StatusCode::CONFLICT, page)

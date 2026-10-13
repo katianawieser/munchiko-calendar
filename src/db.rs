@@ -177,7 +177,9 @@ pub struct NewAccessory {
     pub kind: AccessoryKind,
     pub name: String,
     pub description: String,
+    /// Extra colors when `colors_from_fabrics` is on.
     pub colors: Vec<String>,
+    pub colors_from_fabrics: bool,
     pub fabrics: Vec<FabricUse>,
     pub source: Source,
     pub status: AccessoryStatus,
@@ -224,6 +226,7 @@ struct AccessoryRow {
     name: String,
     description: String,
     colors: Json<Vec<String>>,
+    colors_from_fabrics: bool,
     source: String,
     brand: Option<String>,
     status: String,
@@ -293,6 +296,7 @@ impl AccessoryRow {
             name: self.name,
             description: self.description,
             colors: self.colors.0,
+            colors_from_fabrics: self.colors_from_fabrics,
             fabrics,
             source,
             status: AccessoryStatus::from_sql(&self.status)?,
@@ -426,6 +430,21 @@ impl Repository {
     async fn migrate(pool: SqlitePool) -> Result<Self> {
         MIGRATOR.run(&pool).await.map_err(sqlx::Error::from)?;
         Ok(Self { pool })
+    }
+
+    /// True once anything has been entered by hand: a fabric, accessory,
+    /// post or your own event. Holidays don't count, since the app adds those
+    /// itself. Used to add the example data only to a brand-new database.
+    pub async fn has_user_data(&self) -> Result<bool> {
+        let found: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM fabrics)
+                 OR EXISTS (SELECT 1 FROM accessories)
+                 OR EXISTS (SELECT 1 FROM post_plans)
+                 OR EXISTS (SELECT 1 FROM events WHERE holiday_key IS NULL)",
+        )
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(found)
     }
 
     // -- Fabrics -------------------------------------------------------------
@@ -644,14 +663,16 @@ impl Repository {
 
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO accessories
-                 (kind, name, description, colors, source, brand, status, make_days)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                 (kind, name, description, colors, colors_from_fabrics, source, brand, status,
+                  make_days)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
              RETURNING id",
         )
         .bind(new.kind.to_sql())
         .bind(&new.name)
         .bind(&new.description)
         .bind(Json(&new.colors))
+        .bind(new.colors_from_fabrics)
         .bind(source)
         .bind(brand)
         .bind(new.status.to_sql())
@@ -680,7 +701,7 @@ impl Repository {
         let mut tx = self.pool.begin().await?;
 
         let rows: Vec<AccessoryRow> = sqlx::query_as(
-            "SELECT id, kind, name, description, colors, source, brand, status,
+            "SELECT id, kind, name, description, colors, colors_from_fabrics, source, brand, status,
                     pair_id, make_days
              FROM accessories
              WHERE ?1 IS NULL OR id = ?1
@@ -730,7 +751,8 @@ impl Repository {
 
         let result = sqlx::query(
             "UPDATE accessories
-             SET kind = ?, name = ?, description = ?, colors = ?, source = ?, brand = ?,
+             SET kind = ?, name = ?, description = ?, colors = ?, colors_from_fabrics = ?,
+                 source = ?, brand = ?,
                  status = ?, make_days = ?
              WHERE id = ?",
         )
@@ -738,6 +760,7 @@ impl Repository {
         .bind(&new.name)
         .bind(&new.description)
         .bind(Json(&new.colors))
+        .bind(new.colors_from_fabrics)
         .bind(source)
         .bind(brand)
         .bind(new.status.to_sql())
@@ -1240,6 +1263,7 @@ mod tests {
             name: name.into(),
             description: String::new(),
             colors: words(&["orange"]),
+            colors_from_fabrics: false,
             fabrics: fabrics
                 .iter()
                 .map(|&(fabric_id, role)| FabricUse { fabric_id, role })
@@ -1906,5 +1930,27 @@ mod tests {
 
         // The pumpkin bow is no longer in a look, so it can be deleted now.
         db.delete_accessory(pumpkin).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn user_data_means_anything_but_holidays() {
+        let db = Repository::in_memory().await.unwrap();
+        db.sync_holidays(&holidays::parse(HOLIDAYS).unwrap(), 2026..=2026)
+            .await
+            .unwrap();
+        assert!(
+            !db.has_user_data().await.unwrap(),
+            "holidays alone don't count"
+        );
+
+        // A single fabric, with no posts at all, is enough.
+        let velvet = db.create_fabric(&fabric("Velvet", true)).await.unwrap();
+        assert!(db.has_user_data().await.unwrap());
+        db.delete_fabric(velvet).await.unwrap();
+
+        db.create_event(&event("Beach trip", d(2026, 7, 4), None))
+            .await
+            .unwrap();
+        assert!(db.has_user_data().await.unwrap());
     }
 }

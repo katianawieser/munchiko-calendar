@@ -66,6 +66,15 @@ See README.md for the planning rules, data model and roadmap.
   else color 2; bonuses only after a match: matching set +1, ready +1. Ties sorted by
   name. `suggest_fabrics` adds `start_by` by running the planner on a hypothetical new
   bow (no duplicated date logic). No stemming (leaf ≠ leaves) — known limitation.
+- **Tweaks after first real use (done):** (1) accessories have `colors_from_fabrics`
+  (migration 0003, default 0 for old rows, on for new ones); `Accessory::effective_colors`
+  = fabrics' colors (main first) + own extra colors, used by lists and `suggest`.
+  (2) Blocked deletes: `web/blockers.rs` (pure) builds the chain fabric → accessory →
+  post with links and a de-duplicated "Start here"; edit pages show it instead of the
+  Delete button (`templates/delete_section.html`); server still returns 409.
+  (3) Bug fix: example data is seeded only when `Repository::has_user_data()` is false
+  (it used to re-seed whenever there were no posts). Katiana now has real data in
+  `munchiko.db` — test schema changes on a `.backup` copy, never the real file.
 - **Next: M5b — show suggestions** on the event page ("Ideas for Halloween") and above
   the post form's checkboxes (not pre-ticked); fabric ideas + "start by" when no
   accessory fits. Possible polish: drop "(bow)" from planner task titles.

@@ -15,6 +15,7 @@
 //!   browser send requests to localhost.
 
 mod accessories;
+pub mod blockers;
 mod calendar;
 mod events;
 mod fabrics;
@@ -259,6 +260,15 @@ async fn style_css() -> impl IntoResponse {
 // ---------------------------------------------------------------------------
 // Shared loading
 // ---------------------------------------------------------------------------
+
+/// Everything that can block a delete, for the "can't delete yet" box.
+async fn load_usage(state: &AppState) -> Result<blockers::Usage, AppError> {
+    Ok(blockers::Usage {
+        accessories: state.db.list_accessories().await?,
+        plans: state.db.list_post_plans().await?,
+        events: state.db.list_events().await?,
+    })
+}
 
 /// A post plan with its event and its computed schedule.
 struct LoadedPost {

@@ -40,7 +40,8 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
             kind: AccessoryKind::Bow,
             name: "Pumpkin bow".into(),
             description: "Orange velvet with a black satin middle".into(),
-            colors: vec!["orange".into(), "black".into()],
+            colors: vec![],
+            colors_from_fabrics: true,
             fabrics: vec![
                 FabricUse {
                     fabric_id: velvet,
@@ -61,7 +62,8 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
             kind: AccessoryKind::Bow,
             name: "Bat bow".into(),
             description: "Black satin bat-wing bow".into(),
-            colors: vec!["black".into()],
+            colors: vec![],
+            colors_from_fabrics: true,
             fabrics: vec![FabricUse {
                 fabric_id: satin,
                 role: FabricRole::Main,
@@ -79,6 +81,7 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
             name: "Ghost scarf".into(),
             description: "Glow-in-the-dark ghost print".into(),
             colors: vec!["white".into()],
+            colors_from_fabrics: false,
             fabrics: vec![],
             source: Source::Bought { brand: None },
             status: AccessoryStatus::Idea,

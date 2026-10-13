@@ -38,9 +38,6 @@
   </div>
 </form>
 
-{% if let Some(delete) = delete_action %}
-<form method="post" action="{{ delete }}" onsubmit="return confirm('Delete this event?')">
-  <button type="submit" class="danger outline">Delete event</button>
-</form>
-{% endif %}
+{% let thing = "event" %}
+{% include "delete_section.html" %}
 {% endblock %}

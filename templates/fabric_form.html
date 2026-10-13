@@ -38,19 +38,12 @@
   </fieldset>
   {% endif %}
 
-  {% if !used_by.is_empty() %}
-  <p class="muted">Used by: {{ used_by }}</p>
-  {% endif %}
-
   <div class="form-actions">
     <button type="submit">Save</button>
     <a href="/fabrics" role="button" class="secondary outline">Cancel</a>
   </div>
 </form>
 
-{% if let Some(delete) = delete_action %}
-<form method="post" action="{{ delete }}" onsubmit="return confirm('Delete this fabric?')">
-  <button type="submit" class="danger outline">Delete fabric</button>
-</form>
-{% endif %}
+{% let thing = "fabric" %}
+{% include "delete_section.html" %}
 {% endblock %}

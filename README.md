@@ -99,8 +99,9 @@ still uses, or an event or accessory that a planned post still uses.
 ## Running it
 
 On startup the app runs any new database migrations, syncs holidays from
-`data/holidays.toml`, and on the very first run adds the Halloween example
-post so there's something to look at. Settings (all optional):
+`data/holidays.toml`, and if the database is brand new adds the Halloween example
+post so there's something to look at (once you've entered anything yourself it
+never comes back). Settings (all optional):
 `DATABASE_URL` (default `sqlite:munchiko.db`) and `ADDRESS` (default
 `127.0.0.1:3000`; only this computer can reach it, and there's no login).
 
