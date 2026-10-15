@@ -187,3 +187,36 @@ a.plain:hover { text-decoration: underline; }
 /* Nothing picked yet: faded, with a dashed outline. */
 .color-row .swatch-picker.unset { opacity: 0.35; border-style: dashed; }
 .color-list .add-color { margin: 0 0 1rem 0; }
+
+/* Photos (M6b). */
+.photos { margin-bottom: 2rem; }
+.photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+.photo-grid figure { margin: 0; text-align: center; }
+.photo-grid img {
+  display: block;
+  width: 10rem;
+  height: 10rem;
+  /* Fill the square without stretching; the full photo is one click away. */
+  object-fit: cover;
+  border-radius: 0.4rem;
+  margin-bottom: 0.3rem;
+}
+.photo-grid form { margin: 0; }
+.photos .upload { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.25rem; }
+.photos .upload > * { margin: 0; }
+.photos .upload input[type="file"] { flex: 1; min-width: 0; }
+.photos .upload button { width: auto; white-space: nowrap; }
+/* Small square thumbnail beside the name in list tables. */
+.name-cell { display: inline-flex; align-items: center; gap: 0.5rem; }
+img.thumb {
+  width: 2.75rem;
+  height: 2.75rem;
+  object-fit: cover;
+  border-radius: 0.3rem;
+  flex: none;
+}

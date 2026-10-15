@@ -15,11 +15,12 @@ use super::forms::{
     Choice, ColorRow, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, color_rows,
     color_rows_from_form, label_of, parse_choice, read_colors,
 };
+use super::photos::{self, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewAccessory};
 use crate::models::{
     Accessory, AccessoryId, AccessoryKind, AccessoryStatus, Color, Fabric, FabricId, FabricUse,
-    Source,
+    PhotoOwner, Source,
 };
 
 fn describe_source(source: &Source) -> String {
@@ -62,6 +63,8 @@ struct NextStep {
 
 struct AccessoryRow {
     href: String,
+    /// The accessory's first photo, if it has one.
+    thumb: Option<String>,
     name: String,
     kind: &'static str,
     status: &'static str,
@@ -105,6 +108,7 @@ pub async fn list(
 
     let accessories = state.db.list_accessories().await?;
     let fabrics = state.db.list_fabrics().await?;
+    let thumbnails = photos::thumbnails(&state).await?;
 
     let rows = accessories
         .iter()
@@ -123,6 +127,7 @@ pub async fn list(
             });
             AccessoryRow {
                 href: format!("/accessories/{}", a.id.0),
+                thumb: thumbnails.get(&PhotoOwner::Accessory(a.id)).cloned(),
                 name: a.name.clone(),
                 kind: label_of(&KINDS, a.kind),
                 status: label_of(&STATUSES, a.status),
@@ -226,6 +231,7 @@ struct AccessoryFormPage {
     fabric_selects: Vec<RoleSelect>,
     partner_choices: Vec<Choice>,
     blocked: Blockers,
+    photos: PhotoSection,
     errors: Vec<String>,
 }
 
@@ -306,6 +312,7 @@ impl AccessoryFormPage {
             fabric_selects,
             partner_choices,
             blocked: Blockers::default(),
+            photos: PhotoSection::unsaved(),
             errors: Vec::new(),
         }
     }
@@ -444,6 +451,8 @@ async fn edit_page(state: &AppState, accessory: &Accessory) -> Result<AccessoryF
     let fabrics = state.db.list_fabrics().await?;
     let mut page = AccessoryFormPage::new(Some(accessory), &usage.accessories, &fabrics);
     page.blocked = blockers::for_accessory(accessory.id, &usage);
+    page.photos =
+        PhotoSection::load(state, PhotoOwner::Accessory(accessory.id), &accessory.name).await?;
     Ok(page)
 }
 
@@ -513,8 +522,16 @@ pub async fn delete(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
+    // Note the photos first: deleting the accessory deletes their records.
+    let photo_files = state
+        .db
+        .list_photos(PhotoOwner::Accessory(AccessoryId(id)))
+        .await?;
     match state.db.delete_accessory(AccessoryId(id)).await {
-        Ok(()) => Ok(Redirect::to("/accessories").into_response()),
+        Ok(()) => {
+            photos::remove_files(&state, &photo_files).await;
+            Ok(Redirect::to("/accessories").into_response())
+        }
         Err(DbError::InUse { .. }) => {
             let accessory = state.db.get_accessory(AccessoryId(id)).await?;
             let mut page = edit_page(&state, &accessory).await?;

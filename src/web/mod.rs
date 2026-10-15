@@ -22,13 +22,14 @@ mod fabrics;
 pub mod forms;
 pub mod ideas;
 pub mod month;
+mod photos;
 mod posts;
 
 use std::collections::HashMap;
 
 use askama::Template;
 use axum::Router;
-use axum::extract::Request;
+use axum::extract::{DefaultBodyLimit, Request};
 use axum::http::{HeaderMap, Method, StatusCode, header};
 use axum::middleware::{self, Next};
 use axum::response::{Html, IntoResponse, Response};
@@ -37,6 +38,7 @@ use chrono::{Local, NaiveDate};
 
 use crate::db::{DbError, Repository};
 use crate::models::{Accessory, Event, EventId, PostPlan};
+use crate::photos::PhotoStore;
 use crate::planner::{Inventory, LeadTimes, PlanError, Timeline, build_timeline};
 
 /// Everything a handler needs. Axum hands each handler a clone; the
@@ -44,6 +46,8 @@ use crate::planner::{Inventory, LeadTimes, PlanError, Timeline, build_timeline};
 #[derive(Debug, Clone)]
 pub struct AppState {
     pub db: Repository,
+    /// The folder uploaded photos are kept in.
+    pub photos: PhotoStore,
     pub lead_times: LeadTimes,
     /// Pretend today is this date. Tests use it so their output doesn't
     /// depend on when they run; the real app leaves it `None`.
@@ -51,9 +55,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(db: Repository) -> Self {
+    pub fn new(db: Repository, photos: PhotoStore) -> Self {
         Self {
             db,
+            photos,
             lead_times: LeadTimes::default(),
             today_override: None,
         }
@@ -66,7 +71,21 @@ impl AppState {
 }
 
 pub fn router(state: AppState) -> Router {
+    // Uploads get a bigger size limit than the 2 MB axum allows by default;
+    // every other route keeps the small limit.
+    let uploads = Router::new()
+        .route("/fabrics/{id}/photos", post(photos::upload_for_fabric))
+        .route(
+            "/accessories/{id}/photos",
+            post(photos::upload_for_accessory),
+        )
+        .route("/posts/{id}/photos", post(photos::upload_for_post))
+        .layer(DefaultBodyLimit::max(photos::MAX_UPLOAD_BYTES));
+
     Router::new()
+        .merge(uploads)
+        .route("/photos/{id}", get(photos::serve))
+        .route("/photos/{id}/delete", post(photos::delete))
         .route("/", get(calendar::this_month))
         .route("/calendar/{year}/{month}", get(calendar::month))
         .route("/posts", get(posts::list).post(posts::create))
@@ -160,6 +179,12 @@ pub enum AppError {
     BadRequest,
     /// Trying to change a holiday that comes from holidays.toml.
     ReadOnly,
+    /// An upload that isn't a usable photo; `back` is the page to return to.
+    PhotoRejected {
+        status: StatusCode,
+        message: String,
+        back: String,
+    },
     Internal(String),
 }
 
@@ -183,7 +208,21 @@ impl From<askama::Error> for AppError {
 #[template(path = "error.html")]
 struct ErrorPage {
     heading: &'static str,
-    message: &'static str,
+    message: String,
+    back_href: String,
+    back_label: &'static str,
+}
+
+impl ErrorPage {
+    /// An error page whose link goes back to the calendar.
+    fn new(heading: &'static str, message: &str) -> Self {
+        Self {
+            heading,
+            message: message.to_string(),
+            back_href: "/".into(),
+            back_label: "Back to the calendar",
+        }
+    }
 }
 
 impl IntoResponse for AppError {
@@ -191,23 +230,33 @@ impl IntoResponse for AppError {
         let (status, page) = match self {
             AppError::NotFound => (
                 StatusCode::NOT_FOUND,
-                ErrorPage {
-                    heading: "Not found",
-                    message: "There's nothing at this address.",
-                },
+                ErrorPage::new("Not found", "There's nothing at this address."),
             ),
             AppError::BadRequest => (
                 StatusCode::BAD_REQUEST,
-                ErrorPage {
-                    heading: "That didn't work",
-                    message: "The request had a value the app doesn't understand.",
-                },
+                ErrorPage::new(
+                    "That didn't work",
+                    "The request had a value the app doesn't understand.",
+                ),
             ),
             AppError::ReadOnly => (
                 StatusCode::FORBIDDEN,
+                ErrorPage::new(
+                    "Holidays are edited in a file",
+                    "This holiday comes from data/holidays.toml. Change it there and restart the app.",
+                ),
+            ),
+            AppError::PhotoRejected {
+                status,
+                message,
+                back,
+            } => (
+                status,
                 ErrorPage {
-                    heading: "Holidays are edited in a file",
-                    message: "This holiday comes from data/holidays.toml. Change it there and restart the app.",
+                    heading: "That photo wasn't added",
+                    message,
+                    back_href: back,
+                    back_label: "Go back",
                 },
             ),
             AppError::Internal(detail) => {
@@ -215,10 +264,10 @@ impl IntoResponse for AppError {
                 eprintln!("internal error: {detail}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
-                    ErrorPage {
-                        heading: "Something went wrong",
-                        message: "The error has been logged in the terminal running the app.",
-                    },
+                    ErrorPage::new(
+                        "Something went wrong",
+                        "The error has been logged in the terminal running the app.",
+                    ),
                 )
             }
         };

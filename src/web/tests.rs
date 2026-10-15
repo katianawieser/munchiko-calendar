@@ -6,11 +6,13 @@ use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode, header};
 use chrono::NaiveDate;
+use tempfile::TempDir;
 use tower::ServiceExt;
 
 use super::{AppState, router};
 use crate::db::{NewEvent, Repository};
 use crate::models::{EventKind, PostPlanId};
+use crate::photos::PhotoStore;
 use crate::{demo, holidays};
 
 fn d(y: i32, m: u32, day: u32) -> NaiveDate {
@@ -18,14 +20,28 @@ fn d(y: i32, m: u32, day: u32) -> NaiveDate {
 }
 
 /// The app with the built-in holidays and the Halloween example, as it looks
-/// on `today`.
+/// on `today`. Its photo folder doesn't exist; tests that upload use
+/// [`setup_with_photos`].
 async fn setup(today: NaiveDate) -> (Router, Repository, PostPlanId) {
+    let (app, db, post) = setup_in(today, PhotoStore::new("/nonexistent/photos")).await;
+    (app, db, post)
+}
+
+/// Like [`setup`], with a real (temporary) photo folder. Keep the returned
+/// `TempDir` alive for the test: the folder is deleted when it's dropped.
+async fn setup_with_photos(today: NaiveDate) -> (Router, Repository, PostPlanId, TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let (app, db, post) = setup_in(today, PhotoStore::new(dir.path())).await;
+    (app, db, post, dir)
+}
+
+async fn setup_in(today: NaiveDate, photos: PhotoStore) -> (Router, Repository, PostPlanId) {
     let db = Repository::in_memory().await.unwrap();
     let rules = holidays::parse(holidays::BUILT_IN).unwrap();
     db.sync_holidays(&rules, 2026..=2027).await.unwrap();
     let post = demo::seed_halloween(&db, 2026).await.unwrap();
 
-    let mut state = AppState::new(db.clone());
+    let mut state = AppState::new(db.clone(), photos);
     state.today_override = Some(today);
     (router(state), db, post)
 }
@@ -198,7 +214,9 @@ async fn post(app: &Router, uri: &str, body: &str) -> Reply {
     post_with(app, uri, body, &[("sec-fetch-site", "same-origin")]).await
 }
 
-use crate::models::{AccessoryId, AccessoryStatus, Color, FabricId, FabricRole, Source};
+use crate::models::{
+    AccessoryId, AccessoryStatus, Color, FabricId, FabricRole, PhotoOwner, Source,
+};
 
 #[tokio::test]
 async fn adding_a_fabric_redirects_to_the_list() {
@@ -881,4 +899,214 @@ async fn when_nothing_fits_fabrics_are_suggested_with_a_start_date() {
     assert!(ideas.contains("leaf, green (color)"));
     // Post Apr 22 → shoot Apr 19 → ready Apr 18 → a 4-day bow starts Apr 15.
     assert!(ideas.contains("Start by <strong>Thu Apr 15</strong>"));
+}
+
+// ---------------------------------------------------------------------------
+// Photos (M6b)
+// ---------------------------------------------------------------------------
+
+/// The first bytes of a JPEG; enough for the type check.
+const JPEG: &[u8] = b"\xFF\xD8\xFF\xE0 pretend this is a photo";
+
+/// Send `files` the way a browser sends a file form ("multipart/form-data"):
+/// each part is separated by a boundary line and says its field name.
+async fn upload(app: &Router, uri: &str, files: &[&[u8]], headers: &[(&str, &str)]) -> Reply {
+    const BOUNDARY: &str = "----munchiko-test-boundary";
+    let mut body = Vec::new();
+    for file in files {
+        body.extend_from_slice(
+            format!(
+                "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"photo\"; \
+                 filename=\"photo.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(file);
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
+
+    let mut request = Request::post(uri).header(
+        header::CONTENT_TYPE,
+        format!("multipart/form-data; boundary={BOUNDARY}"),
+    );
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    let response = app
+        .clone()
+        .oneshot(request.body(Body::from(body)).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .map(|v| v.to_str().unwrap().to_string());
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    Reply {
+        status,
+        location,
+        html: String::from_utf8_lossy(&bytes).into_owned(),
+    }
+}
+
+const SAME_SITE: &[(&str, &str)] = &[("sec-fetch-site", "same-origin")];
+
+#[tokio::test]
+async fn an_uploaded_photo_is_saved_shown_and_served() {
+    let (app, db, _, dir) = setup_with_photos(d(2026, 10, 5)).await;
+    let reply = upload(&app, "/fabrics/1/photos", &[JPEG], SAME_SITE).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert_eq!(reply.location.as_deref(), Some("/fabrics/1"));
+
+    // A record in the database, a file named after its id on disk.
+    let photos = db
+        .list_photos(PhotoOwner::Fabric(FabricId(1)))
+        .await
+        .unwrap();
+    assert_eq!(photos.len(), 1);
+    let id = photos[0].id.0;
+    assert_eq!(
+        std::fs::read(dir.path().join(format!("{id}.jpg"))).unwrap(),
+        JPEG
+    );
+
+    // Shown on the edit page and as the list's thumbnail.
+    let (_, html) = get(&app, "/fabrics/1").await;
+    assert!(html.contains(&format!("<img src=\"/photos/{id}\"")));
+    let (_, html) = get(&app, "/fabrics").await;
+    assert!(html.contains(&format!("<img class=\"thumb\" src=\"/photos/{id}\"")));
+
+    // Served with its real type, and the browser told not to guess.
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get(format!("/photos/{id}"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "image/jpeg");
+    assert_eq!(
+        response.headers()[header::X_CONTENT_TYPE_OPTIONS],
+        "nosniff"
+    );
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    assert_eq!(&bytes[..], JPEG);
+}
+
+#[tokio::test]
+async fn several_photos_can_be_uploaded_at_once() {
+    let (app, db, post, _dir) = setup_with_photos(d(2026, 10, 5)).await;
+    let png = b"\x89PNG\r\n\x1a\n rest";
+    let reply = upload(
+        &app,
+        &format!("/posts/{}/photos", post.0),
+        &[JPEG, png],
+        SAME_SITE,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        db.list_photos(PhotoOwner::PostPlan(post))
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    let (_, html) = get(&app, &format!("/posts/{}", post.0)).await;
+    assert_eq!(html.matches("<img src=\"/photos/").count(), 2);
+}
+
+#[tokio::test]
+async fn files_that_arent_photos_are_refused_and_nothing_is_saved() {
+    let (app, db, _, dir) = setup_with_photos(d(2026, 10, 5)).await;
+
+    // One good file and one bad one: all or nothing.
+    let reply = upload(
+        &app,
+        "/accessories/1/photos",
+        &[JPEG, b"just text"],
+        SAME_SITE,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("isn&#39;t a JPEG, PNG, WebP or GIF"));
+    assert!(reply.html.contains("href=\"/accessories/1\""), "links back");
+
+    let heic = b"\0\0\0\x18ftypheic\0\0\0\0";
+    let reply = upload(&app, "/accessories/1/photos", &[heic], SAME_SITE).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("HEIC"));
+
+    let reply = upload(&app, "/accessories/1/photos", &[b""], SAME_SITE).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("Choose a photo"));
+
+    assert!(db.list_all_photos().await.unwrap().is_empty());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}
+
+#[tokio::test]
+async fn photos_over_the_size_limit_are_refused() {
+    let (app, db, _, _dir) = setup_with_photos(d(2026, 10, 5)).await;
+    let mut huge = JPEG.to_vec();
+    huge.resize(crate::photos::MAX_PHOTO_BYTES + 1, 0);
+    let reply = upload(&app, "/fabrics/1/photos", &[&huge], SAME_SITE).await;
+    assert_eq!(reply.status, StatusCode::PAYLOAD_TOO_LARGE);
+    assert!(reply.html.contains("up to 15 MB"));
+    assert!(db.list_all_photos().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn uploads_need_an_owner_and_our_own_page() {
+    let (app, _, _, _dir) = setup_with_photos(d(2026, 10, 5)).await;
+    let reply = upload(&app, "/fabrics/99/photos", &[JPEG], SAME_SITE).await;
+    assert_eq!(reply.status, StatusCode::NOT_FOUND);
+    let reply = upload(
+        &app,
+        "/fabrics/1/photos",
+        &[JPEG],
+        &[("sec-fetch-site", "cross-site")],
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn deleting_a_photo_or_its_owner_removes_the_file() {
+    let (app, db, plan, dir) = setup_with_photos(d(2026, 10, 5)).await;
+    upload(&app, "/fabrics/1/photos", &[JPEG], SAME_SITE).await;
+    upload(
+        &app,
+        &format!("/posts/{}/photos", plan.0),
+        &[JPEG],
+        SAME_SITE,
+    )
+    .await;
+    let photos = db.list_all_photos().await.unwrap();
+    let (fabric_photo, post_photo) = (photos[0].id.0, photos[1].id.0);
+
+    let reply = post(&app, &format!("/photos/{fabric_photo}/delete"), "").await;
+    assert_eq!(reply.location.as_deref(), Some("/fabrics/1"));
+    assert!(!dir.path().join(format!("{fabric_photo}.jpg")).exists());
+    let (status, _) = get(&app, &format!("/photos/{fabric_photo}")).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+
+    // Deleting the post takes its photos (records and files) with it.
+    assert!(dir.path().join(format!("{post_photo}.jpg")).exists());
+    post(&app, &format!("/posts/{}/delete", plan.0), "").await;
+    assert!(!dir.path().join(format!("{post_photo}.jpg")).exists());
+    assert!(db.list_all_photos().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn new_forms_explain_photos_come_after_saving() {
+    let (app, _, _) = setup(d(2026, 10, 5)).await;
+    let (_, html) = get(&app, "/fabrics/new").await;
+    assert!(html.contains("You can add photos once this is saved."));
+    assert!(!html.contains("multipart/form-data"));
 }

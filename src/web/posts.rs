@@ -12,10 +12,11 @@ use chrono::NaiveDate;
 
 use super::forms::{Choice, FormData, KINDS, NotADate, PETS, STATUSES, label_of};
 use super::ideas::{self, Ideas};
+use super::photos::{self, PhotoSection};
 use super::{AppError, AppState, LoadedPost, load_posts, render};
 use crate::db::NewPostPlan;
 use crate::models::{
-    Accessory, AccessoryId, Event, EventId, Fabric, Look, Pet, PostPlan, PostPlanId,
+    Accessory, AccessoryId, Event, EventId, Fabric, Look, Pet, PhotoOwner, PostPlan, PostPlanId,
 };
 use crate::planner::{TaskStatus, Timeline};
 
@@ -145,6 +146,7 @@ struct PostPage {
     backdrop: String,
     notes: String,
     tasks: Vec<TaskRow>,
+    photos: PhotoSection,
 }
 
 /// "Pumpkin bow, Ghost scarf" for each pet in the post.
@@ -218,6 +220,13 @@ pub async fn show(
         Err(_) => Vec::new(),
     };
 
+    let photos = PhotoSection::load(
+        &state,
+        PhotoOwner::PostPlan(post.plan.id),
+        &format!("the {} post", post.event.name),
+    )
+    .await?;
+
     render(PostPage {
         event_name: post.event.name.clone(),
         event_href: format!("/events/{}", post.event.id.0),
@@ -230,6 +239,7 @@ pub async fn show(
         backdrop: post.plan.backdrop.clone(),
         notes: post.plan.notes.clone(),
         tasks,
+        photos,
     })
 }
 
@@ -531,6 +541,12 @@ pub async fn delete(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Redirect, AppError> {
+    // Note the photos first: deleting the plan deletes their records.
+    let photo_files = state
+        .db
+        .list_photos(PhotoOwner::PostPlan(PostPlanId(id)))
+        .await?;
     state.db.delete_post_plan(PostPlanId(id)).await?;
+    photos::remove_files(&state, &photo_files).await;
     Ok(Redirect::to("/posts"))
 }

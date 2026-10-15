@@ -72,6 +72,11 @@ the exact shade from a color picker, shown as a dot next to the name. The
 browser's picker has an eyedropper, so a shade can be sampled straight from a
 photo of the fabric. Suggestions only look at the names.
 
+Fabrics, accessories and post plans can have **photos** (JPEG, PNG, WebP or
+GIF, up to 15 MB each). They show on the item's page, and the first one is
+the thumbnail in the lists. On fabric and accessory pages the photos sit right
+above the form, so the eyedropper can pick colors from them.
+
 ## How suggestions work
 
 For an event, every accessory is scored against the event's name and
@@ -97,6 +102,7 @@ out by the planner itself.
 | **Accessory** (bow / scarf / costume) | name, description, colors, fabrics (main/middle/accent), handmade or bought (brand), status (idea → in progress → ready), matching pair |
 | **Event** | name, description, type, start/end date, keywords |
 | **Post plan** | event, post date, who wears what, backdrop idea |
+| **Photo** | belongs to one fabric, accessory or post plan; image type |
 
 Bows are separate items that can be linked as a matching Mochi & Momo set.
 
@@ -133,6 +139,7 @@ it). The schema is created and upgraded by numbered migrations in
 | `events` | holidays, notable days, seasons, outings (optional end date); holiday rows remember which file entry and year they came from |
 | `post_plans` | a planned post for an event |
 | `looks` | which pet wears which accessory in a post |
+| `photos` | which item each photo belongs to (exactly one), and its image type; the image files are in the `photos/` folder, named by id |
 
 The database enforces the rules itself: enum values and dates are checked,
 colors and keywords must be JSON arrays (a color is `{"name": "baby pink", "hex": "#f4c2c2"}`, hex optional), and you can't delete a fabric a bow
@@ -144,7 +151,8 @@ On startup the app runs any new database migrations, syncs holidays from
 `data/holidays.toml`, and if the database is brand new adds the Halloween example
 post so there's something to look at (once you've entered anything yourself it
 never comes back). Settings (all optional):
-`DATABASE_URL` (default `sqlite:munchiko.db`) and `ADDRESS` (default
+`DATABASE_URL` (default `sqlite:munchiko.db`), `PHOTOS_DIR` (default `photos`;
+back it up together with the database) and `ADDRESS` (default
 `127.0.0.1:3000`; only this computer can reach it, and there's no login).
 
 ```bash
@@ -162,9 +170,9 @@ cargo run    # start the web app at http://127.0.0.1:3000
   - [x] **M4b** — fabric and accessory pages and forms
   - [x] **M4c** — event and post plan forms, edits and deletes
 - [x] **M5** — Suggestions: "for Earth Day, consider the leaf-print bow" based on keywords and colors
-- [ ] **M6** — Visual colors and photos
+- [x] **M6** — Visual colors and photos
   - [x] **M6a** — color swatches with a color picker / eyedropper
-  - [ ] **M6b** — photo uploads for fabrics, accessories and post plans
+  - [x] **M6b** — photo uploads for fabrics, accessories and post plans
 
 ## Project layout
 
@@ -177,6 +185,7 @@ src/
   models.rs   fabric, accessories, events, post plans
   planner.rs  the scheduling engine + its tests
   suggest.rs  scores accessories and fabrics for an event, with reasons + tests
+  photos.rs   recognises image files by their first bytes, saves them on disk + tests
   holidays.rs reads holidays.toml and calculates dates (Easter, nth weekday...) + tests
   db.rs       SQLite repository: saves and loads the models + its tests
   demo.rs     the example Halloween post
@@ -186,6 +195,7 @@ src/
     forms.rs    reading form submissions + choices for selects
     ideas.rs    picks which suggestions to show ("Ideas for Halloween") + tests
     blockers.rs explains what's blocking a delete + tests
+    photos.rs   photo upload, serving and deleting
     calendar.rs, posts.rs, events.rs, fabrics.rs, accessories.rs   page handlers
     tests.rs    request-level tests against an in-memory app
   main.rs     starts the server

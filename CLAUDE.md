@@ -80,11 +80,6 @@ See README.md for the planning rules, data model and roadmap.
   only if none fit, top 3 fabrics with "start by" and a too-late flag. Shown on the
   event page and above the post form's checkboxes (never pre-ticked; reflects the
   event the form was opened/submitted with, since there's no JS).
-- **M6 (visual colors + photos), planned with Katiana:** M6a swatches, then M6b photo
-  uploads on fabrics, accessories and post plans (files on disk under a gitignored
-  folder + a `photos` table, not BLOBs; validate type by magic bytes; ~15 MB limit,
-  which needs axum's `multipart` feature + a raised body limit). Optional M6c: suggest
-  colors from a photo (needs an image crate; ask first).
 - **M6a done:** `models::Color { name, hex: Option<String> }` (hex validated by
   `Color::parse_hex` → lowercase `#rrggbb`, so it's safe in a style attribute).
   Migration 0004 rewrites both `colors` columns from `["x"]` to `[{"name":"x"}]`
@@ -97,7 +92,22 @@ See README.md for the planning rules, data model and roadmap.
   can't be blank). Partials `color_fields.html`, `color_chip.html`. Katiana's existing
   accessories all have `colors_from_fabrics` off, so they only show fabric swatches
   once she turns that switch on.
-- **Possible next steps (not started; ask first):** drop "(bow)" from planner task
+- **M6b done (M6 complete):** migration 0005 `photos` table: one nullable FK per owner
+  (fabric/accessory/post plan, ON DELETE CASCADE) + CHECK exactly one, AUTOINCREMENT so
+  ids (and cached `/photos/{id}` URLs) are never reused. `src/photos.rs` (pure-ish, no
+  db): `ImageType::detect` by magic bytes (HEIC refused with an export hint),
+  `PhotoStore` writes `<id>.<ext>` in `PHOTOS_DIR` (default `photos/`, gitignored).
+  `web/photos.rs`: multipart upload (axum `multipart` feature; per-route
+  `DefaultBodyLimit` 60 MB, 15 MB per photo), all files validated before any is saved,
+  record first then file (record removed if the write fails); serve with nosniff +
+  immutable cache; owner deletes list photos first, then remove files after the delete.
+  `AppError::PhotoRejected` → error page with a back link. Upload is a separate form
+  above the main form on edit pages (forms can't nest; keeps the photo on screen for
+  the eyedropper); new forms say "add photos once saved". Post page has a Photos
+  section. Full-size images are used as thumbnails (no resizing yet).
+  Tests: `setup_with_photos` gives a temp folder (tempfile dev-dep).
+- **Possible next steps (not started; ask first):** M6c suggest colors from a photo
+  and/or real thumbnails (both need an image crate); photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; plural matching (leaf/leaves); "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
 

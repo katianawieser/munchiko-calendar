@@ -16,9 +16,10 @@ use super::forms::{
     Choice, ColorRow, FormData, color_rows, color_rows_from_form, join_list, read_colors,
     split_list,
 };
+use super::photos::{self, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewFabric};
-use crate::models::{Accessory, Color, Fabric, FabricId};
+use crate::models::{Accessory, Color, Fabric, FabricId, PhotoOwner};
 
 // ---------------------------------------------------------------------------
 // /fabrics
@@ -26,6 +27,8 @@ use crate::models::{Accessory, Color, Fabric, FabricId};
 
 struct FabricRow {
     href: String,
+    /// The fabric's first photo, if it has one.
+    thumb: Option<String>,
     stock_action: String,
     name: String,
     colors: Vec<Color>,
@@ -61,6 +64,7 @@ fn used_by(fabric: FabricId, accessories: &[Accessory]) -> Vec<String> {
 pub async fn list(State(state): State<AppState>) -> Result<Response, AppError> {
     let fabrics = state.db.list_fabrics().await?;
     let accessories = state.db.list_accessories().await?;
+    let thumbnails = photos::thumbnails(&state).await?;
     let name_of = |id: &FabricId| {
         fabrics
             .iter()
@@ -73,6 +77,7 @@ pub async fn list(State(state): State<AppState>) -> Result<Response, AppError> {
     for fabric in &fabrics {
         let row = FabricRow {
             href: format!("/fabrics/{}", fabric.id.0),
+            thumb: thumbnails.get(&PhotoOwner::Fabric(fabric.id)).cloned(),
             stock_action: format!("/fabrics/{}/stock", fabric.id.0),
             name: fabric.name.clone(),
             colors: fabric.colors.clone(),
@@ -139,6 +144,7 @@ struct FabricFormPage {
     pair_choices: Vec<Choice>,
     /// What's in the way of deleting it, shown instead of the delete button.
     blocked: Blockers,
+    photos: PhotoSection,
     errors: Vec<String>,
 }
 
@@ -166,6 +172,7 @@ impl FabricFormPage {
                 in_stock: f.in_stock,
                 pair_choices,
                 blocked: Blockers::default(),
+                photos: PhotoSection::unsaved(),
                 errors: Vec::new(),
             },
             None => Self {
@@ -179,6 +186,7 @@ impl FabricFormPage {
                 in_stock: true,
                 pair_choices,
                 blocked: Blockers::default(),
+                photos: PhotoSection::unsaved(),
                 errors: Vec::new(),
             },
         }
@@ -244,6 +252,7 @@ async fn edit_page(state: &AppState, fabric: &Fabric) -> Result<FabricFormPage, 
     let fabrics = state.db.list_fabrics().await?;
     let mut page = FabricFormPage::new(Some(fabric), &fabrics);
     page.blocked = blockers::for_fabric(fabric.id, &load_usage(state).await?);
+    page.photos = PhotoSection::load(state, PhotoOwner::Fabric(fabric.id), &fabric.name).await?;
     Ok(page)
 }
 
@@ -310,8 +319,16 @@ pub async fn delete(
     State(state): State<AppState>,
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
+    // Note the photos first: deleting the fabric deletes their records.
+    let photo_files = state
+        .db
+        .list_photos(PhotoOwner::Fabric(FabricId(id)))
+        .await?;
     match state.db.delete_fabric(FabricId(id)).await {
-        Ok(()) => Ok(Redirect::to("/fabrics").into_response()),
+        Ok(()) => {
+            photos::remove_files(&state, &photo_files).await;
+            Ok(Redirect::to("/fabrics").into_response())
+        }
         Err(DbError::InUse { .. }) => {
             // Show the edit page with the chain of what's in the way.
             let fabric = state.db.get_fabric(FabricId(id)).await?;

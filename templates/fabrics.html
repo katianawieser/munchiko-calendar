@@ -17,7 +17,7 @@
   <tbody>
     {% for row in section.rows %}
     <tr>
-      <td><a href="{{ row.href }}">{{ row.name }}</a></td>
+      <td><span class="name-cell">{% if let Some(src) = row.thumb %}<img class="thumb" src="{{ src }}" alt="" loading="lazy">{% endif %}<a href="{{ row.href }}">{{ row.name }}</a></span></td>
       <td>{% for color in row.colors %}{% include "color_chip.html" %} {% endfor %}</td>
       <td>{{ row.keywords }}</td>
       <td>{{ row.pairs_with }}</td>

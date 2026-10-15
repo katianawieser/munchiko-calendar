@@ -2,3 +2,6 @@
 
 # Local SQLite database (plus its write-ahead log files)
 /munchiko.db*
+
+# Uploaded photos (they belong with the database, not in git)
+/photos/

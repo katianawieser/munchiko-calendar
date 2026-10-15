@@ -10,11 +10,16 @@ use std::path::Path;
 
 use chrono::{Datelike, Local};
 use munchiko_calendar::db::Repository;
+use munchiko_calendar::photos::PhotoStore;
 use munchiko_calendar::web::{AppState, router};
 use munchiko_calendar::{demo, holidays};
 
 /// Where the data lives unless `DATABASE_URL` says otherwise.
 const DEFAULT_DATABASE_URL: &str = "sqlite:munchiko.db";
+
+/// Where uploaded photos are kept unless `PHOTOS_DIR` says otherwise. Back
+/// this folder up together with the database.
+const DEFAULT_PHOTOS_DIR: &str = "photos";
 
 /// The editable holidays list (the built-in copy is used if it's missing).
 const HOLIDAYS_FILE: &str = "data/holidays.toml";
@@ -60,7 +65,10 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let listener = tokio::net::TcpListener::bind(&address).await?;
     println!("Munchiko Calendar is running at http://{address} (Ctrl+C to stop)");
 
-    axum::serve(listener, router(AppState::new(db)))
+    let photos_dir = std::env::var("PHOTOS_DIR").unwrap_or_else(|_| DEFAULT_PHOTOS_DIR.into());
+    let state = AppState::new(db, PhotoStore::new(photos_dir));
+
+    axum::serve(listener, router(state))
         .with_graceful_shutdown(async {
             // Finish in-flight requests before exiting.
             let _ = tokio::signal::ctrl_c().await;

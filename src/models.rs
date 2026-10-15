@@ -27,6 +27,9 @@ pub struct EventId(pub i64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PostPlanId(pub i64);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct PhotoId(pub i64);
+
 // ---------------------------------------------------------------------------
 // The models
 // ---------------------------------------------------------------------------
@@ -267,6 +270,23 @@ pub struct PostPlan {
     /// Free-text idea for the seasonal backdrop.
     pub backdrop: String,
     pub notes: String,
+}
+
+/// What a photo is a picture of.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PhotoOwner {
+    Fabric(FabricId),
+    Accessory(AccessoryId),
+    /// Reference shots, or the finished photo after the shoot.
+    PostPlan(PostPlanId),
+}
+
+/// A photo's record. The image itself is a file; see [`crate::photos`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Photo {
+    pub id: PhotoId,
+    pub owner: PhotoOwner,
+    pub image_type: crate::photos::ImageType,
 }
 
 #[cfg(test)]

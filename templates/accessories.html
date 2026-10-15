@@ -25,7 +25,7 @@
   <tbody>
     {% for row in rows %}
     <tr>
-      <td><a href="{{ row.href }}">{{ row.name }}</a></td>
+      <td><span class="name-cell">{% if let Some(src) = row.thumb %}<img class="thumb" src="{{ src }}" alt="" loading="lazy">{% endif %}<a href="{{ row.href }}">{{ row.name }}</a></span></td>
       <td>{{ row.kind }}</td>
       <td class="nowrap">
         <span class="badge {{ row.status_class }}">{{ row.status }}</span>

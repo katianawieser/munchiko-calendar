@@ -38,6 +38,7 @@ use sqlx::types::Json;
 
 use crate::holidays::HolidayRule;
 use crate::models::*;
+use crate::photos::ImageType;
 
 /// What `Repository::sync_holidays` changed.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -260,6 +261,39 @@ struct PostPlanRow {
     post_date: NaiveDate,
     backdrop: String,
     notes: String,
+}
+
+#[derive(FromRow)]
+struct PhotoRow {
+    id: i64,
+    fabric_id: Option<i64>,
+    accessory_id: Option<i64>,
+    post_plan_id: Option<i64>,
+    content_type: String,
+}
+
+impl PhotoRow {
+    fn into_model(self) -> Result<Photo> {
+        let owner = match (self.fabric_id, self.accessory_id, self.post_plan_id) {
+            (Some(id), None, None) => PhotoOwner::Fabric(FabricId(id)),
+            (None, Some(id), None) => PhotoOwner::Accessory(AccessoryId(id)),
+            (None, None, Some(id)) => PhotoOwner::PostPlan(PostPlanId(id)),
+            _ => {
+                return Err(DbError::Corrupt(format!(
+                    "photo {} has no single owner",
+                    self.id
+                )));
+            }
+        };
+        let image_type = ImageType::from_mime(&self.content_type).ok_or_else(|| {
+            DbError::Corrupt(format!("unknown photo type {:?}", self.content_type))
+        })?;
+        Ok(Photo {
+            id: PhotoId(self.id),
+            owner,
+            image_type,
+        })
+    }
 }
 
 #[derive(FromRow)]
@@ -1227,6 +1261,99 @@ impl Repository {
         }
         Ok(())
     }
+
+    // -- Photos --------------------------------------------------------------
+    // Only the records; the files are handled by `crate::photos::PhotoStore`.
+
+    /// Record a new photo for `owner` (which must exist) and return it, so
+    /// the caller can save the file under the new id.
+    pub async fn add_photo(&self, owner: PhotoOwner, image_type: ImageType) -> Result<Photo> {
+        let (fabric, accessory, post_plan) = owner_columns(owner);
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO photos (fabric_id, accessory_id, post_plan_id, content_type)
+             VALUES (?, ?, ?, ?)
+             RETURNING id",
+        )
+        .bind(fabric)
+        .bind(accessory)
+        .bind(post_plan)
+        .bind(image_type.mime())
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(Photo {
+            id: PhotoId(id),
+            owner,
+            image_type,
+        })
+    }
+
+    pub async fn get_photo(&self, id: PhotoId) -> Result<Photo> {
+        let row: Option<PhotoRow> = sqlx::query_as(
+            "SELECT id, fabric_id, accessory_id, post_plan_id, content_type
+             FROM photos WHERE id = ?",
+        )
+        .bind(id.0)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.ok_or(DbError::NotFound {
+            what: "photo",
+            id: id.0,
+        })?
+        .into_model()
+    }
+
+    /// One owner's photos, oldest first (the first one is its thumbnail).
+    pub async fn list_photos(&self, owner: PhotoOwner) -> Result<Vec<Photo>> {
+        let (fabric, accessory, post_plan) = owner_columns(owner);
+        // `IS` is `=` that also treats NULL = NULL as true, so the two
+        // columns that aren't this owner's kind match their NULLs.
+        let rows: Vec<PhotoRow> = sqlx::query_as(
+            "SELECT id, fabric_id, accessory_id, post_plan_id, content_type
+             FROM photos
+             WHERE fabric_id IS ? AND accessory_id IS ? AND post_plan_id IS ?
+             ORDER BY id",
+        )
+        .bind(fabric)
+        .bind(accessory)
+        .bind(post_plan)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(PhotoRow::into_model).collect()
+    }
+
+    /// Every photo, oldest first, for list pages that show thumbnails.
+    pub async fn list_all_photos(&self) -> Result<Vec<Photo>> {
+        let rows: Vec<PhotoRow> = sqlx::query_as(
+            "SELECT id, fabric_id, accessory_id, post_plan_id, content_type
+             FROM photos ORDER BY id",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter().map(PhotoRow::into_model).collect()
+    }
+
+    pub async fn delete_photo(&self, id: PhotoId) -> Result<()> {
+        let result = sqlx::query("DELETE FROM photos WHERE id = ?")
+            .bind(id.0)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(DbError::NotFound {
+                what: "photo",
+                id: id.0,
+            });
+        }
+        Ok(())
+    }
+}
+
+/// The owner as the three owner columns, exactly one of them filled in.
+fn owner_columns(owner: PhotoOwner) -> (Option<i64>, Option<i64>, Option<i64>) {
+    match owner {
+        PhotoOwner::Fabric(id) => (Some(id.0), None, None),
+        PhotoOwner::Accessory(id) => (None, Some(id.0), None),
+        PhotoOwner::PostPlan(id) => (None, None, Some(id.0)),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1763,6 +1890,67 @@ mod tests {
         db.sync_holidays(&rules, 2027..=2028).await.unwrap();
         assert!(db.find_holiday("Halloween", 2026).await.unwrap().is_some());
         assert!(db.find_holiday("Halloween", 2028).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn photos_belong_to_one_owner_and_go_when_it_goes() {
+        let db = Repository::in_memory().await.unwrap();
+        let velvet = db.create_fabric(&fabric("Velvet", true)).await.unwrap();
+        let satin = db.create_fabric(&fabric("Satin", true)).await.unwrap();
+        let bow = db.create_accessory(&bow("Bow", &[])).await.unwrap();
+
+        let first = db
+            .add_photo(PhotoOwner::Fabric(velvet), ImageType::Jpeg)
+            .await
+            .unwrap();
+        let second = db
+            .add_photo(PhotoOwner::Fabric(velvet), ImageType::Png)
+            .await
+            .unwrap();
+        db.add_photo(PhotoOwner::Fabric(satin), ImageType::Jpeg)
+            .await
+            .unwrap();
+        let bow_photo = db
+            .add_photo(PhotoOwner::Accessory(bow), ImageType::Webp)
+            .await
+            .unwrap();
+
+        // Oldest first, and only this owner's.
+        assert_eq!(
+            db.list_photos(PhotoOwner::Fabric(velvet)).await.unwrap(),
+            vec![first.clone(), second]
+        );
+        assert_eq!(db.get_photo(bow_photo.id).await.unwrap(), bow_photo);
+        assert_eq!(db.list_all_photos().await.unwrap().len(), 4);
+
+        // Deleting the fabric takes its photo records with it (CASCADE).
+        db.delete_fabric(velvet).await.unwrap();
+        assert!(matches!(
+            db.get_photo(first.id).await,
+            Err(DbError::NotFound { what: "photo", .. })
+        ));
+        assert_eq!(db.list_all_photos().await.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn photo_ids_are_never_reused() {
+        let db = Repository::in_memory().await.unwrap();
+        let velvet = db.create_fabric(&fabric("Velvet", true)).await.unwrap();
+        let owner = PhotoOwner::Fabric(velvet);
+        let old = db.add_photo(owner, ImageType::Jpeg).await.unwrap();
+        db.delete_photo(old.id).await.unwrap();
+        // A browser may still have /photos/<old id> cached.
+        let new = db.add_photo(owner, ImageType::Jpeg).await.unwrap();
+        assert!(new.id > old.id);
+    }
+
+    #[tokio::test]
+    async fn a_photo_needs_an_owner_that_exists() {
+        let db = Repository::in_memory().await.unwrap();
+        let result = db
+            .add_photo(PhotoOwner::Fabric(FabricId(99)), ImageType::Jpeg)
+            .await;
+        assert!(result.is_err());
     }
 
     #[tokio::test]
