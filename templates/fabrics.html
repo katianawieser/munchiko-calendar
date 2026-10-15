@@ -18,7 +18,7 @@
     {% for row in section.rows %}
     <tr>
       <td><a href="{{ row.href }}">{{ row.name }}</a></td>
-      <td>{% for color in row.colors %}<span class="chip">{{ color }}</span> {% endfor %}</td>
+      <td>{% for color in row.colors %}{% include "color_chip.html" %} {% endfor %}</td>
       <td>{{ row.keywords }}</td>
       <td>{{ row.pairs_with }}</td>
       <td>{{ row.used_by }}</td>

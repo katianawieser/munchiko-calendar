@@ -46,13 +46,60 @@ impl std::fmt::Display for Pet {
     }
 }
 
+/// A color: the words used to describe it, plus (optionally) the exact shade.
+///
+/// The name is what suggestions match against ("orange" for Halloween), so
+/// it's always required. The hex value is only for people: "baby pink" means
+/// different things to different people, and a swatch settles it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Color {
+    pub name: String,
+    /// Lowercase `#rrggbb`, as an `<input type="color">` sends it. Left out of
+    /// the saved JSON when there is none, so old data reads the same.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hex: Option<String>,
+}
+
+impl Color {
+    /// A color with just a name, no swatch yet.
+    pub fn named(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            hex: None,
+        }
+    }
+
+    /// A color with a swatch. `hex` must already be valid (see [`Color::parse_hex`]).
+    pub fn with_hex(name: impl Into<String>, hex: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            hex: Some(hex.into()),
+        }
+    }
+
+    /// "#F4C2C2" → `Some("#f4c2c2")`. Anything that isn't `#` plus six hex
+    /// digits is refused, so a hex value is always safe to put in a page's CSS.
+    pub fn parse_hex(text: &str) -> Option<String> {
+        let digits = text.trim().strip_prefix('#')?;
+        (digits.len() == 6 && digits.chars().all(|c| c.is_ascii_hexdigit()))
+            .then(|| format!("#{}", digits.to_ascii_lowercase()))
+    }
+}
+
+/// Lets tests and example data write `"orange".into()`.
+impl From<&str> for Color {
+    fn from(name: &str) -> Self {
+        Color::named(name)
+    }
+}
+
 /// A fabric in the stash (or one we still need to buy).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Fabric {
     pub id: FabricId,
     pub name: String,
     pub description: String,
-    pub colors: Vec<String>,
+    pub colors: Vec<Color>,
     pub keywords: Vec<String>,
     /// Other fabrics that look good with this one.
     pub pairings: Vec<FabricId>,
@@ -126,7 +173,7 @@ pub struct Accessory {
     pub description: String,
     /// With `colors_from_fabrics`, only extra colors on top of the fabrics'.
     /// Use [`Accessory::effective_colors`] rather than reading this directly.
-    pub colors: Vec<String>,
+    pub colors: Vec<Color>,
     /// Take colors from the fabrics instead of typing them in.
     pub colors_from_fabrics: bool,
     /// Empty is allowed (bought scarves often have no tracked fabric).
@@ -147,17 +194,18 @@ impl Accessory {
 
     /// The accessory's colors: its fabrics' colors (main fabric first) when
     /// `colors_from_fabrics` is on, then its own extra colors, without repeats.
+    /// A repeat is the same name; the first one wins, swatch and all.
     /// `fabrics` may be the whole stash; only the ones this accessory uses count.
-    pub fn effective_colors(&self, fabrics: &[Fabric]) -> Vec<String> {
+    pub fn effective_colors(&self, fabrics: &[Fabric]) -> Vec<Color> {
         let from_fabrics = self
             .fabrics
             .iter()
             .filter(|_| self.colors_from_fabrics)
             .filter_map(|used| fabrics.iter().find(|f| f.id == used.fabric_id))
             .flat_map(|f| &f.colors);
-        let mut colors: Vec<String> = Vec::new();
+        let mut colors: Vec<Color> = Vec::new();
         for color in from_fabrics.chain(&self.colors) {
-            if !colors.contains(color) {
+            if !colors.iter().any(|c| c.name == color.name) {
                 colors.push(color.clone());
             }
         }
@@ -230,7 +278,7 @@ mod tests {
             id: FabricId(id),
             name: format!("Fabric {id}"),
             description: String::new(),
-            colors: colors.iter().map(|c| c.to_string()).collect(),
+            colors: colors.iter().map(|&c| c.into()).collect(),
             keywords: vec![],
             pairings: vec![],
             in_stock: true,
@@ -243,7 +291,7 @@ mod tests {
             kind: AccessoryKind::Bow,
             name: "Pumpkin bow".into(),
             description: String::new(),
-            colors: colors.iter().map(|c| c.to_string()).collect(),
+            colors: colors.iter().map(|&c| c.into()).collect(),
             colors_from_fabrics: from_fabrics,
             fabrics: vec![
                 FabricUse {
@@ -269,16 +317,41 @@ mod tests {
             fabric(2, &["black", "orange"]),
             fabric(3, &["teal"]),
         ];
+        let names =
+            |colors: Vec<Color>| -> Vec<String> { colors.into_iter().map(|c| c.name).collect() };
         // Fabric colors in order (main first), extras after, no repeats;
         // fabric 3 isn't used by this bow so teal doesn't appear.
         assert_eq!(
-            bow(&["white", "black"], true).effective_colors(&stash),
+            names(bow(&["white", "black"], true).effective_colors(&stash)),
             vec!["orange", "black", "white"]
         );
         // Box unticked: exactly what was typed.
         assert_eq!(
-            bow(&["white"], false).effective_colors(&stash),
+            names(bow(&["white"], false).effective_colors(&stash)),
             vec!["white"]
         );
+    }
+
+    #[test]
+    fn a_repeated_color_keeps_the_fabrics_swatch() {
+        let mut velvet = fabric(1, &[]);
+        velvet.colors = vec![Color::with_hex("orange", "#f28c28")];
+        // The bow's own "orange" has no swatch; the fabric's comes first and wins.
+        let colors = bow(&["orange"], true).effective_colors(&[velvet]);
+        assert_eq!(colors, vec![Color::with_hex("orange", "#f28c28")]);
+    }
+
+    #[test]
+    fn hex_values_are_checked_and_lowercased() {
+        assert_eq!(Color::parse_hex("#F4C2C2"), Some("#f4c2c2".into()));
+        assert_eq!(Color::parse_hex(" #a1b2c3 "), Some("#a1b2c3".into()));
+        assert_eq!(Color::parse_hex("f4c2c2"), None, "needs the #");
+        assert_eq!(
+            Color::parse_hex("#fff"),
+            None,
+            "short form isn't sent by color inputs"
+        );
+        assert_eq!(Color::parse_hex("#zzzzzz"), None);
+        assert_eq!(Color::parse_hex("red; background: url(x)"), None);
     }
 }

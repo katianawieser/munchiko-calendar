@@ -114,8 +114,8 @@ pub fn for_event(
 mod tests {
     use super::*;
     use crate::models::{
-        AccessoryId, AccessoryKind, AccessoryStatus, EventId, EventKind, FabricId, FabricRole,
-        FabricUse, Source,
+        AccessoryId, AccessoryKind, AccessoryStatus, Color, EventId, EventKind, FabricId,
+        FabricRole, FabricUse, Source,
     };
 
     fn d(m: u32, day: u32) -> NaiveDate {
@@ -124,6 +124,10 @@ mod tests {
 
     fn list(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn colors_of(items: &[&str]) -> Vec<Color> {
+        items.iter().map(|&s| s.into()).collect()
     }
 
     fn event(name: &str, keywords: &[&str], date: NaiveDate) -> Event {
@@ -144,7 +148,7 @@ mod tests {
             id: FabricId(id),
             name: name.into(),
             description: String::new(),
-            colors: list(colors),
+            colors: colors_of(colors),
             keywords: list(keywords),
             pairings: vec![],
             in_stock: true,
@@ -157,7 +161,7 @@ mod tests {
             kind: AccessoryKind::Bow,
             name: name.into(),
             description: String::new(),
-            colors: list(colors),
+            colors: colors_of(colors),
             colors_from_fabrics: false,
             fabrics: vec![],
             source: Source::Handmade,

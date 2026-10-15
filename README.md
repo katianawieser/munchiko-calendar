@@ -67,6 +67,11 @@ Example — Halloween (post Oct 31, default lead times):
 | **Accessories** | Bows, scarves, costumes: filter, one-click status, fabrics by role, matching sets |
 | **Fabrics** | Stash and shopping list, pairings, what each fabric is used by |
 
+Colors on fabrics and accessories have a name ("baby pink") and, optionally,
+the exact shade from a color picker, shown as a dot next to the name. The
+browser's picker has an eyedropper, so a shade can be sampled straight from a
+photo of the fabric. Suggestions only look at the names.
+
 ## How suggestions work
 
 For an event, every accessory is scored against the event's name and
@@ -88,7 +93,7 @@ out by the planner itself.
 
 | Model | Key fields |
 |---|---|
-| **Fabric** | name, description, colors, keywords, pairings, in stock |
+| **Fabric** | name, description, colors (name + optional `#rrggbb` swatch), keywords, pairings, in stock |
 | **Accessory** (bow / scarf / costume) | name, description, colors, fabrics (main/middle/accent), handmade or bought (brand), status (idea → in progress → ready), matching pair |
 | **Event** | name, description, type, start/end date, keywords |
 | **Post plan** | event, post date, who wears what, backdrop idea |
@@ -130,7 +135,7 @@ it). The schema is created and upgraded by numbered migrations in
 | `looks` | which pet wears which accessory in a post |
 
 The database enforces the rules itself: enum values and dates are checked,
-colors and keywords must be JSON arrays, and you can't delete a fabric a bow
+colors and keywords must be JSON arrays (a color is `{"name": "baby pink", "hex": "#f4c2c2"}`, hex optional), and you can't delete a fabric a bow
 still uses, or an event or accessory that a planned post still uses.
 
 ## Running it
@@ -157,6 +162,9 @@ cargo run    # start the web app at http://127.0.0.1:3000
   - [x] **M4b** — fabric and accessory pages and forms
   - [x] **M4c** — event and post plan forms, edits and deletes
 - [x] **M5** — Suggestions: "for Earth Day, consider the leaf-print bow" based on keywords and colors
+- [ ] **M6** — Visual colors and photos
+  - [x] **M6a** — color swatches with a color picker / eyedropper
+  - [ ] **M6b** — photo uploads for fabrics, accessories and post plans
 
 ## Project layout
 
@@ -182,6 +190,7 @@ src/
     tests.rs    request-level tests against an in-memory app
   main.rs     starts the server
 templates/    Askama HTML templates
-static/       Pico CSS (v2.1.1, MIT) and the app's stylesheet
+static/       Pico CSS (v2.1.1, MIT), the app's stylesheet, and colors.js (swatch pickers;
+              the only script, and forms still work without it)
 build.rs      rebuilds when a migration changes
 ```

@@ -100,6 +100,7 @@ pub fn router(state: AppState) -> Router {
         .route("/accessories/{id}/delete", post(accessories::delete))
         .route("/static/pico.min.css", get(pico_css))
         .route("/static/style.css", get(style_css))
+        .route("/static/colors.js", get(colors_js))
         .fallback(not_found)
         .layer(middleware::from_fn(reject_cross_site))
         .with_state(state)
@@ -238,11 +239,12 @@ fn render(page: impl Template) -> Result<Html<String>, AppError> {
 }
 
 // ---------------------------------------------------------------------------
-// Stylesheets
+// Stylesheets and the one script
 // ---------------------------------------------------------------------------
 
 const PICO_CSS: &str = include_str!("../../static/pico.min.css");
 const STYLE_CSS: &str = include_str!("../../static/style.css");
+const COLORS_JS: &str = include_str!("../../static/colors.js");
 
 async fn pico_css() -> impl IntoResponse {
     (
@@ -255,6 +257,14 @@ async fn style_css() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
         STYLE_CSS,
+    )
+}
+
+/// Swatch pickers for the color rows; the forms work without it.
+async fn colors_js() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        COLORS_JS,
     )
 }
 

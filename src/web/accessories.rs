@@ -12,13 +12,14 @@ use axum::response::{IntoResponse, Redirect, Response};
 
 use super::blockers::{self, Blockers};
 use super::forms::{
-    Choice, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, join_list, label_of,
-    parse_choice, split_list,
+    Choice, ColorRow, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, color_rows,
+    color_rows_from_form, label_of, parse_choice, read_colors,
 };
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewAccessory};
 use crate::models::{
-    Accessory, AccessoryId, AccessoryKind, AccessoryStatus, Fabric, FabricId, FabricUse, Source,
+    Accessory, AccessoryId, AccessoryKind, AccessoryStatus, Color, Fabric, FabricId, FabricUse,
+    Source,
 };
 
 fn describe_source(source: &Source) -> String {
@@ -69,7 +70,7 @@ struct AccessoryRow {
     fabrics: String,
     partner: String,
     source: String,
-    colors: Vec<String>,
+    colors: Vec<Color>,
 }
 
 #[derive(Template)]
@@ -217,7 +218,7 @@ struct AccessoryFormPage {
     status_choices: Vec<Choice>,
     name: String,
     description: String,
-    colors: String,
+    colors: Vec<ColorRow>,
     colors_from_fabrics: bool,
     bought: bool,
     brand: String,
@@ -293,7 +294,7 @@ impl AccessoryFormPage {
             status_choices: choices(&STATUSES, status),
             name: editing.map(|a| a.name.clone()).unwrap_or_default(),
             description: editing.map(|a| a.description.clone()).unwrap_or_default(),
-            colors: editing.map(|a| join_list(&a.colors)).unwrap_or_default(),
+            colors: color_rows(editing.map_or(&[], |a| &a.colors)),
             // New accessories start with the box ticked: less typing.
             colors_from_fabrics: editing.is_none_or(|a| a.colors_from_fabrics),
             bought,
@@ -324,7 +325,7 @@ impl AccessoryFormPage {
         }
         self.name = form.text("name");
         self.description = form.text("description");
-        self.colors = form.text("colors");
+        self.colors = color_rows_from_form(form);
         self.colors_from_fabrics = form.checked("colors_from_fabrics");
         self.bought = form.text("source") == "bought";
         self.brand = form.text("brand");
@@ -375,6 +376,11 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
         },
     };
 
+    let colors = read_colors(form).unwrap_or_else(|color_errors| {
+        errors.extend(color_errors);
+        Vec::new()
+    });
+
     let mut fabrics = Vec::new();
     for (role, field, label) in ROLES {
         match form.optional_id(field) {
@@ -404,7 +410,7 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
                 kind,
                 name,
                 description: form.text("description"),
-                colors: split_list(&form.text("colors")),
+                colors,
                 colors_from_fabrics: form.checked("colors_from_fabrics"),
                 fabrics,
                 source,

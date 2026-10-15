@@ -39,10 +39,8 @@
       <input type="checkbox" name="colors_from_fabrics" role="switch" {% if colors_from_fabrics %}checked{% endif %}>
       Use colors from these fabrics
     </label>
-    <label>Colors
-      <input name="colors" value="{{ colors }}" placeholder="white">
-      <small>Separate with commas. With the switch on, these are added to the fabrics' colors (e.g. a white trim); leave empty if the fabrics say it all.</small>
-    </label>
+    <p><strong>Colors</strong><br><small class="muted">With the switch on, these are added to the fabrics' colors (e.g. a white trim); leave empty if the fabrics say it all.</small></p>
+    {% include "color_fields.html" %}
   </fieldset>
 
   <fieldset>

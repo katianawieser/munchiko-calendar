@@ -1,0 +1,2 @@
+{#- One color in a list: a dot of the exact shade (if picked), then its name. -#}
+<span class="chip">{% if let Some(hex) = color.hex %}<span class="swatch" style="background: {{ hex }}" title="{{ hex }}"></span>{% endif %}{{ color.name }}</span>

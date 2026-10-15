@@ -38,7 +38,7 @@
         {% endif %}
       </td>
       <td>{{ row.fabrics }}</td>
-      <td>{% for color in row.colors %}<span class="chip">{{ color }}</span> {% endfor %}</td>
+      <td>{% for color in row.colors %}{% include "color_chip.html" %} {% endfor %}</td>
       <td>{{ row.partner }}</td>
       <td>{{ row.source }}</td>
     </tr>

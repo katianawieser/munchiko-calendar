@@ -12,10 +12,13 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 
 use super::blockers::{self, Blockers};
-use super::forms::{Choice, FormData, join_list, split_list};
+use super::forms::{
+    Choice, ColorRow, FormData, color_rows, color_rows_from_form, join_list, read_colors,
+    split_list,
+};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewFabric};
-use crate::models::{Accessory, Fabric, FabricId};
+use crate::models::{Accessory, Color, Fabric, FabricId};
 
 // ---------------------------------------------------------------------------
 // /fabrics
@@ -25,7 +28,7 @@ struct FabricRow {
     href: String,
     stock_action: String,
     name: String,
-    colors: Vec<String>,
+    colors: Vec<Color>,
     keywords: String,
     pairs_with: String,
     used_by: String,
@@ -130,7 +133,7 @@ struct FabricFormPage {
     delete_action: Option<String>,
     name: String,
     description: String,
-    colors: String,
+    colors: Vec<ColorRow>,
     keywords: String,
     in_stock: bool,
     pair_choices: Vec<Choice>,
@@ -158,7 +161,7 @@ impl FabricFormPage {
                 delete_action: Some(format!("/fabrics/{}/delete", f.id.0)),
                 name: f.name.clone(),
                 description: f.description.clone(),
-                colors: join_list(&f.colors),
+                colors: color_rows(&f.colors),
                 keywords: join_list(&f.keywords),
                 in_stock: f.in_stock,
                 pair_choices,
@@ -171,7 +174,7 @@ impl FabricFormPage {
                 delete_action: None,
                 name: String::new(),
                 description: String::new(),
-                colors: String::new(),
+                colors: color_rows(&[]),
                 keywords: String::new(),
                 in_stock: true,
                 pair_choices,
@@ -186,7 +189,7 @@ impl FabricFormPage {
     fn refill(mut self, form: &FormData, errors: Vec<String>) -> Self {
         self.name = form.text("name");
         self.description = form.text("description");
-        self.colors = form.text("colors");
+        self.colors = color_rows_from_form(form);
         self.keywords = form.text("keywords");
         self.in_stock = form.checked("in_stock");
         let ticked: Vec<&str> = form.all("pairs").collect();
@@ -210,6 +213,10 @@ fn read_form(form: &FormData) -> Result<FabricInput, Vec<String>> {
     if name.is_empty() {
         errors.push("Give the fabric a name.".to_string());
     }
+    let colors = read_colors(form).unwrap_or_else(|color_errors| {
+        errors.extend(color_errors);
+        Vec::new()
+    });
     let mut pairings = Vec::new();
     for value in form.all("pairs") {
         match value.parse() {
@@ -224,7 +231,7 @@ fn read_form(form: &FormData) -> Result<FabricInput, Vec<String>> {
         fabric: NewFabric {
             name,
             description: form.text("description"),
-            colors: split_list(&form.text("colors")),
+            colors,
             keywords: split_list(&form.text("keywords")),
             in_stock: form.checked("in_stock"),
         },

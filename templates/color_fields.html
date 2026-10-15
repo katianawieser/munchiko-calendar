@@ -1,0 +1,30 @@
+{#- The color list on the fabric and accessory forms. Expects `colors: Vec<ColorRow>`.
+
+    Without JavaScript this is a list of name boxes (one spare at the end), so
+    the form still works. static/colors.js adds the swatch pickers and the
+    add/remove buttons; it stores the picked shade in the hidden color_hex
+    field, which stays empty until a shade is actually picked. -#}
+<div class="color-list">
+  <div class="color-rows">
+    {% for row in colors %}
+    <div class="color-row">
+      <input type="color" class="swatch-picker" value="{% if row.hex.is_empty() %}#ffffff{% else %}{{ row.hex }}{% endif %}" aria-label="Exact shade" title="Pick the exact shade" hidden>
+      <input type="hidden" name="color_hex" value="{{ row.hex }}">
+      <input name="color_name" value="{{ row.name }}" placeholder="e.g. baby pink" aria-label="Color name">
+      <button type="button" class="outline secondary small clear-swatch" title="Remove the swatch, keep the name" hidden>No swatch</button>
+      <button type="button" class="outline secondary small remove-color" aria-label="Remove this color" hidden>✕</button>
+    </div>
+    {% endfor %}
+  </div>
+  <template>
+    <div class="color-row">
+      <input type="color" class="swatch-picker" value="#ffffff" aria-label="Exact shade" title="Pick the exact shade">
+      <input type="hidden" name="color_hex" value="">
+      <input name="color_name" placeholder="e.g. baby pink" aria-label="Color name">
+      <button type="button" class="outline secondary small clear-swatch" title="Remove the swatch, keep the name">No swatch</button>
+      <button type="button" class="outline secondary small remove-color" aria-label="Remove this color">✕</button>
+    </div>
+  </template>
+  <button type="button" class="outline small add-color" hidden>+ Add color</button>
+</div>
+<script src="/static/colors.js" defer></script>

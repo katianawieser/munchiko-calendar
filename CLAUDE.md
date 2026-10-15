@@ -80,6 +80,23 @@ See README.md for the planning rules, data model and roadmap.
   only if none fit, top 3 fabrics with "start by" and a too-late flag. Shown on the
   event page and above the post form's checkboxes (never pre-ticked; reflects the
   event the form was opened/submitted with, since there's no JS).
+- **M6 (visual colors + photos), planned with Katiana:** M6a swatches, then M6b photo
+  uploads on fabrics, accessories and post plans (files on disk under a gitignored
+  folder + a `photos` table, not BLOBs; validate type by magic bytes; ~15 MB limit,
+  which needs axum's `multipart` feature + a raised body limit). Optional M6c: suggest
+  colors from a photo (needs an image crate; ask first).
+- **M6a done:** `models::Color { name, hex: Option<String> }` (hex validated by
+  `Color::parse_hex` → lowercase `#rrggbb`, so it's safe in a style attribute).
+  Migration 0004 rewrites both `colors` columns from `["x"]` to `[{"name":"x"}]`
+  (order kept with `json_group_array(... ORDER BY key)`; tested in db.rs). Names stay
+  required and are all `suggest` looks at. `effective_colors` dedupes by name, first
+  wins (so a fabric's swatch beats an accessory's bare extra). Forms send repeated
+  `color_name` + hidden `color_hex` pairs, matched by position (`forms::read_colors`).
+  First JS in the app: `static/colors.js` (progressive enhancement: pickers,
+  add/remove; the hidden field stays empty until a shade is picked, since a color input
+  can't be blank). Partials `color_fields.html`, `color_chip.html`. Katiana's existing
+  accessories all have `colors_from_fabrics` off, so they only show fabric swatches
+  once she turns that switch on.
 - **Possible next steps (not started; ask first):** drop "(bow)" from planner task
   titles; plural matching (leaf/leaves); "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

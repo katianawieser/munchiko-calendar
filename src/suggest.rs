@@ -173,7 +173,9 @@ pub fn suggest_accessories(
                 .collect();
             let keywords =
                 words(std::iter::once(&acc.name).chain(used.iter().flat_map(|f| &f.keywords)));
-            let colors = words(&acc.effective_colors(fabrics));
+            // Only color names count; swatches are for people, not matching.
+            let effective = acc.effective_colors(fabrics);
+            let colors = words(effective.iter().map(|c| &c.name));
 
             let (mut score, mut reasons) = match_words(&wanted, &keywords, &colors);
             if score == 0 {
@@ -217,7 +219,7 @@ pub fn suggest_fabrics(
         .iter()
         .filter_map(|fabric| {
             let keywords = words(std::iter::once(&fabric.name).chain(&fabric.keywords));
-            let colors = words(&fabric.colors);
+            let colors = words(fabric.colors.iter().map(|c| &c.name));
             let (score, reasons) = match_words(&wanted, &keywords, &colors);
             (score > 0).then(|| FabricSuggestion {
                 fabric_id: fabric.id,
@@ -276,7 +278,7 @@ fn start_by_for_new_bow(fabric: &Fabric, post_date: NaiveDate, lead: &LeadTimes)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::EventKind;
+    use crate::models::{Color, EventKind};
 
     fn d(y: i32, m: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, day).unwrap()
@@ -284,6 +286,10 @@ mod tests {
 
     fn list(items: &[&str]) -> Vec<String> {
         items.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn colors_of(items: &[&str]) -> Vec<Color> {
+        items.iter().map(|&s| s.into()).collect()
     }
 
     fn event(name: &str, keywords: &[&str], start: NaiveDate) -> Event {
@@ -304,7 +310,7 @@ mod tests {
             id: FabricId(id),
             name: name.into(),
             description: String::new(),
-            colors: list(colors),
+            colors: colors_of(colors),
             keywords: list(keywords),
             pairings: vec![],
             in_stock,
@@ -317,7 +323,7 @@ mod tests {
             kind: AccessoryKind::Bow,
             name: name.into(),
             description: String::new(),
-            colors: list(colors),
+            colors: colors_of(colors),
             colors_from_fabrics: false,
             fabrics: fabric_ids
                 .iter()

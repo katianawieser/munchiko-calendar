@@ -159,3 +159,31 @@ a.plain:hover { text-decoration: underline; }
 .ideas ul { margin-bottom: 0; }
 .ideas li { margin-bottom: 0.4rem; }
 .ideas .late { color: var(--mc-overdue); }
+
+/* Color swatches (M6a). */
+.chip .swatch {
+  display: inline-block;
+  width: 0.75em;
+  height: 0.75em;
+  margin-right: 0.3em;
+  border-radius: 50%;
+  vertical-align: -0.05em;
+  /* A thin ring so white and very light shades still show up. */
+  box-shadow: 0 0 0 1px rgba(127, 127, 127, 0.5);
+}
+.color-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+.color-row > * { margin: 0; }
+.color-row input[name="color_name"] { flex: 1; }
+.color-row .swatch-picker {
+  flex: none;
+  width: 3rem;
+  padding: 0.15rem;
+}
+/* Nothing picked yet: faded, with a dashed outline. */
+.color-row .swatch-picker.unset { opacity: 0.35; border-style: dashed; }
+.color-list .add-color { margin: 0 0 1rem 0; }

@@ -138,19 +138,20 @@ async fn names_are_escaped_not_run_as_html() {
 }
 
 #[tokio::test]
-async fn stylesheets_are_served_as_css() {
+async fn static_files_are_served_with_their_types() {
     let (app, _, _) = setup(d(2026, 10, 5)).await;
-    for uri in ["/static/pico.min.css", "/static/style.css"] {
+    for (uri, content_type) in [
+        ("/static/pico.min.css", "text/css; charset=utf-8"),
+        ("/static/style.css", "text/css; charset=utf-8"),
+        ("/static/colors.js", "text/javascript; charset=utf-8"),
+    ] {
         let response = app
             .clone()
             .oneshot(Request::get(uri).body(Body::empty()).unwrap())
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(
-            response.headers()[header::CONTENT_TYPE],
-            "text/css; charset=utf-8"
-        );
+        assert_eq!(response.headers()[header::CONTENT_TYPE], content_type);
     }
 }
 
@@ -197,7 +198,7 @@ async fn post(app: &Router, uri: &str, body: &str) -> Reply {
     post_with(app, uri, body, &[("sec-fetch-site", "same-origin")]).await
 }
 
-use crate::models::{AccessoryId, AccessoryStatus, FabricId, FabricRole, Source};
+use crate::models::{AccessoryId, AccessoryStatus, Color, FabricId, FabricRole, Source};
 
 #[tokio::test]
 async fn adding_a_fabric_redirects_to_the_list() {
@@ -205,14 +206,20 @@ async fn adding_a_fabric_redirects_to_the_list() {
     let reply = post(
         &app,
         "/fabrics",
-        "name=Gold+lame&description=&colors=Gold%2C+Yellow&keywords=New+Year&in_stock=on&pairs=2",
+        "name=Gold+lame&description=&color_hex=%23D4AF37&color_name=Gold\
+         &color_hex=&color_name=Yellow&color_hex=&color_name=\
+         &keywords=New+Year&in_stock=on&pairs=2",
     )
     .await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER);
     assert_eq!(reply.location.as_deref(), Some("/fabrics"));
 
     let gold = db.get_fabric(FabricId(3)).await.unwrap();
-    assert_eq!(gold.colors, vec!["gold", "yellow"]);
+    // The picked shade is stored lowercase; the blank last row is skipped.
+    assert_eq!(
+        gold.colors,
+        vec![Color::with_hex("gold", "#d4af37"), "yellow".into()]
+    );
     assert_eq!(gold.pairings, vec![FabricId(2)]);
     assert!(
         db.get_fabric(FabricId(2))
@@ -226,18 +233,44 @@ async fn adding_a_fabric_redirects_to_the_list() {
     let (_, html) = get(&app, "/fabrics").await;
     assert!(html.contains("Gold lame"));
     assert!(html.contains("Shopping list"));
+    assert!(
+        html.contains("class=\"swatch\" style=\"background: #d4af37\""),
+        "the list shows the swatch"
+    );
+}
+
+#[tokio::test]
+async fn a_swatch_without_a_name_is_explained() {
+    let (app, _, _) = setup(d(2026, 10, 5)).await;
+    let reply = post(
+        &app,
+        "/fabrics",
+        "name=Mystery&color_hex=%23F4C2C2&color_name=",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("Every swatch needs a name"));
 }
 
 #[tokio::test]
 async fn a_fabric_form_mistake_keeps_what_was_typed() {
     let (app, db, _) = setup(d(2026, 10, 5)).await;
-    let reply = post(&app, "/fabrics", "name=+&colors=teal&pairs=1").await;
+    let reply = post(
+        &app,
+        "/fabrics",
+        "name=+&color_hex=%23008080&color_name=teal&pairs=1",
+    )
+    .await;
 
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
     assert!(reply.html.contains("Give the fabric a name."));
     assert!(
         reply.html.contains("value=\"teal\""),
         "typed colors are kept"
+    );
+    assert!(
+        reply.html.contains("name=\"color_hex\" value=\"#008080\""),
+        "picked swatches are kept"
     );
     assert!(
         reply.html.contains("value=\"1\" checked"),
@@ -333,8 +366,8 @@ async fn adding_an_accessory_with_fabrics_and_a_partner() {
     let reply = post(
         &app,
         "/accessories",
-        "kind=bow&status=idea&name=Candy+corn+bow&description=&colors=orange%2C+white\
-         &main_fabric=1&middle_fabric=&accent_fabric=2&source=bought&brand=Etsy\
+        "kind=bow&status=idea&name=Candy+corn+bow&description=&color_hex=&color_name=orange\
+         &color_hex=&color_name=white&main_fabric=1&middle_fabric=&accent_fabric=2&source=bought&brand=Etsy\
          &make_days=&partner=3",
     )
     .await;
@@ -373,7 +406,7 @@ async fn editing_an_accessory_can_unpair_it() {
     let reply = post(
         &app,
         "/accessories/1",
-        "kind=bow&status=in_progress&name=Pumpkin+bow&colors=orange&main_fabric=1\
+        "kind=bow&status=in_progress&name=Pumpkin+bow&color_hex=&color_name=orange&main_fabric=1\
          &middle_fabric=2&accent_fabric=&source=handmade&brand=&make_days=5&partner=",
     )
     .await;
@@ -489,7 +522,7 @@ async fn accessory_colors_can_come_from_its_fabrics() {
     let reply = post(
         &app,
         "/accessories",
-        "kind=bow&status=idea&name=Candy+corn+bow&colors_from_fabrics=on&colors=White\
+        "kind=bow&status=idea&name=Candy+corn+bow&colors_from_fabrics=on&color_hex=&color_name=White\
          &main_fabric=1&middle_fabric=&accent_fabric=2&source=handmade&partner=",
     )
     .await;
@@ -498,7 +531,7 @@ async fn accessory_colors_can_come_from_its_fabrics() {
     assert!(candy.colors_from_fabrics);
     assert_eq!(
         candy.colors,
-        vec!["white"],
+        vec!["white".into()],
         "only the extra color is stored"
     );
 

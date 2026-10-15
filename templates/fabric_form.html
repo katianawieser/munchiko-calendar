@@ -11,16 +11,15 @@
   <label>Description
     <textarea name="description" rows="2">{{ description }}</textarea>
   </label>
-  <div class="grid">
-    <label>Colors
-      <input name="colors" value="{{ colors }}" placeholder="orange, black">
-      <small>Separate with commas.</small>
-    </label>
-    <label>Keywords
-      <input name="keywords" value="{{ keywords }}" placeholder="halloween, pumpkin">
-      <small>Used to suggest this fabric for holidays later.</small>
-    </label>
-  </div>
+  <label>Keywords
+    <input name="keywords" value="{{ keywords }}" placeholder="halloween, pumpkin">
+    <small>Separate with commas. Used to suggest this fabric for holidays.</small>
+  </label>
+  <fieldset>
+    <legend>Colors</legend>
+    <p><small class="muted">Name each color (suggestions match on the name), then pick the exact shade. The picker's eyedropper can sample from anywhere on screen, such as a photo of the fabric.</small></p>
+    {% include "color_fields.html" %}
+  </fieldset>
   <label>
     <input type="checkbox" name="in_stock" role="switch" {% if in_stock %}checked{% endif %}>
     In the stash (untick if it still needs buying)

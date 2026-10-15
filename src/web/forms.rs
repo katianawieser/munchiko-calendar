@@ -8,7 +8,7 @@
 
 use chrono::NaiveDate;
 
-use crate::models::{AccessoryKind, AccessoryStatus, EventKind, FabricRole, Pet};
+use crate::models::{AccessoryKind, AccessoryStatus, Color, EventKind, FabricRole, Pet};
 
 /// A field that should have held a number didn't.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -88,6 +88,86 @@ pub fn split_list(text: &str) -> Vec<String> {
 /// The reverse of [`split_list`], for filling in an edit form.
 pub fn join_list(items: &[String]) -> String {
     items.join(", ")
+}
+
+/// One row of the color list on a form: a name box and a swatch.
+///
+/// Each row sends `color_name` and `color_hex` (a hidden field the swatch
+/// picker fills in), always both and always in the same order, so the n-th
+/// name goes with the n-th hex. An empty hex means "no swatch".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColorRow {
+    pub name: String,
+    pub hex: String,
+}
+
+impl ColorRow {
+    fn blank() -> Self {
+        Self {
+            name: String::new(),
+            hex: String::new(),
+        }
+    }
+}
+
+/// Rows for editing saved colors, plus one blank row to add another
+/// (enough to add colors even if the page's script doesn't run).
+pub fn color_rows(colors: &[Color]) -> Vec<ColorRow> {
+    colors
+        .iter()
+        .map(|c| ColorRow {
+            name: c.name.clone(),
+            hex: c.hex.clone().unwrap_or_default(),
+        })
+        .chain([ColorRow::blank()])
+        .collect()
+}
+
+/// The rows exactly as submitted, for showing the form again after a mistake.
+pub fn color_rows_from_form(form: &FormData) -> Vec<ColorRow> {
+    let mut hexes = form.all("color_hex");
+    form.all("color_name")
+        .map(|name| ColorRow {
+            name: name.trim().to_string(),
+            hex: hexes.next().unwrap_or_default().trim().to_string(),
+        })
+        .filter(|row| !row.name.is_empty() || !row.hex.is_empty())
+        .chain([ColorRow::blank()])
+        .collect()
+}
+
+/// Read the color rows. Names are lowercased like other word lists; blank
+/// rows are skipped and a repeated name keeps its first row.
+pub fn read_colors(form: &FormData) -> Result<Vec<Color>, Vec<String>> {
+    let mut colors: Vec<Color> = Vec::new();
+    let mut errors = Vec::new();
+    for row in color_rows_from_form(form) {
+        let name = row.name.to_lowercase();
+        let hex = match row.hex.as_str() {
+            "" => None,
+            text => match Color::parse_hex(text) {
+                Some(hex) => Some(hex),
+                None => {
+                    errors.push(format!("{text:?} isn't a color swatch (expected #rrggbb)."));
+                    continue;
+                }
+            },
+        };
+        if name.is_empty() {
+            if hex.is_some() {
+                errors.push("Every swatch needs a name, like \"baby pink\".".to_string());
+            }
+            continue;
+        }
+        if !colors.iter().any(|c| c.name == name) {
+            colors.push(Color { name, hex });
+        }
+    }
+    if errors.is_empty() {
+        Ok(colors)
+    } else {
+        Err(errors)
+    }
 }
 
 /// One choice in a `<select>` or one checkbox.
@@ -227,6 +307,63 @@ mod tests {
         );
         assert!(split_list("  ").is_empty());
         assert_eq!(join_list(&split_list("a,b")), "a, b");
+    }
+
+    #[test]
+    fn color_rows_pair_names_with_swatches_by_position() {
+        let f = form(&[
+            ("color_name", " Baby Pink "),
+            ("color_hex", "#F4C2C2"),
+            ("color_name", "white"),
+            ("color_hex", ""),
+            ("color_name", ""),
+            ("color_hex", ""),
+            ("color_name", "baby pink"),
+            ("color_hex", "#ff0000"),
+        ]);
+        // Blank row skipped; the repeated name keeps its first swatch.
+        assert_eq!(
+            read_colors(&f),
+            Ok(vec![
+                Color::with_hex("baby pink", "#f4c2c2"),
+                Color::named("white"),
+            ])
+        );
+    }
+
+    #[test]
+    fn a_swatch_needs_a_name_and_a_real_hex() {
+        let f = form(&[
+            ("color_name", ""),
+            ("color_hex", "#f4c2c2"),
+            ("color_name", "pink"),
+            ("color_hex", "pink"),
+        ]);
+        assert_eq!(read_colors(&f).unwrap_err().len(), 2);
+        // Shown again as typed, plus a blank row for adding another.
+        let rows = color_rows_from_form(&f);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[1].hex, "pink");
+        assert_eq!(rows[2], ColorRow::blank());
+    }
+
+    #[test]
+    fn saved_colors_become_rows_plus_a_blank_one() {
+        let rows = color_rows(&[Color::with_hex("mint", "#98ff98"), "white".into()]);
+        assert_eq!(
+            rows,
+            vec![
+                ColorRow {
+                    name: "mint".into(),
+                    hex: "#98ff98".into()
+                },
+                ColorRow {
+                    name: "white".into(),
+                    hex: String::new()
+                },
+                ColorRow::blank(),
+            ]
+        );
     }
 
     #[test]

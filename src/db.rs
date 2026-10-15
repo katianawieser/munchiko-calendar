@@ -167,7 +167,7 @@ sql_text!(EventKind {
 pub struct NewFabric {
     pub name: String,
     pub description: String,
-    pub colors: Vec<String>,
+    pub colors: Vec<Color>,
     pub keywords: Vec<String>,
     pub in_stock: bool,
 }
@@ -178,7 +178,7 @@ pub struct NewAccessory {
     pub name: String,
     pub description: String,
     /// Extra colors when `colors_from_fabrics` is on.
-    pub colors: Vec<String>,
+    pub colors: Vec<Color>,
     pub colors_from_fabrics: bool,
     pub fabrics: Vec<FabricUse>,
     pub source: Source,
@@ -214,7 +214,7 @@ struct FabricRow {
     id: i64,
     name: String,
     description: String,
-    colors: Json<Vec<String>>,
+    colors: Json<Vec<Color>>,
     keywords: Json<Vec<String>>,
     in_stock: bool,
 }
@@ -225,7 +225,7 @@ struct AccessoryRow {
     kind: String,
     name: String,
     description: String,
-    colors: Json<Vec<String>>,
+    colors: Json<Vec<Color>>,
     colors_from_fabrics: bool,
     source: String,
     brand: Option<String>,
@@ -1247,11 +1247,15 @@ mod tests {
         list.iter().map(|s| s.to_string()).collect()
     }
 
+    fn colors(list: &[&str]) -> Vec<Color> {
+        list.iter().map(|&s| s.into()).collect()
+    }
+
     fn fabric(name: &str, in_stock: bool) -> NewFabric {
         NewFabric {
             name: name.into(),
             description: format!("{name} fabric"),
-            colors: words(&["orange", "black"]),
+            colors: colors(&["orange", "black"]),
             keywords: words(&["halloween"]),
             in_stock,
         }
@@ -1262,7 +1266,7 @@ mod tests {
             kind: AccessoryKind::Bow,
             name: name.into(),
             description: String::new(),
-            colors: words(&["orange"]),
+            colors: colors(&["orange"]),
             colors_from_fabrics: false,
             fabrics: fabrics
                 .iter()
@@ -1288,10 +1292,9 @@ mod tests {
     #[tokio::test]
     async fn fabric_round_trips_including_json_lists() {
         let db = Repository::in_memory().await.unwrap();
-        let id = db
-            .create_fabric(&fabric("Orange velvet", false))
-            .await
-            .unwrap();
+        let mut velvet = fabric("Orange velvet", false);
+        velvet.colors[0].hex = Some("#f28c28".into());
+        let id = db.create_fabric(&velvet).await.unwrap();
 
         let loaded = db.get_fabric(id).await.unwrap();
         assert_eq!(
@@ -1300,7 +1303,8 @@ mod tests {
                 id,
                 name: "Orange velvet".into(),
                 description: "Orange velvet fabric".into(),
-                colors: words(&["orange", "black"]),
+                // One color with a swatch, one without.
+                colors: vec![Color::with_hex("orange", "#f28c28"), "black".into()],
                 keywords: words(&["halloween"]),
                 pairings: vec![],
                 in_stock: false,
@@ -1762,6 +1766,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn migration_0004_turns_color_words_into_objects() {
+        // A fresh test database has no old rows for the migration to convert,
+        // so write one the old way (plain strings) and run its SQL again.
+        let db = Repository::in_memory().await.unwrap();
+        sqlx::query(
+            "INSERT INTO fabrics (name, description, colors, keywords, in_stock)
+             VALUES ('Old', '', '[\"baby pink\",\"white\"]', '[]', 1),
+                    ('Plain', '', '[]', '[]', 1)",
+        )
+        .execute(&db.pool)
+        .await
+        .unwrap();
+        sqlx::raw_sql(include_str!("../migrations/0004_color_swatches.sql"))
+            .execute(&db.pool)
+            .await
+            .unwrap();
+
+        let fabrics = db.list_fabrics().await.unwrap();
+        let old = fabrics.iter().find(|f| f.name == "Old").unwrap();
+        assert_eq!(old.colors, colors(&["baby pink", "white"]), "order kept");
+        let plain = fabrics.iter().find(|f| f.name == "Plain").unwrap();
+        assert!(plain.colors.is_empty(), "empty stays empty");
+    }
+
+    #[tokio::test]
     async fn updating_a_fabric_keeps_its_pairings() {
         let db = Repository::in_memory().await.unwrap();
         let orange = db.create_fabric(&fabric("Orange", false)).await.unwrap();
@@ -1769,12 +1798,12 @@ mod tests {
         db.pair_fabrics(orange, black).await.unwrap();
 
         let mut edited = fabric("Burnt orange", true);
-        edited.colors = words(&["orange", "brown"]);
+        edited.colors = colors(&["orange", "brown"]);
         db.update_fabric(orange, &edited).await.unwrap();
 
         let loaded = db.get_fabric(orange).await.unwrap();
         assert_eq!(loaded.name, "Burnt orange");
-        assert_eq!(loaded.colors, words(&["orange", "brown"]));
+        assert_eq!(loaded.colors, colors(&["orange", "brown"]));
         assert!(loaded.in_stock);
         assert_eq!(loaded.pairings, vec![black]);
 
