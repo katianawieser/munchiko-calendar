@@ -65,7 +65,7 @@ See README.md for the planning rules, data model and roadmap.
   words + its fabrics' keywords; colors = own + fabrics'. Per event word: keyword 3,
   else color 2; bonuses only after a match: matching set +1, ready +1. Ties sorted by
   name. `suggest_fabrics` adds `start_by` by running the planner on a hypothetical new
-  bow (no duplicated date logic). No stemming (leaf ≠ leaves) — known limitation.
+  bow (no duplicated date logic).
 - **Tweaks after first real use (done):** (1) accessories have `colors_from_fabrics`
   (migration 0003, default 0 for old rows, on for new ones); `Accessory::effective_colors`
   = fabrics' colors (main first) + own extra colors, used by lists and `suggest`.
@@ -131,8 +131,16 @@ See README.md for the planning rules, data model and roadmap.
   real Chrome via a `--dump-dom` harness. `[profile.dev.package."*"] opt-level = 2`
   so image decoding is fast under `cargo run`. Page with photos: ~0.14 s debug,
   ~0.02 s release. Names are approximate (pink photo → "peach"); user edits them.
+- **M7a done (plural matching):** `suggest::singular` (pub, rule-based, not Porter:
+  IRREGULAR table, NOT_PLURAL list e.g. christmas/news/canvas, ≤3 letters unchanged,
+  -ies→-y if stem ≥2, -ches/-shes/-sses/-xes drop "es", -ss/-us/-is kept, else drop
+  "s"). Both sides normalized; `event_words` is a BTreeMap singular → as written, so
+  reasons show the event's own word. Real data: 8 events changed, all from "reds"→red.
+  No let-chains (MSRV 1.85; they need 1.88).
+- **M7b next:** portfolio polish (agreed with Katiana: capture this version before
+  adding more).
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
-  titles; plural matching (leaf/leaves); "upcoming events with no post yet" nudge on
+  titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
 
 ## Original notes (summary of my handwritten outline)

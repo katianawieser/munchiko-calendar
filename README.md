@@ -88,7 +88,9 @@ above the form, so the eyedropper can pick colors from them.
 ## How suggestions work
 
 For an event, every accessory is scored against the event's name and
-keywords (filler like "day" or "national" ignored):
+keywords (filler like "day" or "national" ignored). Plurals match their
+singular, so "Fall Leaves" finds a leaf-print bow and a "reds" color matches
+"red":
 
 | Match | Points |
 |---|---|

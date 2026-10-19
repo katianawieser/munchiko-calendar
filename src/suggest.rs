@@ -8,6 +8,8 @@
 //! How scoring works:
 //! - The event is turned into a set of words: its name and keywords, in
 //!   lowercase, without filler like "day", "the" or "national".
+//! - Plurals match their singular ("Fall Leaves" finds the leaf bow): every
+//!   word on both sides goes through [`singular`] before comparing.
 //! - An accessory has no keywords of its own, so it borrows: the words in its
 //!   name, plus its fabrics' keywords. Its colors are
 //!   [`Accessory::effective_colors`]: its fabrics' colors only if it's set to
@@ -22,7 +24,7 @@
 //! and works out when you'd have to start to make a new bow in time, by
 //! running the real planner on a hypothetical bow.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use chrono::NaiveDate;
@@ -106,9 +108,91 @@ pub struct FabricSuggestion {
     pub start_by: NaiveDate,
 }
 
+// ---------------------------------------------------------------------------
+// Words
+// ---------------------------------------------------------------------------
+
+/// Plurals that don't follow a rule.
+const IRREGULAR: &[(&str, &str)] = &[
+    ("leaves", "leaf"),
+    ("scarves", "scarf"),
+    ("wolves", "wolf"),
+    ("elves", "elf"),
+    ("halves", "half"),
+    ("loaves", "loaf"),
+    ("shelves", "shelf"),
+    ("calves", "calf"),
+    ("knives", "knife"),
+    ("wives", "wife"),
+    ("lives", "life"),
+    ("mice", "mouse"),
+    ("geese", "goose"),
+    ("teeth", "tooth"),
+    ("feet", "foot"),
+    ("children", "child"),
+    ("men", "man"),
+    ("women", "woman"),
+    ("people", "person"),
+    ("cacti", "cactus"),
+    ("fungi", "fungus"),
+    ("tomatoes", "tomato"),
+    ("potatoes", "potato"),
+    ("mangoes", "mango"),
+    ("heroes", "hero"),
+];
+
+/// Words that end in "s" but aren't plurals.
+const NOT_PLURAL: &[&str] = &[
+    "christmas",
+    "news",
+    "series",
+    "species",
+    "always",
+    "canvas",
+    "lens",
+    "plus",
+    "atlas",
+];
+
+/// The singular of an English word, by simple rules. It doesn't need to be
+/// perfect, only consistent: both sides of a comparison go through it, so as
+/// long as "pumpkins" and "pumpkin" end up the same, they match.
+///
+/// (A full "stemmer" such as Porter's would also strip "-ing" and "-ed", but it
+/// produces non-words like "christma" and "berri", which are harder to explain
+/// and show up in reasons. Plurals are what keywords actually differ by.)
+pub fn singular(word: &str) -> String {
+    if let Some((_, one)) = IRREGULAR.iter().find(|(many, _)| *many == word) {
+        return one.to_string();
+    }
+    // Short words ("gas", "bus", "yes") and known exceptions stay as they are.
+    if word.len() <= 3 || NOT_PLURAL.contains(&word) {
+        return word.to_string();
+    }
+    // berries → berry, bunnies → bunny (but "pies" → "pie", below).
+    if let Some(stem) = word.strip_suffix("ies").filter(|stem| stem.len() >= 2) {
+        return format!("{stem}y");
+    }
+    // peaches → peach, wishes → wish, glasses → glass, boxes → box.
+    for ending in ["ches", "shes", "sses", "xes"] {
+        if word.ends_with(ending) {
+            return word[..word.len() - 2].to_string();
+        }
+    }
+    // dress, cactus, iris: these end in "s" without being plural.
+    if word.ends_with("ss") || word.ends_with("us") || word.ends_with("is") {
+        return word.to_string();
+    }
+    // pumpkins → pumpkin, ghosts → ghost, tacos → taco.
+    match word.strip_suffix('s') {
+        Some(stem) => stem.to_string(),
+        None => word.to_string(),
+    }
+}
+
 /// Split text into lowercase words, dropping filler and single letters.
-/// "Mochi's Birthday" → {"mochi", "birthday"}.
-fn words<'a>(texts: impl IntoIterator<Item = &'a String>) -> BTreeSet<String> {
+/// "Mochi's Birthdays" → "mochi", "birthdays".
+fn split_words<'a>(texts: impl IntoIterator<Item = &'a String>) -> impl Iterator<Item = String> {
     texts
         .into_iter()
         .flat_map(|text| {
@@ -117,30 +201,39 @@ fn words<'a>(texts: impl IntoIterator<Item = &'a String>) -> BTreeSet<String> {
                 .collect::<Vec<_>>()
         })
         .filter(|w| w.len() > 1 && !FILLER.contains(&w.as_str()))
-        .collect()
 }
 
-/// The words that describe an event.
-fn event_words(event: &Event) -> BTreeSet<String> {
-    words(std::iter::once(&event.name).chain(&event.keywords))
+/// The words of an accessory or fabric, in singular form, for matching.
+fn words<'a>(texts: impl IntoIterator<Item = &'a String>) -> BTreeSet<String> {
+    split_words(texts).map(|w| singular(&w)).collect()
+}
+
+/// The words that describe an event: singular form (for matching) → the
+/// word as the event wrote it (for showing in reasons).
+fn event_words(event: &Event) -> BTreeMap<String, String> {
+    let mut found = BTreeMap::new();
+    for word in split_words(std::iter::once(&event.name).chain(&event.keywords)) {
+        found.entry(singular(&word)).or_insert(word);
+    }
+    found
 }
 
 /// Score one thing (an accessory or a fabric) against the event's words.
 /// Each event word counts once, as a keyword if possible, else as a color.
 fn match_words(
-    event_words: &BTreeSet<String>,
+    event_words: &BTreeMap<String, String>,
     keywords: &BTreeSet<String>,
     colors: &BTreeSet<String>,
 ) -> (u32, Vec<Reason>) {
     let mut score = 0;
     let mut reasons = Vec::new();
-    for word in event_words {
+    for (word, as_written) in event_words {
         if keywords.contains(word) {
             score += KEYWORD_POINTS;
-            reasons.push(Reason::Keyword(word.clone()));
+            reasons.push(Reason::Keyword(as_written.clone()));
         } else if colors.contains(word) {
             score += COLOR_POINTS;
-            reasons.push(Reason::Color(word.clone()));
+            reasons.push(Reason::Color(as_written.clone()));
         }
     }
     (score, reasons)
@@ -535,6 +628,69 @@ mod tests {
                 "matching set with Bat bow",
                 "ready to wear"
             ]
+        );
+    }
+
+    #[test]
+    fn plurals_become_singular_by_simple_rules() {
+        let cases = [
+            ("pumpkins", "pumpkin"),
+            ("ghosts", "ghost"),
+            ("tacos", "taco"),
+            ("berries", "berry"),
+            ("bunnies", "bunny"),
+            ("pies", "pie"),
+            ("peaches", "peach"),
+            ("wishes", "wish"),
+            ("glasses", "glass"),
+            ("boxes", "box"),
+            ("leaves", "leaf"),
+            ("scarves", "scarf"),
+            ("mice", "mouse"),
+            ("tomatoes", "tomato"),
+            ("reds", "red"),
+            // Already singular, or only looks plural: unchanged.
+            ("pumpkin", "pumpkin"),
+            ("dress", "dress"),
+            ("cactus", "cactus"),
+            ("iris", "iris"),
+            ("christmas", "christmas"),
+            ("news", "news"),
+            ("gas", "gas"),
+        ];
+        for (word, expected) in cases {
+            assert_eq!(singular(word), expected, "{word}");
+        }
+    }
+
+    #[test]
+    fn plural_and_singular_words_match_each_other() {
+        // "Fall Leaves" should find a bow made from a "leaf" fabric, and the
+        // reason uses the event's own word.
+        let fabrics = vec![fabric(1, "Maple print", &[], &["leaf", "autumn"], true)];
+        let maple = accessory(1, "Maple bow", &[], &[1]);
+        let fall = event("Fall Leaves", &[], d(2026, 10, 1));
+        let found = suggest_accessories(&fall, &[maple], &fabrics);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].reasons, vec![Reason::Keyword("leaves".into())]);
+
+        // The other way round: a "pumpkins" keyword on the fabric, "pumpkin"
+        // on the event; and a plural color name ("reds") matching "Red".
+        let fabrics = vec![fabric(1, "Patch", &["reds"], &["pumpkins"], true)];
+        let mut patch = accessory(1, "Patch bow", &[], &[1]);
+        patch.colors_from_fabrics = true;
+        let harvest = event("Pumpkin Red Harvest", &[], d(2026, 10, 1));
+        let found = suggest_accessories(&harvest, &[patch], &fabrics);
+        assert_eq!(found[0].score, KEYWORD_POINTS + COLOR_POINTS);
+    }
+
+    #[test]
+    fn words_that_only_look_plural_dont_cause_false_matches() {
+        // A newspaper-print fabric has nothing to do with New Year's Eve.
+        let fabrics = vec![fabric(1, "Newsprint", &[], &["news"], true)];
+        let new_year = event("New Year's Eve", &["new", "year"], d(2026, 12, 31));
+        assert!(
+            suggest_fabrics(&new_year, &fabrics, d(2026, 12, 31), &LeadTimes::default()).is_empty()
         );
     }
 }
