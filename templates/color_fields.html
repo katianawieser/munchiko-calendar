@@ -1,4 +1,5 @@
-{#- The color list on the fabric and accessory forms. Expects `colors: Vec<ColorRow>`.
+{#- The color list on the fabric and accessory forms. Expects `colors: Vec<ColorRow>`
+    and `color_ideas: Vec<ColorIdea>` (main colors of the item's photos).
 
     Without JavaScript this is a list of name boxes (one spare at the end), so
     the form still works. static/colors.js adds the swatch pickers and the
@@ -25,6 +26,14 @@
       <button type="button" class="outline secondary small remove-color" aria-label="Remove this color">✕</button>
     </div>
   </template>
+  {% if !color_ideas.is_empty() %}
+  <p class="color-ideas" hidden>
+    <small class="muted">From your photos (click to add, or click into a color first to give it that shade):</small>
+    {% for idea in color_ideas %}
+    <button type="button" class="chip color-idea" data-name="{{ idea.name }}" data-hex="{{ idea.hex }}" title="Add {{ idea.name }} ({{ idea.hex }})"><span class="swatch" style="background: {{ idea.hex }}"></span>{{ idea.name }}</button>
+    {% endfor %}
+  </p>
+  {% endif %}
   <button type="button" class="outline small add-color" hidden>+ Add color</button>
 </div>
 <script src="/static/colors.js" defer></script>

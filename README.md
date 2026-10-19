@@ -77,7 +77,12 @@ JPEG, PNG, WebP and GIF are stored as they are; BMP and TIFF are converted to
 PNG, and iPhone HEIC photos to JPEG (on a Mac, using the built-in `sips` tool;
 elsewhere the page explains how to export a JPEG). Every photo gets a small
 JPEG thumbnail, turned the right way up. Photos show on the item's page, and
-the first one is the thumbnail in the lists. On fabric and accessory pages the photos sit right
+the first one is the thumbnail in the lists.
+
+Below the color rows, **"From your photos"** offers the main colors of the
+item's photos, each with its exact shade and the nearest name from a built-in
+list (e.g. "teal", "baby pink"). One click adds it; click into one of your own
+colors first and the chip gives that color its shade instead, keeping your name. On fabric and accessory pages the photos sit right
 above the form, so the eyedropper can pick colors from them.
 
 ## How suggestions work
@@ -177,7 +182,7 @@ cargo run    # start the web app at http://127.0.0.1:3000
   - [x] **M6a** — color swatches with a color picker / eyedropper
   - [x] **M6b** — photo uploads for fabrics, accessories and post plans
   - [x] **M6c** — thumbnails, and more formats (HEIC, BMP, TIFF) converted on upload
-  - [ ] **M6d** — suggest a fabric's colors from its photo
+  - [x] **M6d** — suggest a fabric's colors from its photo
 
 ## Project layout
 
@@ -190,6 +195,7 @@ src/
   models.rs   fabric, accessories, events, post plans
   planner.rs  the scheduling engine + its tests
   suggest.rs  scores accessories and fabrics for an event, with reasons + tests
+  palette.rs  finds a photo's main colors and names them (CIE Lab) + tests
   photos/     uploaded photos + tests
     mod.rs      recognises files by their first bytes, saves them on disk
     process.rs  thumbnails and BMP/TIFF → PNG (the `image` crate, pure Rust)

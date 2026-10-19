@@ -15,7 +15,7 @@ use super::forms::{
     Choice, ColorRow, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, color_rows,
     color_rows_from_form, label_of, parse_choice, read_colors,
 };
-use super::photos::{self, PhotoSection};
+use super::photos::{self, ColorIdea, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewAccessory};
 use crate::models::{
@@ -232,6 +232,8 @@ struct AccessoryFormPage {
     partner_choices: Vec<Choice>,
     blocked: Blockers,
     photos: PhotoSection,
+    /// Main colors of its photos, offered beside the color rows.
+    color_ideas: Vec<ColorIdea>,
     errors: Vec<String>,
 }
 
@@ -313,6 +315,7 @@ impl AccessoryFormPage {
             partner_choices,
             blocked: Blockers::default(),
             photos: PhotoSection::unsaved(),
+            color_ideas: Vec::new(),
             errors: Vec::new(),
         }
     }
@@ -451,8 +454,12 @@ async fn edit_page(state: &AppState, accessory: &Accessory) -> Result<AccessoryF
     let fabrics = state.db.list_fabrics().await?;
     let mut page = AccessoryFormPage::new(Some(accessory), &usage.accessories, &fabrics);
     page.blocked = blockers::for_accessory(accessory.id, &usage);
-    page.photos =
-        PhotoSection::load(state, PhotoOwner::Accessory(accessory.id), &accessory.name).await?;
+    let owner = PhotoOwner::Accessory(accessory.id);
+    let photos = state.db.list_photos(owner).await?;
+    page.photos = PhotoSection::new(owner, &accessory.name, &photos);
+    // Compare with all its colors, including the ones from its fabrics.
+    let colors = accessory.effective_colors(&fabrics);
+    page.color_ideas = photos::color_ideas(state, &photos, &colors).await;
     Ok(page)
 }
 

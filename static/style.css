@@ -220,3 +220,17 @@ img.thumb {
   border-radius: 0.3rem;
   flex: none;
 }
+
+/* "From your photos" color chips (M6d). */
+.color-ideas { margin-bottom: 0.75rem; }
+button.color-idea {
+  width: auto;
+  margin: 0 0.3rem 0.3rem 0;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--pico-muted-border-color);
+  color: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+button.color-idea:hover { border-color: var(--pico-primary); }
+button.color-idea:disabled { opacity: 0.45; cursor: default; }

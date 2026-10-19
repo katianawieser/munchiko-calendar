@@ -120,9 +120,17 @@ See README.md for the planning rules, data model and roadmap.
   missing thumbnails on first view (photos from M6b) and keeps them; falls back to the
   original if it can't. Lists and galleries use thumbnails; click opens the original.
   AVIF not accepted (decoding needs a C library).
-- **M6d (planned, next):** suggest colors from a photo: dominant colors + a name from a
-  small built-in list (names are what `suggest` matches), one click to add to the
-  color rows (colors.js).
+- **M6d done (M6 complete):** `src/palette.rs` (pure): pixels → 4,096 buckets (array,
+  4 bits/channel) → merge biggest-first by CIE Lab ΔE76 < 15 (Lab cached per group) →
+  keep ≥4% share, ≤6, one per name. Deterministic (no k-means). `NAMES` ≈46 sewing
+  names; a name may appear twice (two "navy" shades, since ΔE76 over-weights
+  saturation). Computed per page load from thumbnails (`web/photos.rs::color_ideas`,
+  `thumbnail_of` shared with the thumb route); ideas whose name already has a swatch are
+  hidden. Accessory compares with `effective_colors`. colors.js chip click fills:
+  last-focused row (keeps its name) > same-name row > empty row > new row; tested in
+  real Chrome via a `--dump-dom` harness. `[profile.dev.package."*"] opt-level = 2`
+  so image decoding is fast under `cargo run`. Page with photos: ~0.14 s debug,
+  ~0.02 s release. Names are approximate (pink photo → "peach"); user edits them.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; plural matching (leaf/leaves); "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

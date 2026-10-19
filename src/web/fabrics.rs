@@ -16,7 +16,7 @@ use super::forms::{
     Choice, ColorRow, FormData, color_rows, color_rows_from_form, join_list, read_colors,
     split_list,
 };
-use super::photos::{self, PhotoSection};
+use super::photos::{self, ColorIdea, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewFabric};
 use crate::models::{Accessory, Color, Fabric, FabricId, PhotoOwner};
@@ -145,6 +145,8 @@ struct FabricFormPage {
     /// What's in the way of deleting it, shown instead of the delete button.
     blocked: Blockers,
     photos: PhotoSection,
+    /// Main colors of its photos, offered beside the color rows.
+    color_ideas: Vec<ColorIdea>,
     errors: Vec<String>,
 }
 
@@ -173,6 +175,7 @@ impl FabricFormPage {
                 pair_choices,
                 blocked: Blockers::default(),
                 photos: PhotoSection::unsaved(),
+                color_ideas: Vec::new(),
                 errors: Vec::new(),
             },
             None => Self {
@@ -187,6 +190,7 @@ impl FabricFormPage {
                 pair_choices,
                 blocked: Blockers::default(),
                 photos: PhotoSection::unsaved(),
+                color_ideas: Vec::new(),
                 errors: Vec::new(),
             },
         }
@@ -252,7 +256,9 @@ async fn edit_page(state: &AppState, fabric: &Fabric) -> Result<FabricFormPage, 
     let fabrics = state.db.list_fabrics().await?;
     let mut page = FabricFormPage::new(Some(fabric), &fabrics);
     page.blocked = blockers::for_fabric(fabric.id, &load_usage(state).await?);
-    page.photos = PhotoSection::load(state, PhotoOwner::Fabric(fabric.id), &fabric.name).await?;
+    let photos = state.db.list_photos(PhotoOwner::Fabric(fabric.id)).await?;
+    page.photos = PhotoSection::new(PhotoOwner::Fabric(fabric.id), &fabric.name, &photos);
+    page.color_ideas = photos::color_ideas(state, &photos, &fabric.colors).await;
     Ok(page)
 }
 

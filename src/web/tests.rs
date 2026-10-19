@@ -1226,3 +1226,88 @@ async fn get_bytes(app: &Router, uri: &str) -> (StatusCode, Vec<u8>) {
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
     (status, bytes.to_vec())
 }
+
+// ---------------------------------------------------------------------------
+// Color ideas from photos (M6d)
+// ---------------------------------------------------------------------------
+
+/// A PNG of one color.
+fn solid(rgb: [u8; 3]) -> Vec<u8> {
+    let image = image::RgbImage::from_pixel(60, 40, image::Rgb(rgb));
+    let mut bytes = Vec::new();
+    image::DynamicImage::ImageRgb8(image)
+        .write_to(&mut std::io::Cursor::new(&mut bytes), ImageFormat::Png)
+        .unwrap();
+    bytes
+}
+
+#[tokio::test]
+async fn photo_colors_are_offered_until_they_have_a_swatch() {
+    let (app, db, _, _dir) = setup_with_photos(d(2026, 10, 5)).await;
+    // No photos, no ideas.
+    let (_, html) = get(&app, "/fabrics/1").await;
+    assert!(!html.contains("From your photos"));
+
+    // Orange velvet (fabric 1) has "orange" with no swatch yet.
+    upload(
+        &app,
+        "/fabrics/1/photos",
+        &[&solid([245, 130, 30])],
+        SAME_SITE,
+    )
+    .await;
+    let (_, html) = get(&app, "/fabrics/1").await;
+    assert!(html.contains("From your photos"));
+    // The shade is read from the JPEG thumbnail, which shifts colors by a
+    // level or two (invisible, but not byte-for-byte #f5821e).
+    let prefix = "data-name=\"orange\" data-hex=\"";
+    let at = html.find(prefix).expect("orange offered") + prefix.len();
+    let hex = &html[at..at + 7];
+    let channel = |i: usize| i64::from_str_radix(&hex[i..i + 2], 16).unwrap();
+    let off = [(1, 0xf5), (3, 0x82), (5, 0x1e)]
+        .iter()
+        .map(|&(i, want)| (channel(i) - want).abs())
+        .max()
+        .unwrap();
+    assert!(off <= 4, "{hex} is within 4 levels of #f5821e");
+
+    // Once "orange" has a swatch there's nothing left to offer.
+    let mut velvet = db.get_fabric(FabricId(1)).await.unwrap();
+    velvet.colors = vec![Color::with_hex("orange", "#f5821e")];
+    db.update_fabric(
+        velvet.id,
+        &crate::db::NewFabric {
+            name: velvet.name,
+            description: velvet.description,
+            colors: velvet.colors,
+            keywords: velvet.keywords,
+            in_stock: velvet.in_stock,
+        },
+    )
+    .await
+    .unwrap();
+    let (_, html) = get(&app, "/fabrics/1").await;
+    assert!(!html.contains("From your photos"));
+}
+
+#[tokio::test]
+async fn accessory_photos_offer_colors_its_fabrics_dont_already_cover() {
+    let (app, _, _, _dir) = setup_with_photos(d(2026, 10, 5)).await;
+    // The Ghost scarf (accessory 3): a white scarf with a black print.
+    let mut pixels = image::RgbImage::from_pixel(50, 50, image::Rgb([250, 250, 250]));
+    for x in 0..50 {
+        for y in 0..20 {
+            pixels.put_pixel(x, y, image::Rgb([20, 20, 20]));
+        }
+    }
+    let mut png = Vec::new();
+    image::DynamicImage::ImageRgb8(pixels)
+        .write_to(&mut std::io::Cursor::new(&mut png), ImageFormat::Png)
+        .unwrap();
+    upload(&app, "/accessories/3/photos", &[&png], SAME_SITE).await;
+
+    let (_, html) = get(&app, "/accessories/3").await;
+    let white = html.find("data-name=\"white\"").expect("white offered");
+    let black = html.find("data-name=\"black\"").expect("black offered");
+    assert!(white < black, "the bigger color first");
+}

@@ -1,7 +1,8 @@
 // Color rows on the fabric and accessory forms (templates/color_fields.html).
 //
 // Progressive enhancement: the form works without this script (names only).
-// With it, each row gets a swatch picker, and colors can be added/removed.
+// With it, each row gets a swatch picker, colors can be added/removed, and
+// colors found in the item's photos can be added with one click.
 //
 // A color input always holds *some* color (white by default), so it can't
 // say "no swatch". The picked value is therefore copied into a hidden
@@ -41,12 +42,64 @@ document.querySelectorAll(".color-list").forEach((list) => {
     show();
   }
 
-  rows.querySelectorAll(".color-row").forEach(wire);
-  addButton.hidden = false;
-  addButton.addEventListener("click", () => {
+  function addRow() {
     const row = template.content.firstElementChild.cloneNode(true);
     rows.append(row);
     wire(row);
-    row.querySelector('input[name="color_name"]').focus();
+    return row;
+  }
+
+  rows.querySelectorAll(".color-row").forEach(wire);
+  addButton.hidden = false;
+  addButton.addEventListener("click", () => {
+    addRow().querySelector('input[name="color_name"]').focus();
   });
+
+  // "From your photos" chips. Which row a chip fills, in order of preference:
+  //   1. the row whose name box was clicked into last: it gets the exact
+  //      shade and keeps its own name ("faded orange" stays "faded orange");
+  //   2. a row that already has the chip's name (it gains the exact shade);
+  //   3. an empty row, then 4. a new row; these take the chip's name too.
+  const ideas = list.querySelector(".color-ideas");
+  if (ideas) {
+    ideas.hidden = false;
+
+    // Remember the row being worked on. Clicking a chip moves focus to the
+    // chip, so only focus moving anywhere *else* forgets the row.
+    let chosenRow = null;
+    document.addEventListener("focusin", (event) => {
+      if (event.target.matches('.color-row input[name="color_name"]')) {
+        chosenRow = rows.contains(event.target) ? event.target.closest(".color-row") : null;
+      } else if (!event.target.closest(".color-ideas")) {
+        chosenRow = null;
+      }
+    });
+
+    const nameBox = (row) => row.querySelector('input[name="color_name"]');
+    const nameOf = (row) => nameBox(row).value.trim().toLowerCase();
+    const hexOf = (row) => row.querySelector('input[name="color_hex"]').value;
+
+    ideas.querySelectorAll(".color-idea").forEach((button) => {
+      button.addEventListener("click", () => {
+        const { name, hex } = button.dataset;
+        const all = [...rows.querySelectorAll(".color-row")];
+        let row = chosenRow && rows.contains(chosenRow) ? chosenRow : null;
+        chosenRow = null; // one chip per click into a row
+        row =
+          row ||
+          all.find((r) => nameOf(r) === name) ||
+          all.find((r) => nameOf(r) === "" && hexOf(r) === "") ||
+          addRow();
+        if (nameOf(row) === "") {
+          nameBox(row).value = name;
+        }
+        const picker = row.querySelector(".swatch-picker");
+        picker.value = hex;
+        // Let the row's own handler copy the shade into the hidden field.
+        picker.dispatchEvent(new Event("input"));
+        button.disabled = true;
+        button.title = `Added ${name}`;
+      });
+    });
+  }
 });

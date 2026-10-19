@@ -20,3 +20,9 @@ toml = "1.1.6"
 
 [dev-dependencies]
 tower = { version = "0.5.3", features = ["util"] }
+
+# Optimize dependencies even in debug builds (`cargo run`). Image decoding in
+# the `image` crate is 10-20x slower unoptimized, which made pages with photos
+# take ~0.3 s. Our own code stays unoptimized, so it still builds quickly.
+[profile.dev.package."*"]
+opt-level = 2

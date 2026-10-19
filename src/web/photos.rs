@@ -15,7 +15,8 @@ use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
 
 use super::{AppError, AppState};
-use crate::models::{AccessoryId, FabricId, Photo, PhotoId, PhotoOwner, PostPlanId};
+use crate::models::{AccessoryId, Color, FabricId, Photo, PhotoId, PhotoOwner, PostPlanId};
+use crate::palette;
 use crate::photos::{self, Foreign, ImageType, MAX_PHOTO_BYTES, NotAPhoto, Upload, process};
 
 /// One upload can carry a few photos at once.
@@ -298,29 +299,96 @@ pub async fn serve_thumbnail(
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
     let photo = state.db.get_photo(PhotoId(id)).await?;
-    match state.photos.read_thumbnail(&photo).await {
-        Ok(jpeg) => return Ok(image_response("image/jpeg", jpeg)),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(AppError::Internal(format!("reading thumbnail {id}: {e}"))),
-    }
-
-    // Photos uploaded before thumbnails existed: make one now and keep it.
-    let original = read_original(&state, &photo).await?;
-    let made = on_cpu({
-        let original = original.clone();
-        move || process::thumbnail(&original)
-    })
-    .await;
-    match made {
-        Ok(jpeg) => {
-            if let Err(e) = state.photos.save_thumbnail(&photo, &jpeg).await {
-                eprintln!("couldn't save the thumbnail for photo {id}: {e}");
-            }
-            Ok(image_response("image/jpeg", jpeg))
-        }
+    match thumbnail_of(&state, &photo).await? {
+        Some(jpeg) => Ok(image_response("image/jpeg", jpeg)),
         // Can't be shrunk: show the full photo rather than nothing.
-        Err(_) => Ok(image_response(photo.image_type.mime(), original)),
+        None => Ok(image_response(
+            photo.image_type.mime(),
+            read_original(&state, &photo).await?,
+        )),
     }
+}
+
+/// The photo's thumbnail. Photos uploaded before thumbnails existed get one
+/// made now, which is kept for next time. `None` if one can't be made.
+async fn thumbnail_of(state: &AppState, photo: &Photo) -> Result<Option<Vec<u8>>, AppError> {
+    match state.photos.read_thumbnail(photo).await {
+        Ok(jpeg) => return Ok(Some(jpeg)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            return Err(AppError::Internal(format!(
+                "reading thumbnail {}: {e}",
+                photo.id.0
+            )));
+        }
+    }
+    let original = read_original(state, photo).await?;
+    let Ok(jpeg) = on_cpu(move || process::thumbnail(&original)).await else {
+        return Ok(None);
+    };
+    if let Err(e) = state.photos.save_thumbnail(photo, &jpeg).await {
+        eprintln!("couldn't save the thumbnail for photo {}: {e}", photo.id.0);
+    }
+    Ok(Some(jpeg))
+}
+
+// ---------------------------------------------------------------------------
+// Color ideas from photos (M6d)
+// ---------------------------------------------------------------------------
+
+/// A main color of an item's photos, offered as a one-click color row.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ColorIdea {
+    pub name: String,
+    pub hex: String,
+}
+
+/// How many colors to offer.
+const MAX_COLOR_IDEAS: usize = 6;
+
+/// The main colors across `photos` (read from their thumbnails, which is
+/// quick), minus colors the item already has a swatch for under that name.
+/// Never fails the page: if a photo can't be read, it's skipped.
+pub async fn color_ideas(state: &AppState, photos: &[Photo], existing: &[Color]) -> Vec<ColorIdea> {
+    let mut thumbnails = Vec::new();
+    for photo in photos {
+        match thumbnail_of(state, photo).await {
+            Ok(Some(jpeg)) => thumbnails.push(jpeg),
+            Ok(None) => {}
+            Err(e) => eprintln!("color ideas: skipping photo {}: {e:?}", photo.id.0),
+        }
+    }
+    if thumbnails.is_empty() {
+        return Vec::new();
+    }
+    let swatches = tokio::task::spawn_blocking(move || {
+        // All the photos' pixels together, as if they were one picture.
+        let images: Vec<_> = thumbnails
+            .iter()
+            .filter_map(|jpeg| process::decode(jpeg).ok())
+            .map(|image| image.to_rgb8())
+            .collect();
+        palette::main_colors(
+            images.iter().flat_map(|image| image.pixels().map(|p| p.0)),
+            MAX_COLOR_IDEAS,
+        )
+    })
+    .await
+    .unwrap_or_default();
+    new_ideas(&swatches, existing)
+}
+
+/// Leave out names that already have a swatch: nothing to add. A name with
+/// no swatch yet stays, since clicking it fills in the exact shade.
+fn new_ideas(swatches: &[palette::Swatch], existing: &[Color]) -> Vec<ColorIdea> {
+    swatches
+        .iter()
+        .filter(|s| !existing.iter().any(|c| c.name == s.name && c.hex.is_some()))
+        .map(|s| ColorIdea {
+            name: s.name.to_string(),
+            hex: s.hex(),
+        })
+        .collect()
 }
 
 pub async fn delete(
@@ -341,5 +409,32 @@ pub async fn remove_files(state: &AppState, photos: &[Photo]) {
         if let Err(e) = state.photos.remove(photo).await {
             eprintln!("couldn't remove the file for photo {}: {e}", photo.id.0);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ideas_skip_colors_that_already_have_a_swatch() {
+        let swatch = |name: &'static str, rgb| palette::Swatch {
+            rgb,
+            share: 0.5,
+            name,
+        };
+        let found = [
+            swatch("teal", [0, 128, 128]),
+            swatch("pink", [245, 150, 185]),
+        ];
+        let existing = [Color::with_hex("teal", "#008080"), Color::named("pink")];
+        assert_eq!(
+            new_ideas(&found, &existing),
+            vec![ColorIdea {
+                name: "pink".into(),
+                hex: "#f596b9".into()
+            }],
+            "pink has no swatch yet, so it's still offered"
+        );
     }
 }
