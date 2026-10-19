@@ -12,7 +12,13 @@ use tower::ServiceExt;
 use super::{AppState, router};
 use crate::db::{NewEvent, Repository};
 use crate::models::{EventKind, PostPlanId};
-use crate::photos::PhotoStore;
+use std::sync::LazyLock;
+
+use image::ImageFormat;
+
+use crate::photos::heic::HeicConverter;
+use crate::photos::process::{self, tests::sample};
+use crate::photos::{ImageType, PhotoStore};
 use crate::{demo, holidays};
 
 fn d(y: i32, m: u32, day: u32) -> NaiveDate {
@@ -902,11 +908,11 @@ async fn when_nothing_fits_fabrics_are_suggested_with_a_start_date() {
 }
 
 // ---------------------------------------------------------------------------
-// Photos (M6b)
+// Photos (M6b, M6c)
 // ---------------------------------------------------------------------------
 
-/// The first bytes of a JPEG; enough for the type check.
-const JPEG: &[u8] = b"\xFF\xD8\xFF\xE0 pretend this is a photo";
+/// A real (tiny) JPEG: uploads are decoded in full, so made-up bytes won't do.
+static JPEG: LazyLock<Vec<u8>> = LazyLock::new(|| sample(32, 24, ImageFormat::Jpeg));
 
 /// Send `files` the way a browser sends a file form ("multipart/form-data"):
 /// each part is separated by a boundary line and says its field name.
@@ -956,7 +962,7 @@ const SAME_SITE: &[(&str, &str)] = &[("sec-fetch-site", "same-origin")];
 #[tokio::test]
 async fn an_uploaded_photo_is_saved_shown_and_served() {
     let (app, db, _, dir) = setup_with_photos(d(2026, 10, 5)).await;
-    let reply = upload(&app, "/fabrics/1/photos", &[JPEG], SAME_SITE).await;
+    let reply = upload(&app, "/fabrics/1/photos", &[&JPEG], SAME_SITE).await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER);
     assert_eq!(reply.location.as_deref(), Some("/fabrics/1"));
 
@@ -969,14 +975,17 @@ async fn an_uploaded_photo_is_saved_shown_and_served() {
     let id = photos[0].id.0;
     assert_eq!(
         std::fs::read(dir.path().join(format!("{id}.jpg"))).unwrap(),
-        JPEG
+        *JPEG
     );
 
     // Shown on the edit page and as the list's thumbnail.
     let (_, html) = get(&app, "/fabrics/1").await;
-    assert!(html.contains(&format!("<img src=\"/photos/{id}\"")));
+    // The gallery shows the thumbnail and links to the full photo.
+    assert!(html.contains(&format!(
+        "<a href=\"/photos/{id}\" target=\"_blank\"><img src=\"/photos/{id}/thumb\""
+    )));
     let (_, html) = get(&app, "/fabrics").await;
-    assert!(html.contains(&format!("<img class=\"thumb\" src=\"/photos/{id}\"")));
+    assert!(html.contains(&format!("<img class=\"thumb\" src=\"/photos/{id}/thumb\"")));
 
     // Served with its real type, and the browser told not to guess.
     let response = app
@@ -995,17 +1004,17 @@ async fn an_uploaded_photo_is_saved_shown_and_served() {
         "nosniff"
     );
     let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
-    assert_eq!(&bytes[..], JPEG);
+    assert_eq!(bytes.to_vec(), *JPEG);
 }
 
 #[tokio::test]
 async fn several_photos_can_be_uploaded_at_once() {
     let (app, db, post, _dir) = setup_with_photos(d(2026, 10, 5)).await;
-    let png = b"\x89PNG\r\n\x1a\n rest";
+    let png = sample(10, 10, ImageFormat::Png);
     let reply = upload(
         &app,
         &format!("/posts/{}/photos", post.0),
-        &[JPEG, png],
+        &[&JPEG, &png],
         SAME_SITE,
     )
     .await;
@@ -1019,6 +1028,7 @@ async fn several_photos_can_be_uploaded_at_once() {
     );
     let (_, html) = get(&app, &format!("/posts/{}", post.0)).await;
     assert_eq!(html.matches("<img src=\"/photos/").count(), 2);
+    assert!(html.contains("/thumb\""), "the gallery shows thumbnails");
 }
 
 #[tokio::test]
@@ -1029,18 +1039,25 @@ async fn files_that_arent_photos_are_refused_and_nothing_is_saved() {
     let reply = upload(
         &app,
         "/accessories/1/photos",
-        &[JPEG, b"just text"],
+        &[&JPEG, b"just text"],
         SAME_SITE,
     )
     .await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(reply.html.contains("isn&#39;t a JPEG, PNG, WebP or GIF"));
+    assert!(reply.html.contains("isn&#39;t a photo the app can use"));
     assert!(reply.html.contains("href=\"/accessories/1\""), "links back");
 
+    // Starts like a JPEG, but isn't one.
+    let fake = b"\xFF\xD8\xFF\xE0 pretend this is a photo";
+    let reply = upload(&app, "/accessories/1/photos", &[fake], SAME_SITE).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("couldn&#39;t be read"));
+
+    // These tests have no HEIC converter (like a computer without sips).
     let heic = b"\0\0\0\x18ftypheic\0\0\0\0";
     let reply = upload(&app, "/accessories/1/photos", &[heic], SAME_SITE).await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(reply.html.contains("HEIC"));
+    assert!(reply.html.contains("can&#39;t convert HEIC"));
 
     let reply = upload(&app, "/accessories/1/photos", &[b""], SAME_SITE).await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -1064,12 +1081,12 @@ async fn photos_over_the_size_limit_are_refused() {
 #[tokio::test]
 async fn uploads_need_an_owner_and_our_own_page() {
     let (app, _, _, _dir) = setup_with_photos(d(2026, 10, 5)).await;
-    let reply = upload(&app, "/fabrics/99/photos", &[JPEG], SAME_SITE).await;
+    let reply = upload(&app, "/fabrics/99/photos", &[&JPEG], SAME_SITE).await;
     assert_eq!(reply.status, StatusCode::NOT_FOUND);
     let reply = upload(
         &app,
         "/fabrics/1/photos",
-        &[JPEG],
+        &[&JPEG],
         &[("sec-fetch-site", "cross-site")],
     )
     .await;
@@ -1079,11 +1096,11 @@ async fn uploads_need_an_owner_and_our_own_page() {
 #[tokio::test]
 async fn deleting_a_photo_or_its_owner_removes_the_file() {
     let (app, db, plan, dir) = setup_with_photos(d(2026, 10, 5)).await;
-    upload(&app, "/fabrics/1/photos", &[JPEG], SAME_SITE).await;
+    upload(&app, "/fabrics/1/photos", &[&JPEG], SAME_SITE).await;
     upload(
         &app,
         &format!("/posts/{}/photos", plan.0),
-        &[JPEG],
+        &[&JPEG],
         SAME_SITE,
     )
     .await;
@@ -1109,4 +1126,103 @@ async fn new_forms_explain_photos_come_after_saving() {
     let (_, html) = get(&app, "/fabrics/new").await;
     assert!(html.contains("You can add photos once this is saved."));
     assert!(!html.contains("multipart/form-data"));
+}
+
+#[tokio::test]
+async fn bmp_and_tiff_are_stored_as_png() {
+    let (app, db, _, dir) = setup_with_photos(d(2026, 10, 5)).await;
+    let bmp = sample(20, 10, ImageFormat::Bmp);
+    let tiff = sample(20, 10, ImageFormat::Tiff);
+    let reply = upload(&app, "/fabrics/1/photos", &[&bmp, &tiff], SAME_SITE).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+
+    for photo in db.list_all_photos().await.unwrap() {
+        assert_eq!(photo.image_type, ImageType::Png);
+        let stored = std::fs::read(dir.path().join(format!("{}.png", photo.id.0))).unwrap();
+        assert!(stored.starts_with(b"\x89PNG"));
+    }
+}
+
+#[tokio::test]
+async fn thumbnails_are_made_on_upload_and_served_as_jpeg() {
+    let (app, db, _, dir) = setup_with_photos(d(2026, 10, 5)).await;
+    let big = sample(1200, 900, ImageFormat::Png);
+    upload(&app, "/fabrics/1/photos", &[&big], SAME_SITE).await;
+    let id = db.list_all_photos().await.unwrap()[0].id.0;
+    assert!(dir.path().join(format!("{id}.thumb.jpg")).exists());
+
+    let response = app
+        .clone()
+        .oneshot(
+            Request::get(format!("/photos/{id}/thumb"))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.headers()[header::CONTENT_TYPE], "image/jpeg");
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    let thumb = process::decode(&bytes).unwrap();
+    assert_eq!((thumb.width(), thumb.height()), (400, 300));
+}
+
+#[tokio::test]
+async fn photos_from_before_thumbnails_get_one_when_first_shown() {
+    let (app, db, _, dir) = setup_with_photos(d(2026, 10, 5)).await;
+    upload(&app, "/fabrics/1/photos", &[&JPEG], SAME_SITE).await;
+    let id = db.list_all_photos().await.unwrap()[0].id.0;
+    // Pretend it was uploaded by the M6b version: no thumbnail file.
+    let thumb = dir.path().join(format!("{id}.thumb.jpg"));
+    std::fs::remove_file(&thumb).unwrap();
+
+    let (status, _) = get_bytes(&app, &format!("/photos/{id}/thumb")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(thumb.exists(), "made once, then kept");
+}
+
+#[tokio::test]
+async fn heic_is_converted_to_jpeg_where_sips_exists() {
+    let converter = HeicConverter::system();
+    let HeicConverter::Sips(sips) = &converter else {
+        return; // not a Mac: covered by the "can't convert HEIC" test
+    };
+    let heic = crate::photos::heic::tests::sample_heic(sips).await;
+
+    let dir = tempfile::tempdir().unwrap();
+    let db = Repository::in_memory().await.unwrap();
+    demo::seed_halloween(&db, 2026).await.ok();
+    let velvet = db
+        .create_fabric(&crate::db::NewFabric {
+            name: "Velvet".into(),
+            description: String::new(),
+            colors: vec![],
+            keywords: vec![],
+            in_stock: true,
+        })
+        .await
+        .unwrap();
+    let mut state = AppState::new(db.clone(), PhotoStore::new(dir.path()));
+    state.heic = converter.clone();
+    let app = router(state);
+
+    let reply = upload(
+        &app,
+        &format!("/fabrics/{}/photos", velvet.0),
+        &[&heic],
+        SAME_SITE,
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER, "{}", reply.html);
+    let photo = &db.list_all_photos().await.unwrap()[0];
+    assert_eq!(photo.image_type, ImageType::Jpeg);
+    let stored = std::fs::read(dir.path().join(format!("{}.jpg", photo.id.0))).unwrap();
+    assert!(stored.starts_with(&[0xFF, 0xD8, 0xFF]));
+}
+
+async fn get_bytes(app: &Router, uri: &str) -> (StatusCode, Vec<u8>) {
+    let request = Request::get(uri).body(Body::empty()).unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    (status, bytes.to_vec())
 }

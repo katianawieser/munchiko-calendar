@@ -106,8 +106,24 @@ See README.md for the planning rules, data model and roadmap.
   the eyedropper); new forms say "add photos once saved". Post page has a Photos
   section. Full-size images are used as thumbnails (no resizing yet).
   Tests: `setup_with_photos` gives a temp folder (tempfile dev-dep).
-- **Possible next steps (not started; ask first):** M6c suggest colors from a photo
-  and/or real thumbnails (both need an image crate); photo thumbnails in the ideas box; drop "(bow)" from planner task
+- **M6c done:** `image` 0.25 crate (no default features; jpeg/png/webp/gif/bmp/tiff,
+  MSRV 1.85). `src/photos/` is now a folder: `mod.rs` (`detect` → `Upload::Ready(ImageType)`
+  or `Upload::Convert(Foreign::{Bmp,Tiff,Heic})`; DB still stores only the 4 browser
+  types), `process.rs` (pure: `decode` with 16384px limits + EXIF orientation,
+  `thumbnail` → JPEG ≤400px, never enlarges, alpha blended onto white; `to_png`),
+  `heic.rs` (`HeicConverter::{Unavailable, Sips}`; `system()` picks sips on macOS; temp
+  dir, fixed args, 60s timeout, kill_on_drop; sips exits 0 even when it skips a bad
+  file, so a missing output file = failure, and output is checked to be JPEG).
+  `AppState.heic` defaults to Unavailable; `main` sets `system()` and prints it.
+  Upload decodes every file (proves it's a real image), runs image work in
+  `spawn_blocking`, saves `<id>.thumb.jpg` beside the photo. `/photos/{id}/thumb` makes
+  missing thumbnails on first view (photos from M6b) and keeps them; falls back to the
+  original if it can't. Lists and galleries use thumbnails; click opens the original.
+  AVIF not accepted (decoding needs a C library).
+- **M6d (planned, next):** suggest colors from a photo: dominant colors + a name from a
+  small built-in list (names are what `suggest` matches), one click to add to the
+  color rows (colors.js).
+- **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; plural matching (leaf/leaves); "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
 

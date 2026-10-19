@@ -72,9 +72,12 @@ the exact shade from a color picker, shown as a dot next to the name. The
 browser's picker has an eyedropper, so a shade can be sampled straight from a
 photo of the fabric. Suggestions only look at the names.
 
-Fabrics, accessories and post plans can have **photos** (JPEG, PNG, WebP or
-GIF, up to 15 MB each). They show on the item's page, and the first one is
-the thumbnail in the lists. On fabric and accessory pages the photos sit right
+Fabrics, accessories and post plans can have **photos** (up to 15 MB each).
+JPEG, PNG, WebP and GIF are stored as they are; BMP and TIFF are converted to
+PNG, and iPhone HEIC photos to JPEG (on a Mac, using the built-in `sips` tool;
+elsewhere the page explains how to export a JPEG). Every photo gets a small
+JPEG thumbnail, turned the right way up. Photos show on the item's page, and
+the first one is the thumbnail in the lists. On fabric and accessory pages the photos sit right
 above the form, so the eyedropper can pick colors from them.
 
 ## How suggestions work
@@ -173,6 +176,8 @@ cargo run    # start the web app at http://127.0.0.1:3000
 - [x] **M6** — Visual colors and photos
   - [x] **M6a** — color swatches with a color picker / eyedropper
   - [x] **M6b** — photo uploads for fabrics, accessories and post plans
+  - [x] **M6c** — thumbnails, and more formats (HEIC, BMP, TIFF) converted on upload
+  - [ ] **M6d** — suggest a fabric's colors from its photo
 
 ## Project layout
 
@@ -185,7 +190,10 @@ src/
   models.rs   fabric, accessories, events, post plans
   planner.rs  the scheduling engine + its tests
   suggest.rs  scores accessories and fabrics for an event, with reasons + tests
-  photos.rs   recognises image files by their first bytes, saves them on disk + tests
+  photos/     uploaded photos + tests
+    mod.rs      recognises files by their first bytes, saves them on disk
+    process.rs  thumbnails and BMP/TIFF → PNG (the `image` crate, pure Rust)
+    heic.rs     HEIC → JPEG with macOS's `sips` tool
   holidays.rs reads holidays.toml and calculates dates (Easter, nth weekday...) + tests
   db.rs       SQLite repository: saves and loads the models + its tests
   demo.rs     the example Halloween post

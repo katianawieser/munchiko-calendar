@@ -39,6 +39,7 @@ use chrono::{Local, NaiveDate};
 use crate::db::{DbError, Repository};
 use crate::models::{Accessory, Event, EventId, PostPlan};
 use crate::photos::PhotoStore;
+use crate::photos::heic::HeicConverter;
 use crate::planner::{Inventory, LeadTimes, PlanError, Timeline, build_timeline};
 
 /// Everything a handler needs. Axum hands each handler a clone; the
@@ -48,6 +49,9 @@ pub struct AppState {
     pub db: Repository,
     /// The folder uploaded photos are kept in.
     pub photos: PhotoStore,
+    /// How HEIC uploads are converted. `new` starts with none; `main` picks
+    /// the system's (so tests behave the same on every computer).
+    pub heic: HeicConverter,
     pub lead_times: LeadTimes,
     /// Pretend today is this date. Tests use it so their output doesn't
     /// depend on when they run; the real app leaves it `None`.
@@ -59,6 +63,7 @@ impl AppState {
         Self {
             db,
             photos,
+            heic: HeicConverter::Unavailable,
             lead_times: LeadTimes::default(),
             today_override: None,
         }
@@ -85,6 +90,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(uploads)
         .route("/photos/{id}", get(photos::serve))
+        .route("/photos/{id}/thumb", get(photos::serve_thumbnail))
         .route("/photos/{id}/delete", post(photos::delete))
         .route("/", get(calendar::this_month))
         .route("/calendar/{year}/{month}", get(calendar::month))

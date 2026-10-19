@@ -9,11 +9,14 @@ description = "Content planner for Mochi & Momo's social media account: works ba
 askama = "0.14.0"
 axum = { version = "0.8.9", features = ["multipart"] }
 chrono = { version = "0.4", features = ["serde"] }
+# Thumbnails and format conversion; pure Rust, nothing to install
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp", "gif", "bmp", "tiff"] }
 serde = { version = "1", features = ["derive"] }
 sqlx = { version = "0.8.6", default-features = false, features = ["runtime-tokio", "sqlite", "migrate", "macros", "chrono", "json"] }
-tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "signal", "fs"] }
+# Scratch files for HEIC conversion (see photos.rs)
+tempfile = "3"
+tokio = { version = "1.53.2", features = ["macros", "rt-multi-thread", "signal", "fs", "process", "time"] }
 toml = "1.1.6"
 
 [dev-dependencies]
-tempfile = "3"
 tower = { version = "0.5.3", features = ["util"] }

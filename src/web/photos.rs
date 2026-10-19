@@ -2,11 +2,13 @@
 //! accessories and post plans.
 //!
 //! An upload is a `multipart/form-data` form (the only way a browser can send
-//! a file). Every file in it is checked before any is saved, so an upload is
-//! all-or-nothing. Saving is two steps: record the photo in the database (which
-//! assigns its id), then write the file named after that id. If writing the file
-//! fails, the record is removed again so the two never disagree.
+//! a file). Every file in it is checked, converted if needed and given a
+//! thumbnail before any is saved, so an upload is all-or-nothing. Saving is two
+//! steps: record the photo in the database (which assigns its id), then write
+//! the files named after that id. If writing fails, the record is removed again
+//! so the two never disagree.
 
+use axum::body::Bytes;
 use axum::extract::multipart::MultipartError;
 use axum::extract::{Multipart, Path, State};
 use axum::http::{StatusCode, header};
@@ -14,7 +16,7 @@ use axum::response::{IntoResponse, Redirect, Response};
 
 use super::{AppError, AppState};
 use crate::models::{AccessoryId, FabricId, Photo, PhotoId, PhotoOwner, PostPlanId};
-use crate::photos::{ImageType, MAX_PHOTO_BYTES};
+use crate::photos::{self, Foreign, ImageType, MAX_PHOTO_BYTES, NotAPhoto, Upload, process};
 
 /// One upload can carry a few photos at once.
 pub const MAX_UPLOAD_BYTES: usize = 4 * MAX_PHOTO_BYTES;
@@ -32,12 +34,18 @@ pub fn photo_src(photo: &Photo) -> String {
     format!("/photos/{}", photo.id.0)
 }
 
+pub fn thumbnail_src(photo: &Photo) -> String {
+    format!("/photos/{}/thumb", photo.id.0)
+}
+
 // ---------------------------------------------------------------------------
 // What the pages show (templates/photos_section.html)
 // ---------------------------------------------------------------------------
 
 pub struct PhotoView {
+    /// The full-size photo (opened on click).
     pub src: String,
+    pub thumb_src: String,
     pub delete_action: String,
 }
 
@@ -67,6 +75,7 @@ impl PhotoSection {
                 .iter()
                 .map(|p| PhotoView {
                     src: photo_src(p),
+                    thumb_src: thumbnail_src(p),
                     delete_action: format!("/photos/{}/delete", p.id.0),
                 })
                 .collect(),
@@ -88,7 +97,7 @@ pub async fn thumbnails(
         // Oldest first, so keep the first one seen for each owner.
         first
             .entry(photo.owner)
-            .or_insert_with(|| photo_src(&photo));
+            .or_insert_with(|| thumbnail_src(&photo));
     }
     Ok(first)
 }
@@ -157,7 +166,7 @@ async fn upload(
         }
     };
 
-    // 1. Read and check every file before saving anything.
+    // 1. Read, check, convert and thumbnail every file before saving anything.
     let mut files = Vec::new();
     while let Some(field) = multipart.next_field().await.map_err(unreadable)? {
         if field.name() != Some("photo") {
@@ -170,9 +179,10 @@ async fn upload(
         if bytes.len() > MAX_PHOTO_BYTES {
             return Err(too_big());
         }
-        let image_type = ImageType::detect(&bytes)
+        let prepared = prepare(state, bytes)
+            .await
             .map_err(|why| reject(StatusCode::UNPROCESSABLE_ENTITY, why.message()))?;
-        files.push((image_type, bytes));
+        files.push(prepared);
     }
     if files.is_empty() {
         return Err(reject(
@@ -181,10 +191,15 @@ async fn upload(
         ));
     }
 
-    // 2. Save them: the record first (it assigns the id), then the file.
-    for (image_type, bytes) in files {
-        let photo = state.db.add_photo(owner, image_type).await?;
-        if let Err(e) = state.photos.save(&photo, &bytes).await {
+    // 2. Save them: the record first (it assigns the id), then the files.
+    for file in files {
+        let photo = state.db.add_photo(owner, file.image_type).await?;
+        let saved = async {
+            state.photos.save(&photo, &file.bytes).await?;
+            state.photos.save_thumbnail(&photo, &file.thumbnail).await
+        };
+        if let Err(e) = saved.await {
+            state.photos.remove(&photo).await.ok();
             let _ = state.db.delete_photo(photo.id).await;
             return Err(AppError::Internal(format!(
                 "saving photo {}: {e}",
@@ -195,23 +210,56 @@ async fn upload(
     Ok(Redirect::to(&back).into_response())
 }
 
+/// A photo that has passed every check and is ready to save.
+struct Prepared {
+    image_type: ImageType,
+    bytes: Vec<u8>,
+    thumbnail: Vec<u8>,
+}
+
+/// Recognise the upload, convert it if browsers can't show it, and make its
+/// thumbnail. Decoding the whole image for the thumbnail also proves it's a
+/// real, undamaged image and not just a file that starts like one.
+async fn prepare(state: &AppState, upload: Bytes) -> Result<Prepared, NotAPhoto> {
+    let (image_type, bytes) = match photos::detect(&upload)? {
+        Upload::Ready(image_type) => (image_type, upload.to_vec()),
+        Upload::Convert(Foreign::Heic) => (ImageType::Jpeg, state.heic.to_jpeg(&upload).await?),
+        Upload::Convert(Foreign::Bmp | Foreign::Tiff) => (
+            ImageType::Png,
+            on_cpu(move || process::to_png(&upload)).await?,
+        ),
+    };
+    let (bytes, thumbnail) = on_cpu(move || {
+        let thumbnail = process::thumbnail(&bytes)?;
+        Ok((bytes, thumbnail))
+    })
+    .await?;
+    Ok(Prepared {
+        image_type,
+        bytes,
+        thumbnail,
+    })
+}
+
+/// Run slow image work on a thread meant for it (see `photos::process`).
+async fn on_cpu<T: Send + 'static>(
+    work: impl FnOnce() -> image::ImageResult<T> + Send + 'static,
+) -> Result<T, NotAPhoto> {
+    match tokio::task::spawn_blocking(work).await {
+        Ok(Ok(result)) => Ok(result),
+        // The image couldn't be decoded, or decoding it crashed the thread.
+        Ok(Err(_)) | Err(_) => Err(NotAPhoto::Unreadable),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Show and delete
 // ---------------------------------------------------------------------------
 
-pub async fn serve(
-    State(state): State<AppState>,
-    Path(id): Path<i64>,
-) -> Result<Response, AppError> {
-    let photo = state.db.get_photo(PhotoId(id)).await?;
-    let bytes = match state.photos.read(&photo).await {
-        Ok(bytes) => bytes,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Err(AppError::NotFound),
-        Err(e) => return Err(AppError::Internal(format!("reading photo {id}: {e}"))),
-    };
-    Ok((
+fn image_response(mime: &'static str, bytes: Vec<u8>) -> Response {
+    (
         [
-            (header::CONTENT_TYPE, photo.image_type.mime()),
+            (header::CONTENT_TYPE, mime),
             // Never let the browser guess a different type from the contents.
             (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
             // A photo's id is never reused, so its image never changes.
@@ -222,7 +270,57 @@ pub async fn serve(
         ],
         bytes,
     )
-        .into_response())
+        .into_response()
+}
+
+async fn read_original(state: &AppState, photo: &Photo) -> Result<Vec<u8>, AppError> {
+    match state.photos.read(photo).await {
+        Ok(bytes) => Ok(bytes),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err(AppError::NotFound),
+        Err(e) => Err(AppError::Internal(format!(
+            "reading photo {}: {e}",
+            photo.id.0
+        ))),
+    }
+}
+
+pub async fn serve(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    let photo = state.db.get_photo(PhotoId(id)).await?;
+    let bytes = read_original(&state, &photo).await?;
+    Ok(image_response(photo.image_type.mime(), bytes))
+}
+
+pub async fn serve_thumbnail(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    let photo = state.db.get_photo(PhotoId(id)).await?;
+    match state.photos.read_thumbnail(&photo).await {
+        Ok(jpeg) => return Ok(image_response("image/jpeg", jpeg)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(AppError::Internal(format!("reading thumbnail {id}: {e}"))),
+    }
+
+    // Photos uploaded before thumbnails existed: make one now and keep it.
+    let original = read_original(&state, &photo).await?;
+    let made = on_cpu({
+        let original = original.clone();
+        move || process::thumbnail(&original)
+    })
+    .await;
+    match made {
+        Ok(jpeg) => {
+            if let Err(e) = state.photos.save_thumbnail(&photo, &jpeg).await {
+                eprintln!("couldn't save the thumbnail for photo {id}: {e}");
+            }
+            Ok(image_response("image/jpeg", jpeg))
+        }
+        // Can't be shrunk: show the full photo rather than nothing.
+        Err(_) => Ok(image_response(photo.image_type.mime(), original)),
+    }
 }
 
 pub async fn delete(
