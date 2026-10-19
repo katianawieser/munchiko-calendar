@@ -244,3 +244,8 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
 .idea-readiness form.schedule label { margin: 0; }
 .idea-readiness form.schedule input { margin-bottom: 0; }
 .idea-readiness form.schedule button { width: auto; margin: 0; }
+
+/* Series (M8b). */
+.series-note { border-left: 4px solid var(--mc-shoot); padding-left: 0.75rem; }
+.series-posts { padding-left: 1rem; }
+.series-posts li { margin-bottom: 0.4rem; }

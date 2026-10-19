@@ -352,6 +352,7 @@ fn start_by_for_new_bow(fabric: &Fabric, post_date: NaiveDate, lead: &LeadTimes)
         title: String::new(),
         event_id: None,
         post_date: Some(post_date),
+        series_id: None,
         looks: vec![Look {
             pet: Pet::Mochi,
             accessory_id: bow.id,

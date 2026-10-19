@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} series{% endblock %}
+{% block content %}
+<hgroup>
+  <h2>{{ title }} series</h2>
+  <p>Posts from one shared setup and photo shoot, published on different days.</p>
+</hgroup>
+
+<div class="grid">
+  <article>
+    <header><strong>Shared setup</strong></header>
+    <p>{% if backdrop.is_empty() %}No backdrop decided yet.{% else %}{{ backdrop }}{% endif %}</p>
+    {% if !notes.is_empty() %}<p><em>{{ notes }}</em></p>{% endif %}
+  </article>
+  <article>
+    <header><strong>Posts</strong></header>
+    {% if posts.is_empty() %}
+    <p class="muted">No posts yet.</p>
+    {% else %}
+    <ul class="series-posts">
+      {% for post in posts %}
+      <li><a href="{{ post.href }}">{{ post.name }}</a><br><small class="muted">{{ post.when }}{% if !post.who.is_empty() %} · {{ post.who }}{% endif %}</small></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    <a href="{{ add_href }}" role="button" class="outline small">+ Add a post</a>
+  </article>
+</div>
+
+<h3>Shared prep timeline</h3>
+{% if let Some(problem) = problem %}
+<p class="notice bad">{{ problem }}</p>
+{% else if !tasks.is_empty() %}
+<table class="timeline">
+  <thead><tr><th>When</th><th>Task</th><th>Status</th></tr></thead>
+  <tbody>
+    {% for task in tasks %}
+    <tr class="{{ task.class }}">
+      <td>{{ task.when }}</td>
+      <td>{{ task.title }}</td>
+      <td><span class="badge {{ task.class }}">{{ task.status }}</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else if let Some(readiness) = readiness %}
+<p>No post has a date yet. {{ readiness }}</p>
+{% else %}
+<p class="muted">Add a post to plan the shoot.</p>
+{% endif %}
+
+<div class="form-actions">
+  <a href="{{ edit_href }}" role="button" class="secondary outline">Edit series</a>
+  <form method="post" action="{{ delete_action }}" class="inline" onsubmit="return confirm('Delete this series? Its posts are kept, each with the shared backdrop.')">
+    <button type="submit" class="danger outline">Delete series</button>
+  </form>
+</div>
+<p><small class="muted">Deleting the series keeps its posts; they become separate posts.</small></p>
+<p><a href="/posts">← All posts</a></p>
+{% endblock %}

@@ -203,6 +203,7 @@ mod tests {
             title: String::new(),
             event_id: Some(EventId(event)),
             post_date: Some(date),
+            series_id: None,
             looks: wearing
                 .iter()
                 .map(|&a| Look {

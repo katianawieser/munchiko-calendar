@@ -8,13 +8,15 @@
 
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 
-use crate::models::{Event, EventKind, PostPlanId};
+use crate::models::{Event, EventKind, PostPlanId, SeriesId};
 use crate::planner::{TaskKind, TaskStatus, Timeline};
 
 /// A post plan whose schedule has been worked out, ready to draw.
 #[derive(Debug, Clone, Copy)]
 pub struct PlannedPost<'a> {
     pub id: PostPlanId,
+    /// Set for a series: one entry stands for all its posts, and links to it.
+    pub series: Option<SeriesId>,
     /// What the post is called: its title, else its event's name.
     pub post_name: &'a str,
     pub timeline: &'a Timeline,
@@ -22,7 +24,10 @@ pub struct PlannedPost<'a> {
 
 impl PlannedPost<'_> {
     fn href(&self) -> String {
-        format!("/posts/{}", self.id.0)
+        match self.series {
+            Some(series) => format!("/series/{}", series.0),
+            None => format!("/posts/{}", self.id.0),
+        }
     }
 
     /// A post whose publish date has passed is finished, so its tasks are
@@ -135,7 +140,11 @@ fn task_style(kind: TaskKind) -> (&'static str, &'static str) {
 fn task_label(kind: TaskKind, title: &str, post_name: &str) -> String {
     match kind {
         TaskKind::PhotoShoot => format!("Shoot: {post_name}"),
-        TaskKind::Publish => format!("Post: {post_name}"),
+        // A series has one publish task per post, each titled with its post.
+        TaskKind::Publish => match title.strip_prefix("Publish: ") {
+            Some(post) => format!("Post: {post}"),
+            None => format!("Post: {post_name}"),
+        },
         _ => title.to_string(),
     }
 }
@@ -403,6 +412,7 @@ mod tests {
         let timeline = halloween();
         let posts = [PlannedPost {
             id: PostPlanId(7),
+            series: None,
             post_name: "Halloween",
             timeline: &timeline,
         }];
@@ -436,6 +446,7 @@ mod tests {
         let timeline = halloween();
         let posts = [PlannedPost {
             id: PostPlanId(1),
+            series: None,
             post_name: "Halloween",
             timeline: &timeline,
         }];
@@ -454,6 +465,7 @@ mod tests {
         let timeline = halloween();
         let posts = [PlannedPost {
             id: PostPlanId(1),
+            series: None,
             post_name: "Halloween",
             timeline: &timeline,
         }];

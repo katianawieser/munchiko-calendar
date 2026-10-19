@@ -1439,3 +1439,149 @@ async fn accessory_page_shows_the_colors_it_gets_from_its_fabrics() {
     let (_, html) = get(&app, "/accessories/3").await;
     assert!(html.contains("<p class=\"fabric-colors\" hidden>"));
 }
+
+// ---------------------------------------------------------------------------
+// Series: several posts from one setup and shoot (M8b)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn another_post_from_the_same_shoot_shares_one_setup() {
+    let (app, db, halloween_post) = setup(d(2026, 10, 5)).await;
+    let event = halloween(&db).await.0;
+
+    // "+ Another post from this shoot" on the Halloween post (Oct 31).
+    let reply = post(&app, &format!("/posts/{}/series", halloween_post.0), "").await;
+    let series = db.list_series().await.unwrap()[0].clone();
+    assert_eq!(series.title, "Halloween");
+    assert_eq!(series.backdrop, "hay bales and mini pumpkins");
+    let form_href = format!("/posts/new?series={}", series.id.0);
+    assert_eq!(reply.location.as_deref(), Some(form_href.as_str()));
+
+    // The form starts in the series, with its event.
+    let (_, html) = get(&app, &form_href).await;
+    assert!(html.contains("Another post for the Halloween series"));
+    assert!(html.contains(&format!("value=\"{}\" selected>Halloween", series.id.0)));
+    assert!(html.contains(&format!("value=\"{event}\" selected")));
+
+    // Momo's own post the day before, in the Bat bow.
+    let reply = post(
+        &app,
+        "/posts",
+        &format!(
+            "title=Momo%27s+Halloween&event={event}&series={}&when=date\
+             &post_date=2026-10-30&momo=2&backdrop=&notes=",
+            series.id.0
+        ),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+
+    // The series page: both posts, one shared timeline. The shoot is now
+    // 3 days before the FIRST post (Oct 30), not the Halloween one.
+    let (_, html) = get(&app, &format!("/series/{}", series.id.0)).await;
+    assert!(html.contains("Momo&#39;s Halloween"));
+    assert_eq!(html.matches("Photo shoot with").count(), 1);
+    // (Askama writes "&" as "&#38;".)
+    assert!(html.contains("<td>Tue Oct 27</td>\n      <td>Photo shoot with Mochi &#38; Momo"));
+    assert!(html.contains("Publish: Momo&#39;s Halloween"));
+    assert!(html.contains("Publish: Halloween"));
+    assert!(html.contains("hay bales and mini pumpkins"));
+
+    // A member's page links to the series and shows the shared backdrop.
+    let (_, html) = get(&app, &format!("/posts/{}", halloween_post.0)).await;
+    assert!(html.contains("Part of the <a href=\"/series/"));
+    assert!(html.contains("hay bales and mini pumpkins"));
+
+    // The calendar draws the shared work once, and each post on its day.
+    // (Each entry has its label twice: as text and as a tooltip. Counting
+    // tooltips counts entries.)
+    let (_, html) = get(&app, "/calendar/2026/10").await;
+    assert_eq!(html.matches("title=\"Shoot: Halloween\"").count(), 1);
+    assert!(html.contains("title=\"Post: Momo&#39;s Halloween\""));
+    assert!(html.contains("title=\"Post: Halloween\""));
+    // The backdrop takes two days, so it spans two day cells, but it's one
+    // task: on a single post it was the same.
+    assert_eq!(html.matches("title=\"Build the backdrop").count(), 2);
+}
+
+#[tokio::test]
+async fn a_series_can_start_on_its_own_page_and_be_deleted_keeping_its_posts() {
+    let (app, db, halloween_post) = setup(d(2026, 10, 5)).await;
+
+    let reply = post(&app, "/series", "title=Spooky+week&backdrop=cobwebs&notes=").await;
+    let href = reply.location.unwrap();
+    let id: i64 = href.trim_start_matches("/series/").parse().unwrap();
+    let (_, html) = get(&app, &href).await;
+    assert!(html.contains("Spooky week series"));
+    assert!(html.contains("Add a post to plan the shoot."));
+
+    // A nameless series is refused, with the reason.
+    let reply = post(&app, "/series", "title=&backdrop=&notes=").await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("Give the series a name."));
+
+    // Move the Halloween post into it via the post form, then delete the series.
+    let event = halloween(&db).await.0;
+    post(
+        &app,
+        &format!("/posts/{}", halloween_post.0),
+        &format!(
+            "title=&event={event}&series={id}&when=date&post_date=2026-10-31\
+             &mochi=1&backdrop=&notes="
+        ),
+    )
+    .await;
+    let reply = post(&app, &format!("/series/{id}/delete"), "").await;
+    assert_eq!(reply.location.as_deref(), Some("/posts"));
+    let kept = db.get_post_plan(halloween_post).await.unwrap();
+    assert_eq!(kept.series_id, None);
+    assert_eq!(kept.backdrop, "cobwebs", "the shared backdrop is kept");
+}
+
+#[tokio::test]
+async fn a_series_of_ideas_is_planned_together_and_undated_posts_wait_for_a_date() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let reply = post(
+        &app,
+        "/series",
+        "title=Fossil+exhibit&backdrop=dig+site&notes=",
+    )
+    .await;
+    let series_href = reply.location.unwrap();
+    let id: i64 = series_href.trim_start_matches("/series/").parse().unwrap();
+    // Two ideas: Momo in the Bat bow (2 days to make), Mochi in the Ghost scarf.
+    for (title, look) in [("Momo", "momo=2"), ("Mochi", "mochi=3")] {
+        post(
+            &app,
+            "/posts",
+            &format!(
+                "title={title}&event=&series={id}&when=idea&post_date=&{look}&backdrop=&notes="
+            ),
+        )
+        .await;
+    }
+
+    // No dates: the series page reports readiness for both posts together.
+    let (_, html) = get(&app, &series_href).await;
+    assert!(html.contains("No post has a date yet."));
+    assert!(html.contains("Some looks still need prep."));
+
+    // Schedule Momo's post: the shoot is planned, and Mochi's idea now only
+    // needs a date (its photos come from the same shoot).
+    let momo = db
+        .list_post_plans()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|p| p.title == "Momo")
+        .unwrap();
+    post(
+        &app,
+        &format!("/posts/{}/schedule", momo.id.0),
+        "post_date=2026-11-10",
+    )
+    .await;
+    let (_, html) = get(&app, "/posts").await;
+    assert!(html.contains("Photographed at the series&#39; shoot; it just needs a date"));
+    assert!(html.contains("Fossil exhibit series"));
+}

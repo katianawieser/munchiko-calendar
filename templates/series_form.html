@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+<h2>{{ heading }}</h2>
+{% include "form_errors.html" %}
+<p class="muted">A series is several posts from one setup and one photo shoot, like Momo's Earth Day, Mochi's Earth Day, then both together. Add its posts from the series page.</p>
+
+<form method="post" action="{{ action }}">
+  <label>Name
+    <input name="title" value="{{ title }}" placeholder="Earth Day" required autofocus>
+  </label>
+  <label>Shared backdrop
+    <input name="backdrop" value="{{ backdrop }}" placeholder="moss, ferns and a little globe">
+    <small>Built once, used for every post in the series.</small>
+  </label>
+  <label>Notes
+    <textarea name="notes" rows="2">{{ notes }}</textarea>
+  </label>
+  <div class="form-actions">
+    <button type="submit">Save</button>
+    <a href="{{ cancel_href }}" role="button" class="secondary outline">Cancel</a>
+  </div>
+</form>
+{% endblock %}

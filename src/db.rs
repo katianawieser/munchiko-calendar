@@ -203,7 +203,15 @@ pub struct NewPostPlan {
     pub event_id: Option<EventId>,
     /// `None` = an idea, not scheduled yet.
     pub post_date: Option<NaiveDate>,
+    pub series_id: Option<SeriesId>,
     pub looks: Vec<Look>,
+    pub backdrop: String,
+    pub notes: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NewSeries {
+    pub title: String,
     pub backdrop: String,
     pub notes: String,
 }
@@ -262,6 +270,15 @@ struct PostPlanRow {
     title: String,
     event_id: Option<i64>,
     post_date: Option<NaiveDate>,
+    series_id: Option<i64>,
+    backdrop: String,
+    notes: String,
+}
+
+#[derive(FromRow)]
+struct SeriesRow {
+    id: i64,
+    title: String,
     backdrop: String,
     notes: String,
 }
@@ -273,6 +290,17 @@ struct PhotoRow {
     accessory_id: Option<i64>,
     post_plan_id: Option<i64>,
     content_type: String,
+}
+
+impl SeriesRow {
+    fn into_model(self) -> Series {
+        Series {
+            id: SeriesId(self.id),
+            title: self.title,
+            backdrop: self.backdrop,
+            notes: self.notes,
+        }
+    }
 }
 
 impl PhotoRow {
@@ -365,6 +393,7 @@ impl PostPlanRow {
             title: self.title,
             event_id: self.event_id.map(EventId),
             post_date: self.post_date,
+            series_id: self.series_id.map(SeriesId),
             looks,
             backdrop: self.backdrop,
             notes: self.notes,
@@ -1149,13 +1178,14 @@ impl Repository {
         let mut tx = self.pool.begin().await?;
 
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO post_plans (title, event_id, post_date, backdrop, notes)
-             VALUES (?, ?, ?, ?, ?)
+            "INSERT INTO post_plans (title, event_id, post_date, series_id, backdrop, notes)
+             VALUES (?, ?, ?, ?, ?, ?)
              RETURNING id",
         )
         .bind(&new.title)
         .bind(new.event_id.map(|id| id.0))
         .bind(new.post_date)
+        .bind(new.series_id.map(|id| id.0))
         .bind(&new.backdrop)
         .bind(&new.notes)
         .fetch_one(&mut *tx)
@@ -1181,7 +1211,7 @@ impl Repository {
         let mut tx = self.pool.begin().await?;
 
         let rows: Vec<PostPlanRow> = sqlx::query_as(
-            "SELECT id, title, event_id, post_date, backdrop, notes
+            "SELECT id, title, event_id, post_date, series_id, backdrop, notes
              FROM post_plans
              WHERE ?1 IS NULL OR id = ?1
              ORDER BY post_date IS NULL, post_date, id",
@@ -1225,12 +1255,14 @@ impl Repository {
     pub async fn update_post_plan(&self, id: PostPlanId, new: &NewPostPlan) -> Result<()> {
         let mut tx = self.pool.begin().await?;
         let result = sqlx::query(
-            "UPDATE post_plans SET title = ?, event_id = ?, post_date = ?, backdrop = ?, notes = ?
+            "UPDATE post_plans
+             SET title = ?, event_id = ?, post_date = ?, series_id = ?, backdrop = ?, notes = ?
              WHERE id = ?",
         )
         .bind(&new.title)
         .bind(new.event_id.map(|id| id.0))
         .bind(new.post_date)
+        .bind(new.series_id.map(|id| id.0))
         .bind(&new.backdrop)
         .bind(&new.notes)
         .bind(id.0)
@@ -1265,6 +1297,114 @@ impl Repository {
                 id: id.0,
             });
         }
+        Ok(())
+    }
+
+    // -- Series --------------------------------------------------------------
+
+    pub async fn create_series(&self, new: &NewSeries) -> Result<SeriesId> {
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO series (title, backdrop, notes) VALUES (?, ?, ?) RETURNING id",
+        )
+        .bind(&new.title)
+        .bind(&new.backdrop)
+        .bind(&new.notes)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(SeriesId(id))
+    }
+
+    /// Turn a post into the first post of a new series: the series is named
+    /// `title` and takes over the post's backdrop (the shared setup).
+    pub async fn series_from_post(&self, post: PostPlanId, title: &str) -> Result<SeriesId> {
+        let mut tx = self.pool.begin().await?;
+        let backdrop: Option<String> =
+            sqlx::query_scalar("SELECT backdrop FROM post_plans WHERE id = ?")
+                .bind(post.0)
+                .fetch_optional(&mut *tx)
+                .await?;
+        let backdrop = backdrop.ok_or(DbError::NotFound {
+            what: "post plan",
+            id: post.0,
+        })?;
+        let id: i64 =
+            sqlx::query_scalar("INSERT INTO series (title, backdrop) VALUES (?, ?) RETURNING id")
+                .bind(title)
+                .bind(&backdrop)
+                .fetch_one(&mut *tx)
+                .await?;
+        sqlx::query("UPDATE post_plans SET series_id = ?, backdrop = '' WHERE id = ?")
+            .bind(id)
+            .bind(post.0)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(SeriesId(id))
+    }
+
+    pub async fn get_series(&self, id: SeriesId) -> Result<Series> {
+        let row: Option<SeriesRow> =
+            sqlx::query_as("SELECT id, title, backdrop, notes FROM series WHERE id = ?")
+                .bind(id.0)
+                .fetch_optional(&self.pool)
+                .await?;
+        row.map(SeriesRow::into_model).ok_or(DbError::NotFound {
+            what: "series",
+            id: id.0,
+        })
+    }
+
+    /// All series, by title.
+    pub async fn list_series(&self) -> Result<Vec<Series>> {
+        let rows: Vec<SeriesRow> =
+            sqlx::query_as("SELECT id, title, backdrop, notes FROM series ORDER BY title, id")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows.into_iter().map(SeriesRow::into_model).collect())
+    }
+
+    pub async fn update_series(&self, id: SeriesId, new: &NewSeries) -> Result<()> {
+        let result =
+            sqlx::query("UPDATE series SET title = ?, backdrop = ?, notes = ? WHERE id = ?")
+                .bind(&new.title)
+                .bind(&new.backdrop)
+                .bind(&new.notes)
+                .bind(id.0)
+                .execute(&self.pool)
+                .await?;
+        if result.rows_affected() == 0 {
+            return Err(DbError::NotFound {
+                what: "series",
+                id: id.0,
+            });
+        }
+        Ok(())
+    }
+
+    /// Delete a series but keep its posts: they become standalone posts, and
+    /// any without a backdrop of their own get the series' backdrop.
+    pub async fn delete_series(&self, id: SeriesId) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            "UPDATE post_plans
+             SET backdrop = (SELECT backdrop FROM series WHERE id = ?1)
+             WHERE series_id = ?1 AND backdrop = ''",
+        )
+        .bind(id.0)
+        .execute(&mut *tx)
+        .await?;
+        // ON DELETE SET NULL takes the posts out of the series.
+        let result = sqlx::query("DELETE FROM series WHERE id = ?")
+            .bind(id.0)
+            .execute(&mut *tx)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(DbError::NotFound {
+                what: "series",
+                id: id.0,
+            });
+        }
+        tx.commit().await?;
         Ok(())
     }
 
@@ -1658,6 +1798,7 @@ mod tests {
             title: "Pokémon fossil exhibit".into(),
             event_id: None,
             post_date: None,
+            series_id: None,
             looks: vec![Look {
                 pet: Pet::Momo,
                 accessory_id: fossil,
@@ -1695,6 +1836,46 @@ mod tests {
             .map(|p| p.id)
             .collect();
         assert_eq!(order, vec![dated, id]);
+    }
+
+    #[tokio::test]
+    async fn a_series_takes_over_a_posts_backdrop_and_gives_it_back() {
+        let db = Repository::in_memory().await.unwrap();
+        let earth = db
+            .create_event(&event("Earth Day", d(2027, 4, 22), None))
+            .await
+            .unwrap();
+        let first = db
+            .create_post_plan(&NewPostPlan {
+                title: "Momo's Earth Day".into(),
+                event_id: Some(earth),
+                post_date: Some(d(2027, 4, 20)),
+                series_id: None,
+                looks: vec![],
+                backdrop: "moss and ferns".into(),
+                notes: String::new(),
+            })
+            .await
+            .unwrap();
+
+        // "+ Another post from this shoot": the backdrop moves to the series.
+        let series = db.series_from_post(first, "Earth Day").await.unwrap();
+        let s = db.get_series(series).await.unwrap();
+        assert_eq!(s.backdrop, "moss and ferns");
+        let post = db.get_post_plan(first).await.unwrap();
+        assert_eq!(post.series_id, Some(series));
+        assert_eq!(post.backdrop, "");
+        assert_eq!(db.list_series().await.unwrap().len(), 1);
+
+        // Deleting the series keeps the post, with the backdrop back.
+        db.delete_series(series).await.unwrap();
+        let post = db.get_post_plan(first).await.unwrap();
+        assert_eq!(post.series_id, None);
+        assert_eq!(post.backdrop, "moss and ferns");
+        assert!(matches!(
+            db.get_series(series).await,
+            Err(DbError::NotFound { what: "series", .. })
+        ));
     }
 
     #[tokio::test]
@@ -1779,6 +1960,7 @@ mod tests {
             title: String::new(),
             event_id: Some(halloween),
             post_date: Some(d(2026, 10, 31)),
+            series_id: None,
             looks: vec![
                 Look {
                     pet: Pet::Mochi,
@@ -1835,6 +2017,7 @@ mod tests {
                 title: String::new(),
                 event_id: Some(halloween),
                 post_date: Some(d(2026, 10, 31)),
+                series_id: None,
                 looks: vec![Look {
                     pet: Pet::Mochi,
                     accessory_id: pumpkin,
@@ -1965,6 +2148,7 @@ mod tests {
             title: String::new(),
             event_id: Some(thanksgiving_2026.id),
             post_date: Some(d(2026, 11, 26)),
+            series_id: None,
             looks: vec![],
             backdrop: String::new(),
             notes: String::new(),
@@ -2244,6 +2428,7 @@ mod tests {
                 title: String::new(),
                 event_id: Some(halloween),
                 post_date: Some(d(2026, 10, 31)),
+                series_id: None,
                 looks: vec![Look {
                     pet: Pet::Mochi,
                     accessory_id: pumpkin,
@@ -2258,6 +2443,7 @@ mod tests {
             title: String::new(),
             event_id: Some(other),
             post_date: Some(d(2026, 10, 27)),
+            series_id: None,
             looks: vec![Look {
                 pet: Pet::Momo,
                 accessory_id: bat,

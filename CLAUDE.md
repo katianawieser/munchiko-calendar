@@ -166,7 +166,20 @@ See README.md for the planning rules, data model and roadmap.
   colors.js updates it live from hidden per-fabric `<template class="fabric-chip-set">`
   chips, deduped by name in role order, hidden when the switch is off). Shared
   `models::without_repeats` is used by `effective_colors` and the form.
-- **M8b next (not started):** series. Ask Katiana before starting.
+- **M8b done (M8 complete):** UI name "series"; start from a post ("+ Another post from
+  this shoot" → POST /posts/{id}/series, `Repository::series_from_post` moves the
+  backdrop) or "+ New series" (/series/new). Migration 0007: `series` table +
+  `post_plans.series_id` (ON DELETE SET NULL; `delete_series` copies the backdrop
+  back to posts with none). Planner: `combined_plan` (looks union, series backdrop,
+  earliest date) + `build_series_timeline` (plans combined, swaps Publish for one
+  "Publish: {post}" per dated post; Timeline.post_date = LAST post). `load_posts`
+  plans each series once (`SharedPlan`, `SeriesInfo { posts, first_post }`); undated
+  members of a scheduled series show "Photographed at the series' shoot" from
+  first_post. Calendar draws a series once (PlannedPost.series → /series/{id}; publish
+  labels from task titles). Health "Published" uses the post's own date; task rows
+  are "Done" once the whole timeline is over (`posts::task_rows`, shared with
+  series.rs). Post form refactored: `FormOptions` + `NewPost` start. Askama escapes
+  `&` as `&#38;` (matters in tests); calendar entries repeat labels in `title=`.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

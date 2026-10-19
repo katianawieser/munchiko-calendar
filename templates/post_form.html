@@ -17,6 +17,12 @@
       <small>Optional. Past events are listed too, for ideas from an outing.</small>
     </label>
   </div>
+  <label>Series
+    <select name="series">
+      {% for c in series_choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+    </select>
+    <small>Posts in a series share one setup and one photo shoot, and go up on different days.</small>
+  </label>
 
   <fieldset>
     <legend>When</legend>
@@ -49,6 +55,7 @@
 
   <label>Backdrop idea
     <input name="backdrop" value="{{ backdrop }}" placeholder="hay bales and mini pumpkins">
+    {% if in_series %}<small>In a series, the series' backdrop is used; edit it on the series page.</small>{% endif %}
   </label>
   <label>Notes
     <textarea name="notes" rows="2">{{ notes }}</textarea>

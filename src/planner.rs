@@ -21,7 +21,7 @@ use std::fmt;
 use chrono::{Duration, NaiveDate};
 
 use crate::models::{
-    Accessory, AccessoryId, AccessoryStatus, Fabric, FabricId, Pet, PostPlan, Source,
+    Accessory, AccessoryId, AccessoryStatus, Fabric, FabricId, Look, Pet, PostPlan, Series, Source,
 };
 
 /// How long each kind of prep takes. All values are in days.
@@ -354,6 +354,79 @@ pub fn build_timeline_on(
 }
 
 // ---------------------------------------------------------------------------
+// Series: several posts from one setup and one shoot
+// ---------------------------------------------------------------------------
+
+/// One post of a series, with what to call it in its publish task.
+#[derive(Debug, Clone, Copy)]
+pub struct SeriesPost<'a> {
+    pub plan: &'a PostPlan,
+    pub name: &'a str,
+}
+
+/// A series' posts as if they were one post: everyone's looks (each once),
+/// the shared backdrop, and the first post's date (`None` if none is dated).
+/// Planning this is planning the shared prep and shoot.
+pub fn combined_plan(series: &Series, posts: &[&PostPlan]) -> PostPlan {
+    let mut looks: Vec<Look> = Vec::new();
+    for look in posts.iter().flat_map(|p| &p.looks) {
+        if !looks.contains(look) {
+            looks.push(look.clone());
+        }
+    }
+    PostPlan {
+        id: posts.first().map_or(crate::models::PostPlanId(0), |p| p.id),
+        title: series.title.clone(),
+        event_id: None,
+        post_date: posts.iter().filter_map(|p| p.post_date).min(),
+        series_id: Some(series.id),
+        looks,
+        backdrop: series.backdrop.clone(),
+        notes: String::new(),
+    }
+}
+
+/// The prep schedule for a series: the setup and one shoot in time for the
+/// *first* post, then a publish task on each post's own day. Later posts need
+/// no editing buffer of their own; their photos are edited while waiting.
+///
+/// Posts without a date are still photographed at the shoot (their looks
+/// count), but get no publish task until they're scheduled.
+pub fn build_series_timeline(
+    series: &Series,
+    posts: &[SeriesPost<'_>],
+    inventory: &Inventory<'_>,
+    lead: &LeadTimes,
+) -> Result<Timeline, PlanError> {
+    let plans: Vec<&PostPlan> = posts.iter().map(|p| p.plan).collect();
+    let combined = combined_plan(series, &plans);
+    let first = combined.post_date.ok_or(PlanError::NotScheduled)?;
+    let mut timeline = build_timeline_on(&combined, first, inventory, lead)?;
+
+    timeline.tasks.retain(|t| t.kind != TaskKind::Publish);
+    for post in posts {
+        if let Some(date) = post.plan.post_date {
+            timeline.tasks.push(PlanTask::new(
+                TaskKind::Publish,
+                format!("Publish: {}", post.name),
+                date,
+                date,
+            ));
+        }
+    }
+    timeline
+        .tasks
+        .sort_by(|a, b| a.start.cmp(&b.start).then(a.kind.cmp(&b.kind)));
+    // The series is finished once its last post is up.
+    timeline.post_date = plans
+        .iter()
+        .filter_map(|p| p.post_date)
+        .max()
+        .unwrap_or(first);
+    Ok(timeline)
+}
+
+// ---------------------------------------------------------------------------
 // Ideas: how ready is a post that has no date yet?
 // ---------------------------------------------------------------------------
 
@@ -464,6 +537,7 @@ mod tests {
             title: String::new(),
             event_id: Some(EventId(1)),
             post_date: Some(post_date),
+            series_id: None,
             looks: looks
                 .iter()
                 .map(|&(pet, a)| Look {
@@ -760,5 +834,104 @@ mod tests {
             shoot(&[(Pet::Momo, 1), (Pet::Mochi, 2)]),
             "Photo shoot with Mochi & Momo"
         );
+    }
+
+    fn earth_day_series() -> (Series, Vec<Accessory>) {
+        let series = Series {
+            id: SeriesId(1),
+            title: "Earth Day".into(),
+            backdrop: "moss and ferns".into(),
+            notes: String::new(),
+        };
+        let accessories = vec![
+            handmade_bow(1, "Leaf bow", &[], AccessoryStatus::Idea),
+            handmade_bow(2, "Globe bow", &[], AccessoryStatus::Ready),
+        ];
+        (series, accessories)
+    }
+
+    #[test]
+    fn a_series_shares_one_setup_and_shoot_before_its_first_post() {
+        let (series, accessories) = earth_day_series();
+        let inv = Inventory {
+            accessories: &accessories,
+            fabrics: &[],
+        };
+        // Momo (Leaf bow) Apr 20, Mochi (Globe bow) Apr 21, both Apr 22.
+        let momo = plan(d(2027, 4, 20), &[(Pet::Momo, 1)]);
+        let mochi = plan(d(2027, 4, 21), &[(Pet::Mochi, 2)]);
+        let both = plan(d(2027, 4, 22), &[(Pet::Momo, 1), (Pet::Mochi, 2)]);
+        let posts = [
+            SeriesPost {
+                plan: &momo,
+                name: "Momo's Earth Day",
+            },
+            SeriesPost {
+                plan: &mochi,
+                name: "Mochi's Earth Day",
+            },
+            SeriesPost {
+                plan: &both,
+                name: "Earth Day together",
+            },
+        ];
+        let t = build_series_timeline(&series, &posts, &inv, &LeadTimes::default()).unwrap();
+
+        // One shoot, with both pets, 3 days' editing before the FIRST post.
+        let shoots = tasks_of(&t, TaskKind::PhotoShoot);
+        assert_eq!(shoots.len(), 1);
+        assert_eq!(shoots[0].start, d(2027, 4, 17));
+        assert_eq!(shoots[0].title, "Photo shoot with Mochi & Momo");
+        // One backdrop, the series' own; the Leaf bow is made once.
+        let backdrops = tasks_of(&t, TaskKind::BuildBackdrop);
+        assert_eq!(backdrops.len(), 1);
+        assert!(backdrops[0].title.ends_with("moss and ferns"));
+        assert_eq!(tasks_of(&t, TaskKind::MakeAccessory).len(), 1);
+        // A publish task per post, on its own day.
+        let publish: Vec<(NaiveDate, &str)> = tasks_of(&t, TaskKind::Publish)
+            .iter()
+            .map(|p| (p.start, p.title.as_str()))
+            .collect();
+        assert_eq!(
+            publish,
+            vec![
+                (d(2027, 4, 20), "Publish: Momo's Earth Day"),
+                (d(2027, 4, 21), "Publish: Mochi's Earth Day"),
+                (d(2027, 4, 22), "Publish: Earth Day together"),
+            ]
+        );
+        assert_eq!(t.shoot_date, d(2027, 4, 17));
+        assert_eq!(t.post_date, d(2027, 4, 22), "finished after the last post");
+    }
+
+    #[test]
+    fn a_series_with_no_dates_is_still_an_idea() {
+        let (series, accessories) = earth_day_series();
+        let inv = Inventory {
+            accessories: &accessories,
+            fabrics: &[],
+        };
+        let momo = idea(&[(Pet::Momo, 1)]);
+        let mochi = idea(&[(Pet::Mochi, 2)]);
+        let posts = [
+            SeriesPost {
+                plan: &momo,
+                name: "Momo",
+            },
+            SeriesPost {
+                plan: &mochi,
+                name: "Mochi",
+            },
+        ];
+        assert_eq!(
+            build_series_timeline(&series, &posts, &inv, &LeadTimes::default()),
+            Err(PlanError::NotScheduled)
+        );
+        // Its readiness covers everyone's looks: the Leaf bow still needs making.
+        let combined = combined_plan(&series, &[&momo, &mochi]);
+        assert_eq!(combined.looks.len(), 2);
+        let r = readiness(&combined, &inv, &LeadTimes::default()).unwrap();
+        assert!(!r.everything_to_wear_is_ready());
+        assert_eq!(r.days_needed, 7);
     }
 }

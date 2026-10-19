@@ -18,6 +18,9 @@
   </p>
 </hgroup>
 <p><span class="badge {{ health.class }}">{{ health.text }}</span></p>
+{% if let Some(series) = series %}
+<p class="series-note">📸 Part of the <a href="{{ series.href }}">{{ series.title }} series</a> ({{ series.posts }} {% if series.posts == 1 %}post{% else %}posts{% endif %}): one shared setup and photo shoot.</p>
+{% endif %}
 
 <div class="grid">
   <article>
@@ -86,6 +89,9 @@
 {% endif %}
 <div class="form-actions">
   <a href="{{ edit_href }}" role="button" class="secondary outline">Edit post</a>
+  <form method="post" action="{{ another_action }}" class="inline">
+    <button type="submit" class="secondary outline">+ Another post from this shoot</button>
+  </form>
   <form method="post" action="{{ delete_action }}" class="inline" onsubmit="return confirm('Delete this post plan?')">
     <button type="submit" class="danger outline">Delete post</button>
   </form>

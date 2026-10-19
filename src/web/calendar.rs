@@ -1,6 +1,8 @@
 //! The calendar page: a month grid with holidays and prep tasks, and a box
 //! above it saying what needs doing today.
 
+use std::collections::HashSet;
+
 use askama::Template;
 use axum::extract::{Path, State};
 use axum::response::Html;
@@ -42,11 +44,20 @@ async fn render_month(state: &AppState, year: i32, month: u32) -> Result<Html<St
 
     let mut planned = Vec::new();
     let mut problems = Vec::new();
+    let mut series_shown = HashSet::new();
     for post in &posts {
+        // A series shares one timeline: draw it once, under the series' name.
+        let series = post.series.as_ref().map(|info| &info.series);
+        if let Some(series) = series {
+            if post.timeline.is_ok() && !series_shown.insert(series.id) {
+                continue;
+            }
+        }
         match &post.timeline {
             Ok(timeline) => planned.push(PlannedPost {
                 id: post.plan.id,
-                post_name: &post.name,
+                series: series.map(|s| s.id),
+                post_name: series.map_or(&post.name, |s| &s.title),
                 timeline,
             }),
             // Ideas have no dates, so there's nothing to put on a calendar.

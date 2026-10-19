@@ -4,6 +4,7 @@
 <div class="page-head">
   <h2>Planned posts</h2>
   <div class="head-actions">
+    <a href="/series/new" role="button" class="secondary outline">+ New series</a>
     <a href="/posts/new?idea=1" role="button" class="secondary outline">+ New idea</a>
     <a href="/posts/new" role="button">+ Plan a post</a>
   </div>
@@ -17,7 +18,7 @@
     {% for row in upcoming %}
     <tr>
       <td>{{ row.post_date }}</td>
-      <td><a href="{{ row.href }}">{{ row.name }}</a></td>
+      <td><a href="{{ row.href }}">{{ row.name }}</a>{% if let Some(series) = row.series %}<br><small class="muted">{{ series }}</small>{% endif %}</td>
       <td><span class="badge {{ row.health.class }}">{{ row.health.text }}</span></td>
     </tr>
     {% endfor %}
@@ -38,6 +39,7 @@
       <td>
         <a href="{{ idea.href }}">{{ idea.name }}</a>
         {% if let Some(event) = idea.event_name %}<br><small class="muted">{{ event }}</small>{% endif %}
+        {% if let Some(series) = idea.series %}<br><small class="muted">{{ series }}</small>{% endif %}
       </td>
       <td>{% if idea.ready %}<span class="badge good">Ready</span> {% endif %}{{ idea.summary }}</td>
       <td class="nowrap">{{ idea.earliest }}</td>
@@ -55,7 +57,7 @@
     {% for row in past %}
     <tr>
       <td>{{ row.post_date }}</td>
-      <td><a href="{{ row.href }}">{{ row.name }}</a></td>
+      <td><a href="{{ row.href }}">{{ row.name }}</a>{% if let Some(series) = row.series %}<br><small class="muted">{{ series }}</small>{% endif %}</td>
       <td><span class="badge {{ row.health.class }}">{{ row.health.text }}</span></td>
     </tr>
     {% endfor %}

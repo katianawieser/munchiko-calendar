@@ -52,6 +52,12 @@ rules, or adding plural matching, never touched SQL or HTML.
   against a made-up date, and the schedule's length gives "needs 7 days of
   prep, so it could post on Oct 26 if prep starts today". There's no second
   set of rules to drift out of step.
+- **Series (several posts from one setup and shoot)** reuse it too: the
+  series' posts are merged into one hypothetical post (everyone's looks, the
+  shared backdrop, the first post's date), planned as usual, and then its single
+  publish task is swapped for one per post. The shoot lands before the
+  *first* post; later posts are edited while they wait. The calendar draws each
+  series once, so one backdrop and one shoot, not three.
 
 ## Suggestions: explainable scoring, not a model
 

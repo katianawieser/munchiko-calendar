@@ -94,6 +94,7 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
             title: String::new(),
             event_id: Some(halloween.id),
             post_date: Some(halloween.start),
+            series_id: None,
             looks: vec![
                 Look {
                     pet: Pet::Mochi,

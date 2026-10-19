@@ -22,6 +22,7 @@ use super::{AppError, AppState, LoadedPost, load_posts, render};
 use crate::db::NewPostPlan;
 use crate::models::{
     Accessory, AccessoryId, Event, EventId, Fabric, Look, Pet, PhotoOwner, PostPlan, PostPlanId,
+    Series, SeriesId,
 };
 use crate::planner::{TaskKind, TaskStatus, Timeline};
 
@@ -55,7 +56,9 @@ fn health(post: &LoadedPost, today: NaiveDate) -> Health {
             };
         }
     };
-    if timeline.post_date < today {
+    // The post's own date, not the timeline's: in a series the shared
+    // timeline runs until the *last* post.
+    if post.plan.post_date.is_some_and(|d| d < today) {
         return Health {
             text: "Published".into(),
             class: "done",
@@ -105,6 +108,15 @@ struct IdeaStatus {
 }
 
 fn idea_status(post: &LoadedPost, today: NaiveDate) -> IdeaStatus {
+    // In a series whose shoot is already planned, an undated post's photos
+    // come from that shoot: it only needs a date, from the first post on.
+    if let Some(first) = post.series.as_ref().and_then(|s| s.first_post) {
+        return IdeaStatus {
+            summary: "Photographed at the series' shoot; it just needs a date".into(),
+            earliest: Some(first.max(today)),
+            ready: true,
+        };
+    }
     match &post.readiness {
         Some(Ok(readiness)) => {
             let todo: Vec<&str> = readiness
@@ -141,9 +153,18 @@ fn idea_status(post: &LoadedPost, today: NaiveDate) -> IdeaStatus {
 // /posts
 // ---------------------------------------------------------------------------
 
+/// "Earth Day series", for posts that are part of one.
+fn series_label(post: &LoadedPost) -> Option<String> {
+    post.series
+        .as_ref()
+        .map(|s| format!("{} series", s.series.title))
+}
+
 struct PostRow {
     href: String,
     name: String,
+    /// "Earth Day series", if it's part of one.
+    series: Option<String>,
     post_date: String,
     health: Health,
 }
@@ -151,6 +172,7 @@ struct PostRow {
 struct IdeaRow {
     href: String,
     name: String,
+    series: Option<String>,
     /// The event it's linked to, if any.
     event_name: Option<String>,
     summary: String,
@@ -180,6 +202,7 @@ pub async fn list(State(state): State<AppState>) -> Result<Html<String>, AppErro
             let row = IdeaRow {
                 href,
                 name: post.name.clone(),
+                series: series_label(post),
                 event_name: post.event.as_ref().map(|e| e.name.clone()),
                 summary: status.summary.clone(),
                 earliest: status
@@ -194,6 +217,7 @@ pub async fn list(State(state): State<AppState>) -> Result<Html<String>, AppErro
         let row = PostRow {
             href,
             name: post.name.clone(),
+            series: series_label(post),
             post_date: date_long(post_date),
             health: health(post, today),
         };
@@ -230,11 +254,47 @@ struct LookRow {
     items: String,
 }
 
-struct TaskRow {
-    when: String,
-    title: String,
-    status: String,
-    class: &'static str,
+/// One row of a prep timeline table (post pages and series pages).
+pub(super) struct TaskRow {
+    pub(super) when: String,
+    pub(super) title: String,
+    pub(super) status: String,
+    pub(super) class: &'static str,
+}
+
+/// The rows of a timeline table. Once the timeline is over (for a series,
+/// after its *last* post) every task shows as done.
+pub(super) fn task_rows(timeline: &Timeline, today: NaiveDate) -> Vec<TaskRow> {
+    let finished = timeline.post_date < today;
+    timeline
+        .tasks
+        .iter()
+        .map(|task| {
+            let when = if task.start == task.due {
+                task.due.format("%a %b %-d").to_string()
+            } else {
+                format!(
+                    "{} – {}",
+                    task.start.format("%a %b %-d"),
+                    task.due.format("%a %b %-d")
+                )
+            };
+            let (status, class) = match task.status(today) {
+                _ if finished => ("Done".to_string(), "done"),
+                TaskStatus::Upcoming { starts_in_days } => {
+                    (format!("in {starts_in_days}d"), "upcoming")
+                }
+                TaskStatus::Active => ("Now".to_string(), "active"),
+                TaskStatus::Overdue { days_late } => (format!("{days_late}d late"), "overdue"),
+            };
+            TaskRow {
+                when,
+                title: task.title.clone(),
+                status,
+                class,
+            }
+        })
+        .collect()
 }
 
 /// A link to the event a post is for.
@@ -261,10 +321,20 @@ struct IdeaView {
     suggested_date: String,
 }
 
+/// "Part of the Earth Day series (3 posts)" on a post's page.
+struct SeriesLink {
+    title: String,
+    href: String,
+    posts: usize,
+}
+
 #[derive(Template)]
 #[template(path = "post.html")]
 struct PostPage {
     name: String,
+    series: Option<SeriesLink>,
+    /// "+ Another post from this shoot".
+    another_action: String,
     /// The post has its own title (otherwise `name` is the event's name).
     has_title: bool,
     event: Option<EventLink>,
@@ -318,38 +388,9 @@ pub async fn show(
         .iter()
         .find(|p| p.plan.id.0 == id)
         .ok_or(AppError::NotFound)?;
-    let finished = post.plan.post_date.is_some_and(|d| d < today);
 
     let tasks = match &post.timeline {
-        Ok(timeline) => timeline
-            .tasks
-            .iter()
-            .map(|task| {
-                let when = if task.start == task.due {
-                    task.due.format("%a %b %-d").to_string()
-                } else {
-                    format!(
-                        "{} – {}",
-                        task.start.format("%a %b %-d"),
-                        task.due.format("%a %b %-d")
-                    )
-                };
-                let (status, class) = match task.status(today) {
-                    _ if finished => ("Done".to_string(), "done"),
-                    TaskStatus::Upcoming { starts_in_days } => {
-                        (format!("in {starts_in_days}d"), "upcoming")
-                    }
-                    TaskStatus::Active => ("Now".to_string(), "active"),
-                    TaskStatus::Overdue { days_late } => (format!("{days_late}d late"), "overdue"),
-                };
-                TaskRow {
-                    when,
-                    title: task.title.clone(),
-                    status,
-                    class,
-                }
-            })
-            .collect(),
+        Ok(timeline) => task_rows(timeline, today),
         Err(_) => Vec::new(),
     };
 
@@ -386,8 +427,20 @@ pub async fn show(
         }
     });
 
+    // In a series, the backdrop is the series' shared one.
+    let backdrop = match &post.series {
+        Some(info) => info.series.backdrop.clone(),
+        None => post.plan.backdrop.clone(),
+    };
+
     render(PostPage {
         name: post.name.clone(),
+        series: post.series.as_ref().map(|info| SeriesLink {
+            title: info.series.title.clone(),
+            href: format!("/series/{}", info.series.id.0),
+            posts: info.posts,
+        }),
+        another_action: format!("/posts/{id}/series"),
         has_title: !post.plan.title.trim().is_empty(),
         event: post.event.as_ref().map(|e| EventLink {
             name: e.name.clone(),
@@ -400,7 +453,7 @@ pub async fn show(
         idea,
         health: health(post, today),
         looks: look_rows(post, &accessories),
-        backdrop: post.plan.backdrop.clone(),
+        backdrop,
         notes: post.plan.notes.clone(),
         tasks,
         photos,
@@ -426,6 +479,9 @@ struct PostFormPage {
     cancel_href: String,
     title: String,
     event_choices: Vec<Choice>,
+    series_choices: Vec<Choice>,
+    /// A series is chosen, so its backdrop is used rather than this post's.
+    in_series: bool,
     /// "No date yet" is chosen: save it as an idea.
     is_idea: bool,
     post_date: String,
@@ -435,6 +491,42 @@ struct PostFormPage {
     /// Suggestions for the chosen event, shown above the checkboxes.
     ideas: Option<Ideas>,
     errors: Vec<String>,
+}
+
+/// Everything the form offers to choose from, loaded once per request.
+struct FormOptions {
+    events: Vec<Event>,
+    accessories: Vec<Accessory>,
+    fabrics: Vec<Fabric>,
+    series: Vec<Series>,
+    today: NaiveDate,
+}
+
+impl FormOptions {
+    async fn load(state: &AppState) -> Result<Self, AppError> {
+        Ok(Self {
+            events: state.db.list_events().await?,
+            accessories: state.db.list_accessories().await?,
+            fabrics: state.db.list_fabrics().await?,
+            series: state.db.list_series().await?,
+            today: state.today(),
+        })
+    }
+
+    fn event(&self, id: Option<EventId>) -> Option<&Event> {
+        id.and_then(|id| self.events.iter().find(|e| e.id == id))
+    }
+}
+
+/// How a brand-new post form starts.
+#[derive(Default)]
+struct NewPost<'a> {
+    /// From an event's "Plan a post" button.
+    event: Option<&'a Event>,
+    /// From "+ Another post from this shoot" or a series page.
+    series: Option<&'a Series>,
+    /// From the "+ New idea" button.
+    as_idea: bool,
 }
 
 /// Events a post can be for: none, then upcoming events (soonest first), then
@@ -459,6 +551,14 @@ fn event_choices(events: &[Event], today: NaiveDate, selected: Option<EventId>) 
             .filter(|e| e.end_date() < today)
             .map(|e| choice(e, "Past: ")),
     );
+    list
+}
+
+fn series_choices(series: &[Series], selected: Option<SeriesId>) -> Vec<Choice> {
+    let mut list = vec![Choice::new("", "— not in a series —", selected.is_none())];
+    for s in series {
+        list.push(Choice::new(s.id.0, s.title.clone(), Some(s.id) == selected));
+    }
     list
 }
 
@@ -488,42 +588,45 @@ fn pet_looks(accessories: &[Accessory], looks: &[Look]) -> Vec<PetLooks> {
 }
 
 impl PostFormPage {
-    /// `as_idea` starts a new post as an idea (the "+ New idea" button).
-    fn new(
-        editing: Option<&PostPlan>,
-        preselected_event: Option<&Event>,
-        as_idea: bool,
-        events: &[Event],
-        accessories: &[Accessory],
-        today: NaiveDate,
-    ) -> Self {
-        let event_id = match editing {
-            Some(p) => p.event_id,
-            None => preselected_event.map(|e| e.id),
+    /// The form for `editing`, or for a new post started as `start` says.
+    fn new(editing: Option<&PostPlan>, start: NewPost, options: &FormOptions) -> Self {
+        let (event_id, series_id, post_date, is_idea) = match editing {
+            Some(p) => (p.event_id, p.series_id, p.post_date, p.is_idea()),
+            // A new post defaults to the day of its event.
+            None => (
+                start.event.map(|e| e.id),
+                start.series.map(|s| s.id),
+                start.event.filter(|_| !start.as_idea).map(|e| e.start),
+                start.as_idea,
+            ),
         };
-        // A new post defaults to the day of its event.
-        let post_date = match editing {
-            Some(p) => p.post_date,
-            None => preselected_event.map(|e| e.start),
-        };
-        let is_idea = editing.map_or(as_idea, PostPlan::is_idea);
         Self {
-            heading: match (editing, preselected_event) {
+            heading: match (editing, &start) {
                 (Some(p), _) if p.is_idea() => "Edit post idea".into(),
                 (Some(_), _) => "Edit post".into(),
-                (None, Some(e)) => format!("Plan a post for {}", e.name),
-                (None, None) if as_idea => "New post idea".into(),
-                (None, None) => "Plan a post".into(),
+                (
+                    None,
+                    NewPost {
+                        series: Some(s), ..
+                    },
+                ) => {
+                    format!("Another post for the {} series", s.title)
+                }
+                (None, NewPost { event: Some(e), .. }) => format!("Plan a post for {}", e.name),
+                (None, NewPost { as_idea: true, .. }) => "New post idea".into(),
+                (None, _) => "Plan a post".into(),
             },
             action: editing.map_or("/posts".into(), |p| format!("/posts/{}", p.id.0)),
             cancel_href: editing.map_or("/posts".into(), |p| format!("/posts/{}", p.id.0)),
             title: editing.map(|p| p.title.clone()).unwrap_or_default(),
-            event_choices: event_choices(events, today, event_id),
+            event_choices: event_choices(&options.events, options.today, event_id),
+            series_choices: series_choices(&options.series, series_id),
+            in_series: series_id.is_some(),
             is_idea,
             post_date: post_date
                 .map(|d| d.format("%Y-%m-%d").to_string())
                 .unwrap_or_default(),
-            pets: pet_looks(accessories, editing.map_or(&[], |p| &p.looks)),
+            pets: pet_looks(&options.accessories, editing.map_or(&[], |p| &p.looks)),
             backdrop: editing.map(|p| p.backdrop.clone()).unwrap_or_default(),
             notes: editing.map(|p| p.notes.clone()).unwrap_or_default(),
             ideas: None,
@@ -532,10 +635,13 @@ impl PostFormPage {
     }
 
     fn refill(mut self, form: &FormData, errors: Vec<String>) -> Self {
-        let event = form.text("event");
-        for choice in &mut self.event_choices {
-            choice.selected = choice.value == event;
-        }
+        let select = |list: &mut Vec<Choice>, value: String| {
+            for choice in list.iter_mut() {
+                choice.selected = choice.value == value;
+            }
+        };
+        select(&mut self.event_choices, form.text("event"));
+        select(&mut self.series_choices, form.text("series"));
         for pet in &mut self.pets {
             let ticked: Vec<&str> = form.all(pet.field).collect();
             for choice in &mut pet.choices {
@@ -543,6 +649,7 @@ impl PostFormPage {
             }
         }
         self.title = form.text("title");
+        self.in_series = !form.text("series").is_empty();
         self.is_idea = form.text("when") == "idea";
         self.post_date = form.text("post_date");
         self.backdrop = form.text("backdrop");
@@ -550,13 +657,21 @@ impl PostFormPage {
         self.errors = errors;
         self
     }
+
+    /// Add the ideas box for `event` (see `form_ideas`).
+    fn with_ideas(
+        mut self,
+        state: &AppState,
+        event: Option<&Event>,
+        post_date: Option<NaiveDate>,
+        options: &FormOptions,
+    ) -> Self {
+        self.ideas = form_ideas(state, event, post_date, options);
+        self
+    }
 }
 
-fn read_form(
-    form: &FormData,
-    events: &[Event],
-    accessories: &[Accessory],
-) -> Result<NewPostPlan, Vec<String>> {
+fn read_form(form: &FormData, options: &FormOptions) -> Result<NewPostPlan, Vec<String>> {
     let mut errors = Vec::new();
 
     let title = form.text("title");
@@ -564,7 +679,7 @@ fn read_form(
     let event = match form.optional_id("event") {
         Ok(None) => None,
         Ok(Some(id)) => {
-            let found = events.iter().find(|e| e.id.0 == id);
+            let found = options.events.iter().find(|e| e.id.0 == id);
             if found.is_none() {
                 errors.push("That event doesn't exist any more.".to_string());
             }
@@ -578,6 +693,22 @@ fn read_form(
     if title.is_empty() && event.is_none() {
         errors.push("Give the post a title, or choose an event.".to_string());
     }
+
+    // The series is optional too.
+    let series_id = match form.optional_id("series") {
+        Ok(None) => None,
+        Ok(Some(id)) => match options.series.iter().find(|s| s.id.0 == id) {
+            Some(s) => Some(s.id),
+            None => {
+                errors.push("That series doesn't exist any more.".to_string());
+                None
+            }
+        },
+        Err(_) => {
+            errors.push("That series isn't a valid choice.".to_string());
+            None
+        }
+    };
 
     // An idea has no date. Otherwise an empty date means the event's day.
     let post_date = if form.text("when") == "idea" {
@@ -607,7 +738,7 @@ fn read_form(
             match value
                 .parse::<i64>()
                 .ok()
-                .filter(|id| accessories.iter().any(|a| a.id.0 == *id))
+                .filter(|id| options.accessories.iter().any(|a| a.id.0 == *id))
             {
                 Some(id) => looks.push(Look {
                     pet,
@@ -625,6 +756,7 @@ fn read_form(
         title,
         event_id: event.map(|e| e.id),
         post_date,
+        series_id,
         looks,
         backdrop: form.text("backdrop"),
         notes: form.text("notes"),
@@ -638,16 +770,15 @@ fn form_ideas(
     state: &AppState,
     event: Option<&Event>,
     post_date: Option<NaiveDate>,
-    accessories: &[Accessory],
-    fabrics: &[Fabric],
+    options: &FormOptions,
 ) -> Option<Ideas> {
     event.map(|e| {
         ideas::for_event(
             e,
             post_date.unwrap_or(e.start),
-            state.today(),
-            accessories,
-            fabrics,
+            options.today,
+            &options.accessories,
+            &options.fabrics,
             &state.lead_times,
         )
     })
@@ -657,13 +788,9 @@ fn form_ideas(
 /// mistakes, so the ideas box can still be shown.
 fn submitted_event<'a>(
     form: &FormData,
-    events: &'a [Event],
+    options: &'a FormOptions,
 ) -> (Option<&'a Event>, Option<NaiveDate>) {
-    let event = form
-        .optional_id("event")
-        .ok()
-        .flatten()
-        .and_then(|id| events.iter().find(|e| e.id.0 == id));
+    let event = options.event(form.optional_id("event").ok().flatten().map(EventId));
     (event, form.optional_date("post_date").ok().flatten())
 }
 
@@ -672,28 +799,35 @@ fn form_response(status: StatusCode, page: PostFormPage) -> Result<Response, App
 }
 
 /// `/posts/new`, optionally `?event=12` from an event's "Plan a post" button,
-/// or `?idea=1` from the "+ New idea" button.
+/// `?idea=1` from the "+ New idea" button, or `?series=3` from "+ Another post
+/// from this shoot" (it starts with the series' event, and as an idea if the
+/// series has no dates yet).
 pub async fn new_form(
     State(state): State<AppState>,
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<Response, AppError> {
-    let events = state.db.list_events().await?;
-    let accessories = state.db.list_accessories().await?;
-    let preselected = query
-        .get("event")
-        .and_then(|v| v.parse::<i64>().ok())
-        .and_then(|id| events.iter().find(|e| e.id.0 == id));
-    let as_idea = query.contains_key("idea");
-    let fabrics = state.db.list_fabrics().await?;
-    let mut page = PostFormPage::new(
-        None,
-        preselected,
-        as_idea,
-        &events,
-        &accessories,
-        state.today(),
-    );
-    page.ideas = form_ideas(&state, preselected, None, &accessories, &fabrics);
+    let options = FormOptions::load(&state).await?;
+    let id_from = |key: &str| query.get(key).and_then(|v| v.parse::<i64>().ok());
+    let series = id_from("series").and_then(|id| options.series.iter().find(|s| s.id.0 == id));
+
+    let mut start = NewPost {
+        event: options.event(id_from("event").map(EventId)),
+        series,
+        as_idea: query.contains_key("idea"),
+    };
+    if let Some(series) = series {
+        let plans = state.db.list_post_plans().await?;
+        let members: Vec<&PostPlan> = plans
+            .iter()
+            .filter(|p| p.series_id == Some(series.id))
+            .collect();
+        if start.event.is_none() {
+            start.event = options.event(members.first().and_then(|p| p.event_id));
+        }
+        start.as_idea |= !members.is_empty() && members.iter().all(|p| p.is_idea());
+    }
+    let event = start.event;
+    let page = PostFormPage::new(None, start, &options).with_ideas(&state, event, None, &options);
     form_response(StatusCode::OK, page)
 }
 
@@ -702,21 +836,18 @@ pub async fn create(
     Form(pairs): Form<Vec<(String, String)>>,
 ) -> Result<Response, AppError> {
     let form = FormData::new(pairs);
-    let events = state.db.list_events().await?;
-    let accessories = state.db.list_accessories().await?;
-    match read_form(&form, &events, &accessories) {
+    let options = FormOptions::load(&state).await?;
+    match read_form(&form, &options) {
         Ok(new) => {
             let id = state.db.create_post_plan(&new).await?;
             // Straight to the new post's timeline: that's the payoff.
             Ok(Redirect::to(&format!("/posts/{}", id.0)).into_response())
         }
         Err(errors) => {
-            let fabrics = state.db.list_fabrics().await?;
-            let (event, date) = submitted_event(&form, &events);
-            let mut page =
-                PostFormPage::new(None, None, false, &events, &accessories, state.today())
-                    .refill(&form, errors);
-            page.ideas = form_ideas(&state, event, date, &accessories, &fabrics);
+            let (event, date) = submitted_event(&form, &options);
+            let page = PostFormPage::new(None, NewPost::default(), &options)
+                .refill(&form, errors)
+                .with_ideas(&state, event, date, &options);
             form_response(StatusCode::UNPROCESSABLE_ENTITY, page)
         }
     }
@@ -727,21 +858,14 @@ pub async fn edit_form(
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
     let plan = state.db.get_post_plan(PostPlanId(id)).await?;
-    let events = state.db.list_events().await?;
-    let accessories = state.db.list_accessories().await?;
-    let fabrics = state.db.list_fabrics().await?;
-    let event = plan
-        .event_id
-        .and_then(|id| events.iter().find(|e| e.id == id));
-    let mut page = PostFormPage::new(
-        Some(&plan),
-        None,
-        false,
-        &events,
-        &accessories,
-        state.today(),
+    let options = FormOptions::load(&state).await?;
+    let event = options.event(plan.event_id);
+    let page = PostFormPage::new(Some(&plan), NewPost::default(), &options).with_ideas(
+        &state,
+        event,
+        plan.post_date,
+        &options,
     );
-    page.ideas = form_ideas(&state, event, plan.post_date, &accessories, &fabrics);
     form_response(StatusCode::OK, page)
 }
 
@@ -752,29 +876,44 @@ pub async fn update(
 ) -> Result<Response, AppError> {
     let form = FormData::new(pairs);
     let plan = state.db.get_post_plan(PostPlanId(id)).await?;
-    let events = state.db.list_events().await?;
-    let accessories = state.db.list_accessories().await?;
-    match read_form(&form, &events, &accessories) {
+    let options = FormOptions::load(&state).await?;
+    match read_form(&form, &options) {
         Ok(new) => {
             state.db.update_post_plan(plan.id, &new).await?;
             Ok(Redirect::to(&format!("/posts/{id}")).into_response())
         }
         Err(errors) => {
-            let fabrics = state.db.list_fabrics().await?;
-            let (event, date) = submitted_event(&form, &events);
-            let mut page = PostFormPage::new(
-                Some(&plan),
-                None,
-                false,
-                &events,
-                &accessories,
-                state.today(),
-            )
-            .refill(&form, errors);
-            page.ideas = form_ideas(&state, event, date, &accessories, &fabrics);
+            let (event, date) = submitted_event(&form, &options);
+            let page = PostFormPage::new(Some(&plan), NewPost::default(), &options)
+                .refill(&form, errors)
+                .with_ideas(&state, event, date, &options);
             form_response(StatusCode::UNPROCESSABLE_ENTITY, page)
         }
     }
+}
+
+/// "+ Another post from this shoot": put the post in a series (making one,
+/// named after the post, if it isn't in one yet), then open the form for the
+/// next post in it.
+pub async fn another_from_shoot(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Redirect, AppError> {
+    let plan = state.db.get_post_plan(PostPlanId(id)).await?;
+    let series = match plan.series_id {
+        Some(series) => series,
+        None => {
+            let event = match plan.event_id {
+                Some(id) => Some(state.db.get_event(id).await?),
+                None => None,
+            };
+            state
+                .db
+                .series_from_post(plan.id, &plan.name(event.as_ref()))
+                .await?
+        }
+    };
+    Ok(Redirect::to(&format!("/posts/new?series={}", series.0)))
 }
 
 /// "Schedule it" on an idea's page: give it a date, and it becomes a normal
@@ -797,6 +936,7 @@ pub async fn schedule(
         title: plan.title,
         event_id: plan.event_id,
         post_date: Some(date),
+        series_id: plan.series_id,
         looks: plan.looks,
         backdrop: plan.backdrop,
         notes: plan.notes,

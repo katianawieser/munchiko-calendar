@@ -24,6 +24,7 @@ pub mod ideas;
 pub mod month;
 mod photos;
 mod posts;
+mod series;
 
 use std::collections::HashMap;
 
@@ -37,11 +38,12 @@ use axum::routing::{get, post};
 use chrono::{Local, NaiveDate};
 
 use crate::db::{DbError, Repository};
-use crate::models::{Accessory, Event, EventId, PostPlan};
+use crate::models::{Accessory, Event, EventId, PostPlan, Series, SeriesId};
 use crate::photos::PhotoStore;
 use crate::photos::heic::HeicConverter;
 use crate::planner::{
-    Inventory, LeadTimes, PlanError, Readiness, Timeline, build_timeline, readiness,
+    Inventory, LeadTimes, PlanError, Readiness, SeriesPost, Timeline, build_series_timeline,
+    build_timeline, combined_plan, readiness,
 };
 
 /// Everything a handler needs. Axum hands each handler a clone; the
@@ -101,7 +103,13 @@ pub fn router(state: AppState) -> Router {
         .route("/posts/{id}", get(posts::show).post(posts::update))
         .route("/posts/{id}/edit", get(posts::edit_form))
         .route("/posts/{id}/schedule", post(posts::schedule))
+        .route("/posts/{id}/series", post(posts::another_from_shoot))
         .route("/posts/{id}/delete", post(posts::delete))
+        .route("/series", post(series::create))
+        .route("/series/new", get(series::new_form))
+        .route("/series/{id}", get(series::show).post(series::update))
+        .route("/series/{id}/edit", get(series::edit_form))
+        .route("/series/{id}/delete", post(series::delete))
         .route("/events", get(events::list).post(events::create))
         .route("/events/new", get(events::new_form))
         .route("/events/{id}", get(events::show).post(events::update))
@@ -339,6 +347,16 @@ async fn load_usage(state: &AppState) -> Result<blockers::Usage, AppError> {
     })
 }
 
+/// The series a post belongs to, as its pages need it.
+#[derive(Debug, Clone)]
+struct SeriesInfo {
+    series: Series,
+    /// How many posts are in it.
+    posts: usize,
+    /// The first scheduled post's date: the shared shoot is planned for it.
+    first_post: Option<NaiveDate>,
+}
+
 /// A post plan with its event and its computed schedule.
 struct LoadedPost {
     plan: PostPlan,
@@ -352,6 +370,8 @@ struct LoadedPost {
     timeline: Result<Timeline, PlanError>,
     /// For ideas only: the prep they still need and how long it takes.
     readiness: Option<Result<Readiness, PlanError>>,
+    /// In a series, the timeline above is the *series'* shared one.
+    series: Option<SeriesInfo>,
 }
 
 /// Every post plan (soonest first), plus the accessories so pages can show
@@ -372,8 +392,12 @@ async fn load_posts(state: &AppState) -> Result<(Vec<LoadedPost>, Vec<Accessory>
         accessories: &accessories,
         fabrics: &fabrics,
     };
-    let mut posts = Vec::new();
-    for plan in state.db.list_post_plans().await? {
+    let lead = &state.lead_times;
+    let plans = state.db.list_post_plans().await?;
+
+    // Each post's event and name.
+    let mut named = Vec::new();
+    for plan in plans {
         // The schema guarantees a linked event exists (foreign key), so a
         // miss here would be a bug rather than something the user did.
         let event = match plan.event_id {
@@ -382,21 +406,77 @@ async fn load_posts(state: &AppState) -> Result<(Vec<LoadedPost>, Vec<Accessory>
             })?),
             None => None,
         };
-        // Ideas get `Err(NotScheduled)`: they have no dates to plan yet.
-        let timeline = build_timeline(&plan, &inventory, &state.lead_times);
-        let readiness = plan
-            .is_idea()
-            .then(|| readiness(&plan, &inventory, &state.lead_times));
         let name = plan.name(event.as_ref());
+        named.push((plan, event, name));
+    }
+
+    // Each series is planned once, for all of its posts together.
+    let mut shared: HashMap<SeriesId, SharedPlan> = HashMap::new();
+    for series in state.db.list_series().await? {
+        let members: Vec<SeriesPost> = named
+            .iter()
+            .filter(|(p, _, _)| p.series_id == Some(series.id))
+            .map(|(plan, _, name)| SeriesPost { plan, name })
+            .collect();
+        if members.is_empty() {
+            continue;
+        }
+        let plans: Vec<&PostPlan> = members.iter().map(|m| m.plan).collect();
+        let combined = combined_plan(&series, &plans);
+        let timeline = build_series_timeline(&series, &members, &inventory, lead);
+        let ready = readiness(&combined, &inventory, lead);
+        let info = SeriesInfo {
+            posts: members.len(),
+            first_post: combined.post_date,
+            series: series.clone(),
+        };
+        shared.insert(
+            series.id,
+            SharedPlan {
+                info,
+                timeline,
+                readiness: ready,
+            },
+        );
+    }
+
+    let mut posts = Vec::new();
+    for (plan, event, name) in named {
+        let (timeline, readiness, series) = match plan.series_id.and_then(|id| shared.get(&id)) {
+            Some(shared) => (
+                // A dated post in a series follows the shared schedule.
+                match plan.post_date {
+                    Some(_) => shared.timeline.clone(),
+                    None => Err(PlanError::NotScheduled),
+                },
+                plan.is_idea().then(|| shared.readiness.clone()),
+                Some(shared.info.clone()),
+            ),
+            None => (
+                // Ideas get `Err(NotScheduled)`: they have no dates to plan yet.
+                build_timeline(&plan, &inventory, lead),
+                plan.is_idea().then(|| readiness(&plan, &inventory, lead)),
+                None,
+            ),
+        };
         posts.push(LoadedPost {
             plan,
             event,
             name,
             timeline,
             readiness,
+            series,
         });
     }
     Ok((posts, accessories))
+}
+
+/// A series, planned once for all of its posts.
+struct SharedPlan {
+    info: SeriesInfo,
+    timeline: Result<Timeline, PlanError>,
+    /// For posts in it that have no date yet.
+    readiness: Result<Readiness, PlanError>,
 }
 
 #[cfg(test)]

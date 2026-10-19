@@ -30,6 +30,9 @@ pub struct PostPlanId(pub i64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct PhotoId(pub i64);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct SeriesId(pub i64);
+
 // ---------------------------------------------------------------------------
 // The models
 // ---------------------------------------------------------------------------
@@ -295,8 +298,22 @@ pub struct PostPlan {
     pub event_id: Option<EventId>,
     /// `None` = an idea, not scheduled yet.
     pub post_date: Option<NaiveDate>,
+    /// Part of a series: several posts sharing one setup and photo shoot.
+    pub series_id: Option<SeriesId>,
     pub looks: Vec<Look>,
-    /// Free-text idea for the seasonal backdrop.
+    /// Free-text idea for the seasonal backdrop. In a series, the series'
+    /// backdrop is used instead.
+    pub backdrop: String,
+    pub notes: String,
+}
+
+/// Several posts from one setup and one photo shoot, published on different
+/// days: "Momo's Earth Day", "Mochi's Earth Day", then both together.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Series {
+    pub id: SeriesId,
+    pub title: String,
+    /// The shared setup.
     pub backdrop: String,
     pub notes: String,
 }
