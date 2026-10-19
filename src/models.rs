@@ -243,6 +243,22 @@ pub struct Event {
     pub from_holidays_file: bool,
 }
 
+impl PostPlan {
+    pub fn is_idea(&self) -> bool {
+        self.post_date.is_none()
+    }
+
+    /// What to call the post: its title, else its event's name.
+    /// `event` is the event this post is for, if any.
+    pub fn name(&self, event: Option<&Event>) -> String {
+        match (self.title.trim(), event) {
+            ("", Some(event)) => event.name.clone(),
+            ("", None) => "Untitled post".to_string(),
+            (title, _) => title.to_string(),
+        }
+    }
+}
+
 impl Event {
     pub fn end_date(&self) -> NaiveDate {
         self.end.unwrap_or(self.start)
@@ -260,12 +276,19 @@ pub struct Look {
     pub accessory_id: AccessoryId,
 }
 
-/// A planned post: which event it's for, when it goes up, and what everyone wears.
+/// A planned post: what it's for, when it goes up, and what everyone wears.
+///
+/// Without a date it's an *idea*: everything can be planned (looks, backdrop)
+/// and it's scheduled later, when there's a gap or a fitting day.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PostPlan {
     pub id: PostPlanId,
-    pub event_id: EventId,
-    pub post_date: NaiveDate,
+    /// "Pokémon fossil exhibit". Optional when there's an event (its name is
+    /// used instead); posts without an event must have one.
+    pub title: String,
+    pub event_id: Option<EventId>,
+    /// `None` = an idea, not scheduled yet.
+    pub post_date: Option<NaiveDate>,
     pub looks: Vec<Look>,
     /// Free-text idea for the seasonal backdrop.
     pub backdrop: String,

@@ -49,12 +49,22 @@ struct PostLink {
     label: String,
 }
 
+/// "Post Nov 26", "Momo's Earth Day (Apr 20)" or "Idea: Pokémon bows".
 fn post_links(plans: &[&PostPlan]) -> Vec<PostLink> {
     plans
         .iter()
-        .map(|p| PostLink {
-            href: format!("/posts/{}", p.id.0),
-            label: format!("Post {}", p.post_date.format("%b %-d")),
+        .map(|p| {
+            let title = p.title.trim();
+            let label = match (p.post_date, title) {
+                (Some(date), "") => format!("Post {}", date.format("%b %-d")),
+                (Some(date), title) => format!("{title} ({})", date.format("%b %-d")),
+                (None, "") => "Idea (no date yet)".to_string(),
+                (None, title) => format!("Idea: {title}"),
+            };
+            PostLink {
+                href: format!("/posts/{}", p.id.0),
+                label,
+            }
         })
         .collect()
 }
@@ -107,7 +117,8 @@ pub async fn list(
     let rows = events
         .iter()
         .map(|e| {
-            let planned: Vec<&PostPlan> = plans.iter().filter(|p| p.event_id == e.id).collect();
+            let planned: Vec<&PostPlan> =
+                plans.iter().filter(|p| p.event_id == Some(e.id)).collect();
             EventRow {
                 href: format!("/events/{}", e.id.0),
                 when: describe_when(e),
@@ -158,7 +169,10 @@ pub async fn show(
 ) -> Result<Response, AppError> {
     let event = state.db.get_event(EventId(id)).await?;
     let plans = state.db.list_post_plans().await?;
-    let planned: Vec<&PostPlan> = plans.iter().filter(|p| p.event_id == event.id).collect();
+    let planned: Vec<&PostPlan> = plans
+        .iter()
+        .filter(|p| p.event_id == Some(event.id))
+        .collect();
     let accessories = state.db.list_accessories().await?;
     let fabrics = state.db.list_fabrics().await?;
     // Ideas for a post on the day itself, the usual case.

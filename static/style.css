@@ -234,3 +234,13 @@ button.color-idea {
 }
 button.color-idea:hover { border-color: var(--pico-primary); }
 button.color-idea:disabled { opacity: 0.45; cursor: default; }
+
+/* Post ideas (M8a). */
+.head-actions { display: flex; gap: 0.75rem; }
+.head-actions [role="button"] { margin: 0; }
+.idea-readiness { border-left: 4px solid var(--mc-outing); }
+.idea-readiness table { margin-bottom: 1rem; }
+.idea-readiness form.schedule { display: flex; gap: 0.75rem; align-items: flex-end; margin-bottom: 0.25rem; }
+.idea-readiness form.schedule label { margin: 0; }
+.idea-readiness form.schedule input { margin-bottom: 0; }
+.idea-readiness form.schedule button { width: auto; margin: 0; }

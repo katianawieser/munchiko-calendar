@@ -145,6 +145,22 @@ See README.md for the planning rules, data model and roadmap.
   Sunflower + Yellow Wheat; Christmas: Candy Canes) and Pokemon Grid's swatches reset
   on the copy so the photo-color chips show (trimmed view, disclosed in README).
   Tagged `v1.0`. Push to GitHub only after Katiana has looked (her choice).
+- **M8 (flexible posts), planned with Katiana:** M8a ideas (no date, optional
+  event, title), then M8b series (several posts from ONE shared setup + shoot, each
+  published on its own day; prep and shoot planned once before the first post).
+  Gap finder: she chose to skip it for now.
+- **M8a done:** migration 0006 rebuilds post_plans (title, nullable event_id and
+  post_date, CHECK title or event). sqlx 0.8.6 SQLite ignores `-- no-transaction`, so it
+  saves looks + post photos to temp tables, deletes them, rebuilds, and re-inserts
+  (tested from a version-5 database). `PostPlan::{is_idea, name(event)}`. Planner:
+  `build_timeline` → `PlanError::NotScheduled` for ideas; `build_timeline_on(plan, date)`;
+  `readiness()` plans against 2000-01-01 → prep items (longest first) + `days_needed`;
+  shoot title names only the pets in the looks. Web: `LoadedPost { event: Option, name,
+  readiness }`; calendar skips ideas; Posts page has an Ideas section (ready first);
+  idea page has prep table + "Schedule it" (POST /posts/{id}/schedule); form has
+  title, optional event (incl. "Past:" events), When radio (date / idea);
+  `/posts/new?idea=1`. Katiana's real db goes to version 6 on next start (tested on a
+  copy: 8 photos kept, foreign_key_check clean).
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

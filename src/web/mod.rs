@@ -40,7 +40,9 @@ use crate::db::{DbError, Repository};
 use crate::models::{Accessory, Event, EventId, PostPlan};
 use crate::photos::PhotoStore;
 use crate::photos::heic::HeicConverter;
-use crate::planner::{Inventory, LeadTimes, PlanError, Timeline, build_timeline};
+use crate::planner::{
+    Inventory, LeadTimes, PlanError, Readiness, Timeline, build_timeline, readiness,
+};
 
 /// Everything a handler needs. Axum hands each handler a clone; the
 /// repository's connection pool is shared between clones.
@@ -98,6 +100,7 @@ pub fn router(state: AppState) -> Router {
         .route("/posts/new", get(posts::new_form))
         .route("/posts/{id}", get(posts::show).post(posts::update))
         .route("/posts/{id}/edit", get(posts::edit_form))
+        .route("/posts/{id}/schedule", post(posts::schedule))
         .route("/posts/{id}/delete", post(posts::delete))
         .route("/events", get(events::list).post(events::create))
         .route("/events/new", get(events::new_form))
@@ -339,10 +342,16 @@ async fn load_usage(state: &AppState) -> Result<blockers::Usage, AppError> {
 /// A post plan with its event and its computed schedule.
 struct LoadedPost {
     plan: PostPlan,
-    event: Event,
+    /// The event it's for, if any.
+    event: Option<Event>,
+    /// What to call it: its title, else its event's name.
+    name: String,
     /// An error here means the plan refers to something that's gone missing;
-    /// pages show the problem instead of failing completely.
+    /// pages show the problem instead of failing completely. Ideas (no date)
+    /// always get `Err(PlanError::NotScheduled)`.
     timeline: Result<Timeline, PlanError>,
+    /// For ideas only: the prep they still need and how long it takes.
+    readiness: Option<Result<Readiness, PlanError>>,
 }
 
 /// Every post plan (soonest first), plus the accessories so pages can show
@@ -365,17 +374,26 @@ async fn load_posts(state: &AppState) -> Result<(Vec<LoadedPost>, Vec<Accessory>
     };
     let mut posts = Vec::new();
     for plan in state.db.list_post_plans().await? {
-        // The schema guarantees the event exists (foreign key), so a miss
-        // here would be a bug rather than something the user did.
-        let event = events
-            .get(&plan.event_id)
-            .cloned()
-            .ok_or_else(|| AppError::Internal(format!("post {} has no event", plan.id.0)))?;
+        // The schema guarantees a linked event exists (foreign key), so a
+        // miss here would be a bug rather than something the user did.
+        let event = match plan.event_id {
+            Some(id) => Some(events.get(&id).cloned().ok_or_else(|| {
+                AppError::Internal(format!("post {} has a missing event", plan.id.0))
+            })?),
+            None => None,
+        };
+        // Ideas get `Err(NotScheduled)`: they have no dates to plan yet.
         let timeline = build_timeline(&plan, &inventory, &state.lead_times);
+        let readiness = plan
+            .is_idea()
+            .then(|| readiness(&plan, &inventory, &state.lead_times));
+        let name = plan.name(event.as_ref());
         posts.push(LoadedPost {
             plan,
             event,
+            name,
             timeline,
+            readiness,
         });
     }
     Ok((posts, accessories))

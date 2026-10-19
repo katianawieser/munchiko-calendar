@@ -91,8 +91,9 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
 
     let plan = db
         .create_post_plan(&NewPostPlan {
-            event_id: halloween.id,
-            post_date: halloween.start,
+            title: String::new(),
+            event_id: Some(halloween.id),
+            post_date: Some(halloween.start),
             looks: vec![
                 Look {
                     pet: Pet::Mochi,

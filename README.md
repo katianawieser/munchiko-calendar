@@ -109,10 +109,16 @@ Example: Halloween (post Oct 31, default lead times):
 | Page | What you can do |
 |---|---|
 | **Calendar** | Month view of holidays, outings and every post's prep tasks; "to do today" box; overdue work outlined in red |
-| **Posts** | Plan a post for an event (with the same ideas shown above the choices), choose who wears what, see its prep timeline and slack, add reference photos |
+| **Posts** | Plan a post for an event (with the same ideas shown above the choices), choose who wears what, see its prep timeline and slack, add reference photos; save **ideas** with no date yet |
 | **Events** | Upcoming / past holidays and outings; "Plan a post" from any event; **ideas** for what to wear (or which fabric to make something from, and the date to start by); add and edit your own outings (holidays are edited in `data/holidays.toml`) |
 | **Accessories** | Bows, scarves, costumes: filter, one-click status, fabrics by role, matching sets, photos |
 | **Fabrics** | Stash and shopping list, pairings, what each fabric is used by, photos |
+
+**Post ideas** are posts with no date yet, like an outing you want to post
+about "sometime". You can plan who wears what and the backdrop. The Posts
+page lists them, ready ones first, with what's still to do and the soonest
+each could go up. **Schedule it** gives an idea a date, and it gets a full
+prep timeline. A post can have its own title, and the event is optional.
 
 **Colors** have a name ("baby pink") and, optionally, the exact shade from a
 color picker, shown as a dot next to the name. Suggestions only look at the
@@ -157,7 +163,7 @@ out by the planner itself.
 | **Fabric** | name, description, colors (name + optional `#rrggbb` swatch), keywords, pairings, in stock |
 | **Accessory** (bow / scarf / costume) | name, description, colors, fabrics (main/middle/accent), handmade or bought (brand), status (idea → in progress → ready), matching pair |
 | **Event** | name, description, type, start/end date, keywords |
-| **Post plan** | event, post date, who wears what, backdrop idea |
+| **Post plan** | title, event (optional), post date (none = an idea), who wears what, backdrop idea |
 | **Photo** | belongs to one fabric, accessory or post plan; image type |
 
 Bows are separate items that can be linked as a matching Mochi & Momo set.
@@ -193,7 +199,7 @@ when the app starts.
 | `accessories` | bows, scarves, costumes; `pair_id` links a matching set (both ways) |
 | `accessory_fabrics` | which fabrics each accessory uses, as main / middle / accent |
 | `events` | holidays, notable days, seasons, outings (optional end date); holiday rows remember which file entry and year they came from |
-| `post_plans` | a planned post for an event |
+| `post_plans` | a planned post or idea (needs a title or an event; no date = an idea) |
 | `looks` | which pet wears which accessory in a post |
 | `photos` | which item each photo belongs to (exactly one), and its image type; the image files are in the `photos/` folder, named by id |
 
@@ -235,6 +241,9 @@ Settings (all optional environment variables):
 - [x] **M7**: Polish
   - [x] **M7a**: plural and singular words match in suggestions
   - [x] **M7b**: portfolio screenshots, design notes, v1.0
+- [ ] **M8**: Flexible posts
+  - [x] **M8a**: post ideas without a date, scheduled later; posts without an event
+  - [ ] **M8b**: series: several posts from one setup and photo shoot, published on different days
 
 Ideas for later: photos in the suggestion box; a calendar nudge for upcoming
 events with no post planned yet.

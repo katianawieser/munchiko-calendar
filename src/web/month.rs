@@ -15,7 +15,8 @@ use crate::planner::{TaskKind, TaskStatus, Timeline};
 #[derive(Debug, Clone, Copy)]
 pub struct PlannedPost<'a> {
     pub id: PostPlanId,
-    pub event_name: &'a str,
+    /// What the post is called: its title, else its event's name.
+    pub post_name: &'a str,
     pub timeline: &'a Timeline,
 }
 
@@ -131,10 +132,10 @@ fn task_style(kind: TaskKind) -> (&'static str, &'static str) {
 
 /// Short label for a calendar cell. Shoot and publish days name the post,
 /// since several posts can be in progress at once.
-fn task_label(kind: TaskKind, title: &str, event_name: &str) -> String {
+fn task_label(kind: TaskKind, title: &str, post_name: &str) -> String {
     match kind {
-        TaskKind::PhotoShoot => format!("Shoot: {event_name}"),
-        TaskKind::Publish => format!("Post: {event_name}"),
+        TaskKind::PhotoShoot => format!("Shoot: {post_name}"),
+        TaskKind::Publish => format!("Post: {post_name}"),
         _ => title.to_string(),
     }
 }
@@ -185,7 +186,7 @@ pub fn month_view(
                     && matches!(task.status(today), TaskStatus::Overdue { .. });
                 entries.push(Entry {
                     icon,
-                    label: task_label(task.kind, &task.title, post.event_name),
+                    label: task_label(task.kind, &task.title, post.post_name),
                     class,
                     href: Some(post.href()),
                     overdue,
@@ -242,7 +243,7 @@ pub fn agenda(today: NaiveDate, posts: &[PlannedPost<'_>]) -> Agenda {
 
     for post in posts.iter().filter(|p| !p.is_finished(today)) {
         for task in &post.timeline.tasks {
-            let label = task_label(task.kind, &task.title, post.event_name);
+            let label = task_label(task.kind, &task.title, post.post_name);
             match task.status(today) {
                 TaskStatus::Active => agenda.now.push(AgendaItem {
                     label,
@@ -402,7 +403,7 @@ mod tests {
         let timeline = halloween();
         let posts = [PlannedPost {
             id: PostPlanId(7),
-            event_name: "Halloween",
+            post_name: "Halloween",
             timeline: &timeline,
         }];
         let events = [event("Halloween", d(2026, 10, 31), None)];
@@ -435,7 +436,7 @@ mod tests {
         let timeline = halloween();
         let posts = [PlannedPost {
             id: PostPlanId(1),
-            event_name: "Halloween",
+            post_name: "Halloween",
             timeline: &timeline,
         }];
 
@@ -453,7 +454,7 @@ mod tests {
         let timeline = halloween();
         let posts = [PlannedPost {
             id: PostPlanId(1),
-            event_name: "Halloween",
+            post_name: "Halloween",
             timeline: &timeline,
         }];
 

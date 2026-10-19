@@ -1,9 +1,21 @@
 {% extends "base.html" %}
-{% block title %}{{ event_name }} post{% endblock %}
+{% block title %}{{ name }}{% if !has_title && event.is_some() %} post{% endif %}{% endblock %}
 {% block content %}
 <hgroup>
-  <h2><a href="{{ event_href }}" class="plain">{{ event_name }}</a> post</h2>
-  <p>Publishes {{ post_date }}{% if let Some(shoot) = shoot_date %} · Photo shoot {{ shoot }}{% endif %}</p>
+  {% if let Some(event) = event %}
+    {% if has_title %}
+  <h2>{{ name }}</h2>
+  <p>For <a href="{{ event.href }}">{{ event.name }}</a></p>
+    {% else %}
+  <h2><a href="{{ event.href }}" class="plain">{{ event.name }}</a> post</h2>
+    {% endif %}
+  {% else %}
+  <h2>{{ name }}</h2>
+  {% endif %}
+  <p>
+    {% if let Some(date) = post_date %}Publishes {{ date }}{% if let Some(shoot) = shoot_date %} · Photo shoot {{ shoot }}{% endif %}
+    {% else %}An idea: no date yet{% endif %}
+  </p>
 </hgroup>
 <p><span class="badge {{ health.class }}">{{ health.text }}</span></p>
 
@@ -31,6 +43,29 @@
 <p><small class="muted">Inspiration and reference shots while planning, the finished photo after the shoot.</small></p>
 {% include "photos_section.html" %}
 
+{% if let Some(idea) = idea %}
+<article class="idea-readiness">
+  <header><strong>{% if idea.ready %}Ready to schedule{% else %}Before it can go up{% endif %}</strong></header>
+  <p>{{ idea.summary }}.{% if !idea.earliest.is_empty() %} If prep starts today, it could post on <strong>{{ idea.earliest }}</strong>.{% endif %}</p>
+  {% if !idea.prep.is_empty() %}
+  <table>
+    <thead><tr><th>Prep</th><th>Takes</th></tr></thead>
+    <tbody>
+      {% for item in idea.prep %}
+      <tr><td>{{ item.title }}</td><td class="nowrap">{{ item.days }} {% if item.days == 1 %}day{% else %}days{% endif %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  <form method="post" action="{{ idea.schedule_action }}" class="schedule">
+    <label>Schedule it for
+      <input type="date" name="post_date" value="{{ idea.suggested_date }}" required>
+    </label>
+    <button type="submit">Schedule it</button>
+  </form>
+  <small class="muted">It then gets a full prep timeline and shows on the calendar.</small>
+</article>
+{% else %}
 <h3>Prep timeline</h3>
 {% if tasks.is_empty() %}
 <p>No schedule: fix the problem above first.</p>
@@ -47,6 +82,7 @@
     {% endfor %}
   </tbody>
 </table>
+{% endif %}
 {% endif %}
 <div class="form-actions">
   <a href="{{ edit_href }}" role="button" class="secondary outline">Edit post</a>

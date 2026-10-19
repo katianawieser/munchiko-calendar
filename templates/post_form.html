@@ -6,16 +6,27 @@
 
 <form method="post" action="{{ action }}">
   <div class="grid">
+    <label>Title
+      <input name="title" value="{{ title }}" placeholder="Pokémon fossil exhibit">
+      <small>Optional if it's for an event (the event's name is used).</small>
+    </label>
     <label>Event
-      <select name="event" required>
+      <select name="event">
         {% for c in event_choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
       </select>
-    </label>
-    <label>Post date
-      <input type="date" name="post_date" value="{{ post_date }}">
-      <small>Leave empty to post on the day of the event.</small>
+      <small>Optional. Past events are listed too, for ideas from an outing.</small>
     </label>
   </div>
+
+  <fieldset>
+    <legend>When</legend>
+    <label class="inline-check"><input type="radio" name="when" value="date" {% if !is_idea %}checked{% endif %}> On a date</label>
+    <label class="inline-check"><input type="radio" name="when" value="idea" {% if is_idea %}checked{% endif %}> No date yet: save it as an idea</label>
+    <label>Post date
+      <input type="date" name="post_date" value="{{ post_date }}">
+      <small>For "On a date". Leave empty to post on the day of the event.</small>
+    </label>
+  </fieldset>
 
   {% include "ideas.html" %}
 
@@ -44,7 +55,7 @@
   </label>
 
   <div class="form-actions">
-    <button type="submit">Save and see the timeline</button>
+    <button type="submit">Save</button>
     <a href="{{ cancel_href }}" role="button" class="secondary outline">Cancel</a>
   </div>
 </form>

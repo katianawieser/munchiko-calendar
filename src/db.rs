@@ -199,8 +199,10 @@ pub struct NewEvent {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NewPostPlan {
-    pub event_id: EventId,
-    pub post_date: NaiveDate,
+    pub title: String,
+    pub event_id: Option<EventId>,
+    /// `None` = an idea, not scheduled yet.
+    pub post_date: Option<NaiveDate>,
     pub looks: Vec<Look>,
     pub backdrop: String,
     pub notes: String,
@@ -257,8 +259,9 @@ struct EventRow {
 #[derive(FromRow)]
 struct PostPlanRow {
     id: i64,
-    event_id: i64,
-    post_date: NaiveDate,
+    title: String,
+    event_id: Option<i64>,
+    post_date: Option<NaiveDate>,
     backdrop: String,
     notes: String,
 }
@@ -359,7 +362,8 @@ impl PostPlanRow {
     fn into_model(self, looks: Vec<Look>) -> PostPlan {
         PostPlan {
             id: PostPlanId(self.id),
-            event_id: EventId(self.event_id),
+            title: self.title,
+            event_id: self.event_id.map(EventId),
             post_date: self.post_date,
             looks,
             backdrop: self.backdrop,
@@ -1145,11 +1149,12 @@ impl Repository {
         let mut tx = self.pool.begin().await?;
 
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO post_plans (event_id, post_date, backdrop, notes)
-             VALUES (?, ?, ?, ?)
+            "INSERT INTO post_plans (title, event_id, post_date, backdrop, notes)
+             VALUES (?, ?, ?, ?, ?)
              RETURNING id",
         )
-        .bind(new.event_id.0)
+        .bind(&new.title)
+        .bind(new.event_id.map(|id| id.0))
         .bind(new.post_date)
         .bind(&new.backdrop)
         .bind(&new.notes)
@@ -1166,7 +1171,7 @@ impl Repository {
         exactly_one(self.load_post_plans(Some(id)).await?, "post plan", id.0)
     }
 
-    /// All post plans, soonest first.
+    /// All post plans, soonest first; ideas (no date) last.
     pub async fn list_post_plans(&self) -> Result<Vec<PostPlan>> {
         self.load_post_plans(None).await
     }
@@ -1176,10 +1181,10 @@ impl Repository {
         let mut tx = self.pool.begin().await?;
 
         let rows: Vec<PostPlanRow> = sqlx::query_as(
-            "SELECT id, event_id, post_date, backdrop, notes
+            "SELECT id, title, event_id, post_date, backdrop, notes
              FROM post_plans
              WHERE ?1 IS NULL OR id = ?1
-             ORDER BY post_date, id",
+             ORDER BY post_date IS NULL, post_date, id",
         )
         .bind(only)
         .fetch_all(&mut *tx)
@@ -1220,10 +1225,11 @@ impl Repository {
     pub async fn update_post_plan(&self, id: PostPlanId, new: &NewPostPlan) -> Result<()> {
         let mut tx = self.pool.begin().await?;
         let result = sqlx::query(
-            "UPDATE post_plans SET event_id = ?, post_date = ?, backdrop = ?, notes = ?
+            "UPDATE post_plans SET title = ?, event_id = ?, post_date = ?, backdrop = ?, notes = ?
              WHERE id = ?",
         )
-        .bind(new.event_id.0)
+        .bind(&new.title)
+        .bind(new.event_id.map(|id| id.0))
         .bind(new.post_date)
         .bind(&new.backdrop)
         .bind(&new.notes)
@@ -1645,6 +1651,121 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_idea_needs_no_date_or_event_but_must_be_called_something() {
+        let db = Repository::in_memory().await.unwrap();
+        let fossil = db.create_accessory(&bow("Fossil bow", &[])).await.unwrap();
+        let idea = NewPostPlan {
+            title: "Pokémon fossil exhibit".into(),
+            event_id: None,
+            post_date: None,
+            looks: vec![Look {
+                pet: Pet::Momo,
+                accessory_id: fossil,
+            }],
+            backdrop: "museum props".into(),
+            notes: String::new(),
+        };
+        let id = db.create_post_plan(&idea).await.unwrap();
+        let loaded = db.get_post_plan(id).await.unwrap();
+        assert!(loaded.is_idea());
+        assert_eq!(loaded.title, "Pokémon fossil exhibit");
+        assert_eq!(loaded.event_id, None);
+
+        // No title and no event: the database itself refuses it.
+        let nameless = NewPostPlan {
+            title: String::new(),
+            ..idea.clone()
+        };
+        assert!(db.create_post_plan(&nameless).await.is_err());
+
+        // Ideas sort after dated posts.
+        let dated = db
+            .create_post_plan(&NewPostPlan {
+                title: "Rock day".into(),
+                post_date: Some(d(2026, 11, 2)),
+                ..idea
+            })
+            .await
+            .unwrap();
+        let order: Vec<PostPlanId> = db
+            .list_post_plans()
+            .await
+            .unwrap()
+            .iter()
+            .map(|p| p.id)
+            .collect();
+        assert_eq!(order, vec![dated, id]);
+    }
+
+    #[tokio::test]
+    async fn migration_0006_keeps_posts_looks_and_photos() {
+        // A database as it was before 0006: run migrations 1-5 only.
+        let options = SqliteConnectOptions::from_str("sqlite::memory:")
+            .unwrap()
+            .foreign_keys(true);
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .min_connections(1)
+            .idle_timeout(None)
+            .max_lifetime(None)
+            .connect_with(options)
+            .await
+            .unwrap();
+        let up_to_5 = Migrator {
+            migrations: MIGRATOR
+                .migrations
+                .iter()
+                .filter(|m| m.version <= 5)
+                .cloned()
+                .collect(),
+            ..Migrator::DEFAULT
+        };
+        up_to_5.run(&pool).await.unwrap();
+
+        // A post with two looks (order matters) and a photo, written the old way.
+        sqlx::raw_sql(
+            "INSERT INTO events (id, name, kind, start_date) VALUES (1, 'Earth Day', 'notable_day', '2027-04-22');
+             INSERT INTO accessories (id, kind, name, source, status) VALUES
+                 (1, 'bow', 'Leaf bow', 'handmade', 'ready'),
+                 (2, 'bow', 'Globe bow', 'handmade', 'ready');
+             INSERT INTO post_plans (id, event_id, post_date, backdrop, notes)
+                 VALUES (7, 1, '2027-04-22', 'moss and ferns', 'combined post');
+             INSERT INTO looks (post_plan_id, pet, accessory_id) VALUES (7, 'momo', 2), (7, 'mochi', 1);
+             INSERT INTO photos (id, post_plan_id, content_type) VALUES (3, 7, 'image/jpeg');",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // Now run 0006 (and anything after it).
+        let db = Repository::migrate(pool).await.unwrap();
+
+        let plan = db.get_post_plan(PostPlanId(7)).await.unwrap();
+        assert_eq!(plan.event_id, Some(EventId(1)));
+        assert_eq!(plan.post_date, Some(d(2027, 4, 22)));
+        assert_eq!(plan.title, "");
+        assert_eq!(plan.backdrop, "moss and ferns");
+        let looks: Vec<(Pet, i64)> = plan
+            .looks
+            .iter()
+            .map(|l| (l.pet, l.accessory_id.0))
+            .collect();
+        assert_eq!(
+            looks,
+            vec![(Pet::Momo, 2), (Pet::Mochi, 1)],
+            "same looks, same order"
+        );
+        let photo = db.get_photo(PhotoId(3)).await.unwrap();
+        assert_eq!(photo.owner, PhotoOwner::PostPlan(PostPlanId(7)));
+
+        // And the foreign keys still work: the accessory is still protected.
+        assert!(matches!(
+            db.delete_accessory(AccessoryId(1)).await,
+            Err(DbError::InUse { .. })
+        ));
+    }
+
+    #[tokio::test]
     async fn post_plan_round_trips_and_protects_what_it_uses() {
         let db = Repository::in_memory().await.unwrap();
         let halloween = db
@@ -1655,8 +1776,9 @@ mod tests {
         let bat = db.create_accessory(&bow("Bat", &[])).await.unwrap();
 
         let new = NewPostPlan {
-            event_id: halloween,
-            post_date: d(2026, 10, 31),
+            title: String::new(),
+            event_id: Some(halloween),
+            post_date: Some(d(2026, 10, 31)),
             looks: vec![
                 Look {
                     pet: Pet::Mochi,
@@ -1674,7 +1796,7 @@ mod tests {
 
         let loaded = db.get_post_plan(id).await.unwrap();
         assert_eq!(loaded.looks, new.looks);
-        assert_eq!(loaded.post_date, d(2026, 10, 31));
+        assert_eq!(loaded.post_date, Some(d(2026, 10, 31)));
 
         // The event and the accessories are in use while the plan exists...
         assert!(matches!(
@@ -1710,8 +1832,9 @@ mod tests {
             .unwrap();
         let plan_id = db
             .create_post_plan(&NewPostPlan {
-                event_id: halloween,
-                post_date: d(2026, 10, 31),
+                title: String::new(),
+                event_id: Some(halloween),
+                post_date: Some(d(2026, 10, 31)),
                 looks: vec![Look {
                     pet: Pet::Mochi,
                     accessory_id: pumpkin,
@@ -1839,8 +1962,9 @@ mod tests {
             .unwrap()
             .unwrap();
         db.create_post_plan(&NewPostPlan {
-            event_id: thanksgiving_2026.id,
-            post_date: d(2026, 11, 26),
+            title: String::new(),
+            event_id: Some(thanksgiving_2026.id),
+            post_date: Some(d(2026, 11, 26)),
             looks: vec![],
             backdrop: String::new(),
             notes: String::new(),
@@ -2117,8 +2241,9 @@ mod tests {
         let bat = db.create_accessory(&bow("Bat", &[])).await.unwrap();
         let plan = db
             .create_post_plan(&NewPostPlan {
-                event_id: halloween,
-                post_date: d(2026, 10, 31),
+                title: String::new(),
+                event_id: Some(halloween),
+                post_date: Some(d(2026, 10, 31)),
                 looks: vec![Look {
                     pet: Pet::Mochi,
                     accessory_id: pumpkin,
@@ -2130,8 +2255,9 @@ mod tests {
             .unwrap();
 
         let edited = NewPostPlan {
-            event_id: other,
-            post_date: d(2026, 10, 27),
+            title: String::new(),
+            event_id: Some(other),
+            post_date: Some(d(2026, 10, 27)),
             looks: vec![Look {
                 pet: Pet::Momo,
                 accessory_id: bat,
@@ -2141,7 +2267,7 @@ mod tests {
         };
         db.update_post_plan(plan, &edited).await.unwrap();
         let loaded = db.get_post_plan(plan).await.unwrap();
-        assert_eq!(loaded.event_id, other);
+        assert_eq!(loaded.event_id, Some(other));
         assert_eq!(loaded.looks, edited.looks);
         assert_eq!(loaded.notes, "Momo solo");
 

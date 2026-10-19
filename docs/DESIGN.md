@@ -48,6 +48,10 @@ rules, or adding plural matching, never touched SQL or HTML.
   arithmetic in the suggester, so the two can never disagree.
 - A post whose date has passed counts as finished, never "overdue". Late
   warnings only make sense for work that can still happen.
+- **Ideas (posts with no date)** reuse the same planner: the idea is planned
+  against a made-up date, and the schedule's length gives "needs 7 days of
+  prep, so it could post on Oct 26 if prep starts today". There's no second
+  set of rules to drift out of step.
 
 ## Suggestions: explainable scoring, not a model
 
@@ -102,6 +106,17 @@ Thanksgiving + 1).
   macro needs a live database at compile time, which complicates a fresh
   clone and CI. The trade-off is that SQL typos surface in tests, not at
   compile time; every repository method is covered by an in-memory test.
+- **Rebuilding a table that other tables point at:** making a post's date and
+  event optional meant rebuilding `post_plans` (SQLite can't drop NOT NULL in
+  place). Dropping the old table would cascade-delete every look and post
+  photo. SQLite's recipe switches foreign keys off first, but that can't
+  happen inside a transaction, and sqlx always wraps SQLite migrations in one
+  (it ignores `-- no-transaction` for SQLite, found by testing). So migration
+  0006 saves the child rows, removes them, rebuilds, and puts them back, all in
+  one transaction. A test stops a database at migration 5, adds data the old
+  way, then runs 0006. On the real data's backup, a stale build ran the first
+  version of this migration: it failed, and the transaction left everything
+  untouched.
 - **Changing stored data safely:** when colors went from plain words to
   `{name, hex}` objects, migration 0004 rewrote existing rows with SQLite's
   JSON functions, keeping their order. A test writes an old-format row and runs

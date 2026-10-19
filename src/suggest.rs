@@ -30,8 +30,8 @@ use std::fmt;
 use chrono::NaiveDate;
 
 use crate::models::{
-    Accessory, AccessoryId, AccessoryKind, AccessoryStatus, Event, EventId, Fabric, FabricId,
-    FabricRole, FabricUse, Look, Pet, PostPlan, PostPlanId, Source,
+    Accessory, AccessoryId, AccessoryKind, AccessoryStatus, Event, Fabric, FabricId, FabricRole,
+    FabricUse, Look, Pet, PostPlan, PostPlanId, Source,
 };
 use crate::planner::{Inventory, LeadTimes, build_timeline};
 
@@ -349,8 +349,9 @@ fn start_by_for_new_bow(fabric: &Fabric, post_date: NaiveDate, lead: &LeadTimes)
     };
     let plan = PostPlan {
         id: PostPlanId(0),
-        event_id: EventId(0),
-        post_date,
+        title: String::new(),
+        event_id: None,
+        post_date: Some(post_date),
         looks: vec![Look {
             pet: Pet::Mochi,
             accessory_id: bow.id,
@@ -371,7 +372,7 @@ fn start_by_for_new_bow(fabric: &Fabric, post_date: NaiveDate, lead: &LeadTimes)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Color, EventKind};
+    use crate::models::{Color, EventId, EventKind};
 
     fn d(y: i32, m: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, day).unwrap()

@@ -769,7 +769,7 @@ async fn planning_a_post_from_an_event() {
     let id: i64 = href.trim_start_matches("/posts/").parse().unwrap();
 
     let plan = db.get_post_plan(PostPlanId(id)).await.unwrap();
-    assert_eq!(plan.post_date, d(2026, 10, 15));
+    assert_eq!(plan.post_date, Some(d(2026, 10, 15)));
     assert_eq!(
         plan.looks
             .iter()
@@ -786,12 +786,22 @@ async fn planning_a_post_from_an_event() {
 }
 
 #[tokio::test]
-async fn post_form_needs_an_event() {
+async fn post_form_needs_a_title_or_an_event() {
     let (app, db, _) = setup(d(2026, 10, 5)).await;
     let before = db.list_post_plans().await.unwrap().len();
-    let reply = post(&app, "/posts", "event=&post_date=&mochi=1").await;
+    let reply = post(&app, "/posts", "title=&event=&when=date&post_date=&mochi=1").await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(reply.html.contains("Choose which event the post is for."));
+    assert!(
+        reply
+            .html
+            .contains("Give the post a title, or choose an event.")
+    );
+    assert!(
+        reply
+            .html
+            .contains("Choose a post date, or save it as an idea"),
+        "no event means no event day to fall back on"
+    );
     assert!(
         reply.html.contains("value=\"1\" checked"),
         "ticked look kept"
@@ -819,7 +829,7 @@ async fn editing_and_deleting_a_post() {
     let reply = post(&app, &format!("/posts/{}", post_id.0), &body).await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER);
     let plan = db.get_post_plan(post_id).await.unwrap();
-    assert_eq!(plan.post_date, d(2026, 10, 30));
+    assert_eq!(plan.post_date, Some(d(2026, 10, 30)));
     assert_eq!(plan.looks.len(), 2);
 
     // The scarf is free now, so it can be deleted.
@@ -867,10 +877,13 @@ async fn post_form_shows_ideas_without_ticking_anything() {
     let event = halloween(&db).await.0;
     let (_, html) = get(&app, &format!("/posts/new?event={event}")).await;
     assert!(ideas_box(&html).contains("Pumpkin bow"));
-    assert!(
-        !html.contains("checked"),
+    // The only thing pre-selected is the "On a date" choice, not a look.
+    assert_eq!(
+        html.matches("checked").count(),
+        1,
         "suggestions are only suggestions"
     );
+    assert!(html.contains("value=\"date\" checked"));
 
     // A plain new post with no event chosen has no ideas box yet.
     let (_, html) = get(&app, "/posts/new").await;
@@ -1310,4 +1323,98 @@ async fn accessory_photos_offer_colors_its_fabrics_dont_already_cover() {
     let white = html.find("data-name=\"white\"").expect("white offered");
     let black = html.find("data-name=\"black\"").expect("black offered");
     assert!(white < black, "the bigger color first");
+}
+
+// ---------------------------------------------------------------------------
+// Post ideas: no date yet (M8a)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn an_idea_is_saved_without_a_date_and_scheduled_later() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    // Momo in the Bat bow (accessory 2: not made yet, 2 days to make).
+    let reply = post(
+        &app,
+        "/posts",
+        "title=Pok%C3%A9mon+fossil+exhibit&event=&when=idea&post_date=&momo=2\
+         &backdrop=museum+props&notes=",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let href = reply.location.unwrap();
+    let id = PostPlanId(href.trim_start_matches("/posts/").parse().unwrap());
+    assert!(db.get_post_plan(id).await.unwrap().is_idea());
+
+    // Its page: what's left to do and the soonest it could go up.
+    // 2 days making + ready the day before the shoot + 3 days' editing = 5 days.
+    let (_, html) = get(&app, &href).await;
+    assert!(html.contains("<h2>Pokémon fossil exhibit</h2>"));
+    assert!(html.contains("An idea: no date yet"));
+    assert!(html.contains("Still to do: Make Bat bow"));
+    assert!(html.contains("could post on <strong>Sat Oct 10, 2026</strong>"));
+    assert!(html.contains("name=\"post_date\" value=\"2026-10-10\""));
+    assert!(!html.contains("Prep timeline"));
+
+    // Listed under Ideas, and kept off the calendar (it has no dates).
+    let (_, html) = get(&app, "/posts").await;
+    let ideas = &html[html.find("<h3>Ideas</h3>").unwrap()..];
+    assert!(ideas.contains("Pokémon fossil exhibit"));
+    assert!(ideas.contains("Oct 10"));
+    let (_, html) = get(&app, "/").await;
+    assert!(!html.contains("fossil"));
+    assert!(!html.contains("Can&#39;t plan"), "an idea isn't a problem");
+
+    // Schedule it: now it's a normal post with a timeline on the calendar.
+    let reply = post(&app, &format!("{href}/schedule"), "post_date=2026-10-20").await;
+    assert_eq!(reply.location.as_deref(), Some(href.as_str()));
+    let (_, html) = get(&app, &href).await;
+    assert!(html.contains("Publishes Tue Oct 20, 2026"));
+    assert!(html.contains("Prep timeline"));
+    assert!(html.contains("Photo shoot with Momo"), "only Momo is in it");
+    let (_, html) = get(&app, "/").await;
+    assert!(html.contains("Post: Pokémon fossil exhibit"));
+}
+
+#[tokio::test]
+async fn an_idea_can_belong_to_an_event_and_be_edited_back_into_an_idea() {
+    let (app, db, post_id) = setup(d(2026, 10, 5)).await;
+    let event = halloween(&db).await.0;
+
+    // An extra Halloween idea, no title: it's called after the event.
+    let reply = post(
+        &app,
+        "/posts",
+        &format!("title=&event={event}&when=idea&post_date=&mochi=2&backdrop=&notes="),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let (_, html) = get(&app, &format!("/events/{event}")).await;
+    assert!(html.contains("Idea (no date yet)"));
+
+    // The existing Halloween post, edited to "no date yet".
+    let reply = post(
+        &app,
+        &format!("/posts/{}", post_id.0),
+        &format!("title=&event={event}&when=idea&post_date=2026-10-31&mochi=1&backdrop=&notes="),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert_eq!(db.get_post_plan(post_id).await.unwrap().post_date, None);
+
+    // The edit form remembers it's an idea.
+    let (_, html) = get(&app, &format!("/posts/{}/edit", post_id.0)).await;
+    assert!(html.contains("value=\"idea\" checked"));
+    assert!(html.contains("Edit post idea"));
+}
+
+#[tokio::test]
+async fn new_idea_button_starts_the_form_as_an_idea() {
+    let (app, _, _) = setup(d(2026, 10, 5)).await;
+    let (_, html) = get(&app, "/posts").await;
+    assert!(html.contains("href=\"/posts/new?idea=1\""));
+    let (_, html) = get(&app, "/posts/new?idea=1").await;
+    assert!(html.contains("New post idea"));
+    assert!(html.contains("value=\"idea\" checked"));
+    // Past events are offered too, for ideas from an outing that's over.
+    assert!(html.contains("Past: "));
 }

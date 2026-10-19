@@ -61,14 +61,17 @@ fn accessory_link(accessory: &Accessory) -> Link {
     }
 }
 
-/// "Halloween post (Oct 31)", linking to the post.
+/// "Halloween post (Oct 31)" or "Pokémon fossil exhibit (idea)", linking to the post.
 fn post_link(plan: &PostPlan, events: &[Event]) -> Link {
-    let event = events
-        .iter()
-        .find(|e| e.id == plan.event_id)
-        .map_or("Untitled", |e| e.name.as_str());
+    let event = plan
+        .event_id
+        .and_then(|id| events.iter().find(|e| e.id == id));
+    let name = plan.name(event);
     Link {
-        label: format!("{event} post ({})", short_date(plan.post_date)),
+        label: match plan.post_date {
+            Some(date) => format!("{name} post ({})", short_date(date)),
+            None => format!("{name} (idea)"),
+        },
         href: format!("/posts/{}", plan.id.0),
     }
 }
@@ -135,7 +138,7 @@ pub fn for_accessory(accessory: AccessoryId, usage: &Usage) -> Blockers {
 /// What's stopping an event from being deleted: the posts planned for it.
 pub fn for_event(event: EventId, usage: &Usage) -> Blockers {
     let mut blockers = Blockers::default();
-    for plan in usage.plans.iter().filter(|p| p.event_id == event) {
+    for plan in usage.plans.iter().filter(|p| p.event_id == Some(event)) {
         let link = post_link(plan, &usage.events);
         blockers.lines.push(BlockerLine {
             relation: "has",
@@ -197,8 +200,9 @@ mod tests {
     fn plan(id: i64, event: i64, date: NaiveDate, wearing: &[i64]) -> PostPlan {
         PostPlan {
             id: PostPlanId(id),
-            event_id: EventId(event),
-            post_date: date,
+            title: String::new(),
+            event_id: Some(EventId(event)),
+            post_date: Some(date),
             looks: wearing
                 .iter()
                 .map(|&a| Look {

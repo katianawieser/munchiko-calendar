@@ -3,19 +3,44 @@
 {% block content %}
 <div class="page-head">
   <h2>Planned posts</h2>
-  <a href="/posts/new" role="button">+ Plan a post</a>
+  <div class="head-actions">
+    <a href="/posts/new?idea=1" role="button" class="secondary outline">+ New idea</a>
+    <a href="/posts/new" role="button">+ Plan a post</a>
+  </div>
 </div>
 {% if upcoming.is_empty() %}
 <p>No upcoming posts.</p>
 {% else %}
 <table>
-  <thead><tr><th>Post date</th><th>For</th><th>Status</th></tr></thead>
+  <thead><tr><th>Post date</th><th>Post</th><th>Status</th></tr></thead>
   <tbody>
     {% for row in upcoming %}
     <tr>
       <td>{{ row.post_date }}</td>
-      <td><a href="{{ row.href }}">{{ row.event_name }}</a></td>
+      <td><a href="{{ row.href }}">{{ row.name }}</a></td>
       <td><span class="badge {{ row.health.class }}">{{ row.health.text }}</span></td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h3>Ideas</h3>
+<p class="muted">Posts without a date yet, to schedule when there's a gap or a day that fits. Ready ones first.</p>
+{% if ideas.is_empty() %}
+<p class="muted">No ideas saved. <a href="/posts/new?idea=1">Save one</a>.</p>
+{% else %}
+<table>
+  <thead><tr><th>Idea</th><th>What's left</th><th>Could post from</th></tr></thead>
+  <tbody>
+    {% for idea in ideas %}
+    <tr>
+      <td>
+        <a href="{{ idea.href }}">{{ idea.name }}</a>
+        {% if let Some(event) = idea.event_name %}<br><small class="muted">{{ event }}</small>{% endif %}
+      </td>
+      <td>{% if idea.ready %}<span class="badge good">Ready</span> {% endif %}{{ idea.summary }}</td>
+      <td class="nowrap">{{ idea.earliest }}</td>
     </tr>
     {% endfor %}
   </tbody>
@@ -25,12 +50,12 @@
 {% if !past.is_empty() %}
 <h3>Past posts</h3>
 <table>
-  <thead><tr><th>Post date</th><th>For</th><th>Status</th></tr></thead>
+  <thead><tr><th>Post date</th><th>Post</th><th>Status</th></tr></thead>
   <tbody>
     {% for row in past %}
     <tr>
       <td>{{ row.post_date }}</td>
-      <td><a href="{{ row.href }}">{{ row.event_name }}</a></td>
+      <td><a href="{{ row.href }}">{{ row.name }}</a></td>
       <td><span class="badge {{ row.health.class }}">{{ row.health.text }}</span></td>
     </tr>
     {% endfor %}

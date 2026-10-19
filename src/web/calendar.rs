@@ -8,6 +8,7 @@ use chrono::Datelike;
 
 use super::month::{self, Agenda, MonthView, PlannedPost};
 use super::{AppError, AppState, load_posts, render};
+use crate::planner::PlanError;
 
 #[derive(Template)]
 #[template(path = "calendar.html")]
@@ -45,10 +46,12 @@ async fn render_month(state: &AppState, year: i32, month: u32) -> Result<Html<St
         match &post.timeline {
             Ok(timeline) => planned.push(PlannedPost {
                 id: post.plan.id,
-                event_name: &post.event.name,
+                post_name: &post.name,
                 timeline,
             }),
-            Err(e) => problems.push(format!("{}: {e}", post.event.name)),
+            // Ideas have no dates, so there's nothing to put on a calendar.
+            Err(PlanError::NotScheduled) => {}
+            Err(e) => problems.push(format!("{}: {e}", post.name)),
         }
     }
 

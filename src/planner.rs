@@ -20,7 +20,9 @@ use std::fmt;
 
 use chrono::{Duration, NaiveDate};
 
-use crate::models::{Accessory, AccessoryId, AccessoryStatus, Fabric, FabricId, PostPlan, Source};
+use crate::models::{
+    Accessory, AccessoryId, AccessoryStatus, Fabric, FabricId, Pet, PostPlan, Source,
+};
 
 /// How long each kind of prep takes. All values are in days.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -155,6 +157,8 @@ impl<'a> Inventory<'a> {
 pub enum PlanError {
     MissingAccessory(AccessoryId),
     MissingFabric(FabricId),
+    /// The post is an idea with no date yet; see [`readiness`] instead.
+    NotScheduled,
 }
 
 impl fmt::Display for PlanError {
@@ -174,6 +178,7 @@ impl fmt::Display for PlanError {
                     id.0
                 )
             }
+            PlanError::NotScheduled => write!(f, "it's an idea with no date yet"),
         }
     }
 }
@@ -191,13 +196,36 @@ fn window(due: NaiveDate, work_days: u32) -> (NaiveDate, NaiveDate) {
     (due - days(work - 1), due)
 }
 
-/// Build the prep schedule for one post plan.
+/// Build the prep schedule for a scheduled post. An idea (no date yet) gets
+/// [`PlanError::NotScheduled`]; use [`readiness`] for those.
 pub fn build_timeline(
     plan: &PostPlan,
     inventory: &Inventory<'_>,
     lead: &LeadTimes,
 ) -> Result<Timeline, PlanError> {
-    let post_date = plan.post_date;
+    let post_date = plan.post_date.ok_or(PlanError::NotScheduled)?;
+    build_timeline_on(plan, post_date, inventory, lead)
+}
+
+/// "Photo shoot with Momo": whoever is wearing something in this post.
+fn shoot_title(plan: &PostPlan) -> String {
+    let in_it = |pet| plan.looks.iter().any(|l| l.pet == pet);
+    match (in_it(Pet::Mochi), in_it(Pet::Momo)) {
+        (true, false) => "Photo shoot with Mochi".into(),
+        (false, true) => "Photo shoot with Momo".into(),
+        // Both, or no looks chosen yet.
+        _ => "Photo shoot with Mochi & Momo".into(),
+    }
+}
+
+/// The prep schedule if the post went up on `post_date`, whatever date the
+/// plan itself has (or doesn't have).
+pub fn build_timeline_on(
+    plan: &PostPlan,
+    post_date: NaiveDate,
+    inventory: &Inventory<'_>,
+    lead: &LeadTimes,
+) -> Result<Timeline, PlanError> {
     let shoot_date = post_date - days(lead.editing_buffer_days);
     let ready_by = shoot_date - days(1);
 
@@ -210,7 +238,7 @@ pub fn build_timeline(
         ),
         PlanTask::new(
             TaskKind::PhotoShoot,
-            "Photo shoot with Mochi & Momo".into(),
+            shoot_title(plan),
             shoot_date,
             shoot_date,
         ),
@@ -325,6 +353,68 @@ pub fn build_timeline(
     })
 }
 
+// ---------------------------------------------------------------------------
+// Ideas: how ready is a post that has no date yet?
+// ---------------------------------------------------------------------------
+
+/// One piece of prep an idea still needs, and how many days it takes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrepItem {
+    pub kind: TaskKind,
+    pub title: String,
+    pub days: i64,
+}
+
+/// What an idea needs before it can go up.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Readiness {
+    /// The prep still to do (bows, fabric, orders, the backdrop), longest
+    /// first. Empty accessory work means everything to wear is ready.
+    pub prep: Vec<PrepItem>,
+    /// Days from starting prep to publishing, through the critical path,
+    /// the shoot and the editing buffer.
+    pub days_needed: i64,
+}
+
+impl Readiness {
+    /// The soonest it could be posted if prep starts `today`.
+    pub fn earliest_post_date(&self, today: NaiveDate) -> NaiveDate {
+        today + Duration::days(self.days_needed)
+    }
+
+    /// Nothing to make, buy or order: only the backdrop and the shoot.
+    pub fn everything_to_wear_is_ready(&self) -> bool {
+        self.prep.iter().all(|p| p.kind == TaskKind::BuildBackdrop)
+    }
+}
+
+/// How ready an idea is, worked out by planning it for a made-up date and
+/// measuring the schedule, so ideas and scheduled posts follow the same rules.
+pub fn readiness(
+    plan: &PostPlan,
+    inventory: &Inventory<'_>,
+    lead: &LeadTimes,
+) -> Result<Readiness, PlanError> {
+    // Any date works: only the distances between dates matter.
+    let reference = NaiveDate::from_ymd_opt(2000, 1, 1).expect("a valid date");
+    let timeline = build_timeline_on(plan, reference, inventory, lead)?;
+    let mut prep: Vec<PrepItem> = timeline
+        .tasks
+        .iter()
+        .filter(|t| !matches!(t.kind, TaskKind::Publish | TaskKind::PhotoShoot))
+        .map(|t| PrepItem {
+            kind: t.kind,
+            title: t.title.clone(),
+            days: (t.due - t.start).num_days() + 1,
+        })
+        .collect();
+    prep.sort_by(|a, b| b.days.cmp(&a.days).then(a.title.cmp(&b.title)));
+    Ok(Readiness {
+        prep,
+        days_needed: (reference - timeline.earliest_start()).num_days(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -371,8 +461,9 @@ mod tests {
     fn plan(post_date: NaiveDate, looks: &[(Pet, i64)]) -> PostPlan {
         PostPlan {
             id: PostPlanId(1),
-            event_id: EventId(1),
-            post_date,
+            title: String::new(),
+            event_id: Some(EventId(1)),
+            post_date: Some(post_date),
             looks: looks
                 .iter()
                 .map(|&(pet, a)| Look {
@@ -590,6 +681,84 @@ mod tests {
         assert_eq!(
             shoot.status(d(2026, 10, 30)),
             TaskStatus::Overdue { days_late: 2 }
+        );
+    }
+
+    /// The same plan, but as an idea: no date yet.
+    fn idea(looks: &[(Pet, i64)]) -> PostPlan {
+        PostPlan {
+            post_date: None,
+            ..plan(d(2026, 1, 1), looks)
+        }
+    }
+
+    #[test]
+    fn ideas_have_no_timeline_until_scheduled() {
+        let accessories = vec![handmade_bow(1, "Leaf bow", &[], AccessoryStatus::Ready)];
+        let inv = Inventory {
+            accessories: &accessories,
+            fabrics: &[],
+        };
+        assert_eq!(
+            build_timeline(&idea(&[(Pet::Momo, 1)]), &inv, &LeadTimes::default()),
+            Err(PlanError::NotScheduled)
+        );
+    }
+
+    #[test]
+    fn an_idea_says_what_prep_it_needs_and_how_long_it_takes() {
+        let accessories = vec![handmade_bow(1, "Fossil bow", &[], AccessoryStatus::Idea)];
+        let inv = Inventory {
+            accessories: &accessories,
+            fabrics: &[],
+        };
+        let r = readiness(&idea(&[(Pet::Momo, 1)]), &inv, &LeadTimes::default()).unwrap();
+
+        // Longest first: making the bow (4 days), then the backdrop (2 days).
+        let prep: Vec<(TaskKind, i64)> = r.prep.iter().map(|p| (p.kind, p.days)).collect();
+        assert_eq!(
+            prep,
+            vec![(TaskKind::MakeAccessory, 4), (TaskKind::BuildBackdrop, 2)]
+        );
+        assert!(!r.everything_to_wear_is_ready());
+        // 4 days making, ready the day before the shoot, 3 days' editing:
+        // prep starts 7 days before the post.
+        assert_eq!(r.days_needed, 7);
+        assert_eq!(r.earliest_post_date(d(2026, 10, 19)), d(2026, 10, 26));
+    }
+
+    #[test]
+    fn an_idea_with_everything_ready_only_needs_the_backdrop_and_shoot() {
+        let accessories = vec![handmade_bow(1, "Fossil bow", &[], AccessoryStatus::Ready)];
+        let inv = Inventory {
+            accessories: &accessories,
+            fabrics: &[],
+        };
+        let r = readiness(&idea(&[(Pet::Momo, 1)]), &inv, &LeadTimes::default()).unwrap();
+        assert!(r.everything_to_wear_is_ready());
+        assert_eq!(r.days_needed, 5, "2 days backdrop + shoot + 3 days editing");
+    }
+
+    #[test]
+    fn the_shoot_names_who_is_in_the_post() {
+        let accessories = vec![
+            handmade_bow(1, "Earth bow", &[], AccessoryStatus::Ready),
+            handmade_bow(2, "Leaf bow", &[], AccessoryStatus::Ready),
+        ];
+        let inv = Inventory {
+            accessories: &accessories,
+            fabrics: &[],
+        };
+        let shoot = |looks: &[(Pet, i64)]| {
+            let t =
+                build_timeline(&plan(d(2027, 4, 22), looks), &inv, &LeadTimes::default()).unwrap();
+            tasks_of(&t, TaskKind::PhotoShoot)[0].title.clone()
+        };
+        assert_eq!(shoot(&[(Pet::Momo, 1)]), "Photo shoot with Momo");
+        assert_eq!(shoot(&[(Pet::Mochi, 2)]), "Photo shoot with Mochi");
+        assert_eq!(
+            shoot(&[(Pet::Momo, 1), (Pet::Mochi, 2)]),
+            "Photo shoot with Mochi & Momo"
         );
     }
 }
