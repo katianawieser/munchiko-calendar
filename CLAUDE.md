@@ -137,8 +137,14 @@ See README.md for the planning rules, data model and roadmap.
   "s"). Both sides normalized; `event_words` is a BTreeMap singular → as written, so
   reasons show the event's own word. Real data: 8 events changed, all from "reds"→red.
   No let-chains (MSRV 1.85; they need 1.88).
-- **M7b next:** portfolio polish (agreed with Katiana: capture this version before
-  adding more).
+- **M7b done (portfolio polish):** README restructured for a portfolio reader
+  (pitch, highlights, built-with, quick start, 6 captioned screenshots, then reference
+  sections); `docs/DESIGN.md` = decisions + alternatives + trade-offs, testing,
+  limitations (written for interviewers). Screenshots: 2x, Katiana's real data on a
+  scratch copy, plus two posts planned only for the screenshots (Thanksgiving: Orange
+  Sunflower + Yellow Wheat; Christmas: Candy Canes) and Pokemon Grid's swatches reset
+  on the copy so the photo-color chips show (trimmed view, disclosed in README).
+  Tagged `v1.0`. Push to GitHub only after Katiana has looked (her choice).
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
