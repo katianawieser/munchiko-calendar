@@ -161,6 +161,12 @@ See README.md for the planning rules, data model and roadmap.
   title, optional event (incl. "Past:" events), When radio (date / idea);
   `/posts/new?idea=1`. Katiana's real db goes to version 6 on next start (tested on a
   copy: 8 photos kept, foreign_key_check clean).
+- **Tweak (after M8a):** accessory form shows "From its fabrics: ● …" under the
+  "Use colors from these fabrics" switch (server-rendered from the selected fabrics;
+  colors.js updates it live from hidden per-fabric `<template class="fabric-chip-set">`
+  chips, deduped by name in role order, hidden when the switch is off). Shared
+  `models::without_repeats` is used by `effective_colors` and the form.
+- **M8b next (not started):** series. Ask Katiana before starting.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

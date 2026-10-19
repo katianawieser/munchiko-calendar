@@ -206,14 +206,20 @@ impl Accessory {
             .filter(|_| self.colors_from_fabrics)
             .filter_map(|used| fabrics.iter().find(|f| f.id == used.fabric_id))
             .flat_map(|f| &f.colors);
-        let mut colors: Vec<Color> = Vec::new();
-        for color in from_fabrics.chain(&self.colors) {
-            if !colors.iter().any(|c| c.name == color.name) {
-                colors.push(color.clone());
-            }
-        }
-        colors
+        without_repeats(from_fabrics.chain(&self.colors))
     }
+}
+
+/// Colors in order, keeping only the first color of each name (so a fabric's
+/// swatch wins over an accessory's bare extra of the same name).
+pub fn without_repeats<'a>(colors: impl IntoIterator<Item = &'a Color>) -> Vec<Color> {
+    let mut kept: Vec<Color> = Vec::new();
+    for color in colors {
+        if !kept.iter().any(|c| c.name == color.name) {
+            kept.push(color.clone());
+        }
+    }
+    kept
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -40,6 +40,17 @@
       <input type="checkbox" name="colors_from_fabrics" role="switch" {% if colors_from_fabrics %}checked{% endif %}>
       Use colors from these fabrics
     </label>
+    {#- The fabrics' colors. colors.js keeps this up to date as fabrics are
+        chosen, using the hidden chip sets below; without it, it shows the
+        fabrics as they were when the page loaded. -#}
+    <p class="fabric-colors" {% if !colors_from_fabrics %}hidden{% endif %}>
+      <small class="muted">From its fabrics:</small>
+      <span class="fabric-color-chips">{% for color in fabric_colors %}{% include "color_chip.html" %} {% endfor %}</span>
+      <small class="muted no-fabric-colors" {% if !fabric_colors.is_empty() %}hidden{% endif %}>none yet (choose fabrics above, or give them colors)</small>
+    </p>
+    {% for set in fabric_chips %}
+    <template class="fabric-chip-set" data-fabric="{{ set.id }}">{% for color in set.colors %}<span data-color-name="{{ color.name }}">{% include "color_chip.html" %} </span>{% endfor %}</template>
+    {% endfor %}
     <p><strong>Colors</strong><br><small class="muted">With the switch on, these are added to the fabrics' colors (e.g. a white trim); leave empty if the fabrics say it all.</small></p>
     {% include "color_fields.html" %}
   </fieldset>

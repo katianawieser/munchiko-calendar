@@ -1418,3 +1418,24 @@ async fn new_idea_button_starts_the_form_as_an_idea() {
     // Past events are offered too, for ideas from an outing that's over.
     assert!(html.contains("Past: "));
 }
+
+#[tokio::test]
+async fn accessory_page_shows_the_colors_it_gets_from_its_fabrics() {
+    let (app, _, _) = setup(d(2026, 10, 5)).await;
+    // The Pumpkin bow: orange velvet (main) and black satin (middle).
+    let (_, html) = get(&app, "/accessories/1").await;
+    let start = html
+        .find("class=\"fabric-colors\"")
+        .expect("shown under the switch");
+    let shown = &html[start..html[start..].find("</p>").unwrap() + start];
+    let orange = shown.find(">orange</span>").expect("orange shown");
+    let black = shown.find(">black</span>").expect("black shown");
+    assert!(orange < black, "main fabric's colors first");
+    // Every fabric's chips are in the page, for the script to swap in.
+    assert!(html.contains("<template class=\"fabric-chip-set\" data-fabric=\"1\">"));
+    assert!(html.contains("<template class=\"fabric-chip-set\" data-fabric=\"2\">"));
+
+    // The Ghost scarf doesn't use fabric colors: the line starts hidden.
+    let (_, html) = get(&app, "/accessories/3").await;
+    assert!(html.contains("<p class=\"fabric-colors\" hidden>"));
+}

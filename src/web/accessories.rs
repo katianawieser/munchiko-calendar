@@ -20,7 +20,7 @@ use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewAccessory};
 use crate::models::{
     Accessory, AccessoryId, AccessoryKind, AccessoryStatus, Color, Fabric, FabricId, FabricUse,
-    PhotoOwner, Source,
+    PhotoOwner, Source, without_repeats,
 };
 
 fn describe_source(source: &Source) -> String {
@@ -225,6 +225,11 @@ struct AccessoryFormPage {
     description: String,
     colors: Vec<ColorRow>,
     colors_from_fabrics: bool,
+    /// The chosen fabrics' colors, shown under the switch.
+    fabric_colors: Vec<Color>,
+    /// Every fabric's colors, for colors.js to show the right ones live as
+    /// fabrics are chosen.
+    fabric_chips: Vec<FabricChips>,
     bought: bool,
     brand: String,
     make_days: String,
@@ -235,6 +240,12 @@ struct AccessoryFormPage {
     /// Main colors of its photos, offered beside the color rows.
     color_ideas: Vec<ColorIdea>,
     errors: Vec<String>,
+}
+
+/// One fabric's colors, rendered as chips the page's script can copy.
+struct FabricChips {
+    id: i64,
+    colors: Vec<Color>,
 }
 
 /// "— none —" followed by every fabric, with `current` selected.
@@ -311,6 +322,15 @@ impl AccessoryFormPage {
                 .and_then(|a| a.make_days)
                 .map(|d| d.to_string())
                 .unwrap_or_default(),
+            fabric_colors: Vec::new(),
+            fabric_chips: fabrics
+                .iter()
+                .filter(|f| !f.colors.is_empty())
+                .map(|f| FabricChips {
+                    id: f.id.0,
+                    colors: f.colors.clone(),
+                })
+                .collect(),
             fabric_selects,
             partner_choices,
             blocked: Blockers::default(),
@@ -318,6 +338,24 @@ impl AccessoryFormPage {
             color_ideas: Vec::new(),
             errors: Vec::new(),
         }
+        .with_fabric_colors()
+    }
+
+    /// Fill in `fabric_colors` from the fabrics chosen in the selects, main
+    /// fabric first, the same way `Accessory::effective_colors` combines them.
+    fn with_fabric_colors(mut self) -> Self {
+        let chosen = self.fabric_selects.iter().filter_map(|role| {
+            role.choices
+                .iter()
+                .find(|c| c.selected && !c.value.is_empty())
+                .and_then(|c| {
+                    self.fabric_chips
+                        .iter()
+                        .find(|f| f.id.to_string() == c.value)
+                })
+        });
+        self.fabric_colors = without_repeats(chosen.flat_map(|f| &f.colors));
+        self
     }
 
     /// Put the submitted values back after a mistake.
@@ -337,6 +375,7 @@ impl AccessoryFormPage {
         self.description = form.text("description");
         self.colors = color_rows_from_form(form);
         self.colors_from_fabrics = form.checked("colors_from_fabrics");
+        self = self.with_fabric_colors();
         self.bought = form.text("source") == "bought";
         self.brand = form.text("brand");
         self.make_days = form.text("make_days");

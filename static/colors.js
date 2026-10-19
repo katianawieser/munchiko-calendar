@@ -103,3 +103,34 @@ document.querySelectorAll(".color-list").forEach((list) => {
     });
   }
 });
+
+// Accessory form: show the chosen fabrics' colors under "Use colors from these
+// fabrics", updating as fabrics are picked. Each fabric's chips are in a
+// hidden <template>; copy the chosen ones in role order (main first) and skip
+// a name that's already shown, the same rule the server uses.
+document.querySelectorAll(".fabric-colors").forEach((box) => {
+  const form = box.closest("form");
+  const chips = box.querySelector(".fabric-color-chips");
+  const none = box.querySelector(".no-fabric-colors");
+  const toggle = form.querySelector('input[name="colors_from_fabrics"]');
+  const selects = [...form.querySelectorAll('select[name$="_fabric"]')];
+
+  function update() {
+    box.hidden = !toggle.checked;
+    chips.replaceChildren();
+    const shown = new Set();
+    for (const select of selects) {
+      const set = form.querySelector(`template.fabric-chip-set[data-fabric="${select.value}"]`);
+      if (!set) continue;
+      for (const chip of set.content.children) {
+        if (shown.has(chip.dataset.colorName)) continue;
+        shown.add(chip.dataset.colorName);
+        chips.append(chip.cloneNode(true));
+      }
+    }
+    none.hidden = shown.size > 0;
+  }
+
+  toggle.addEventListener("change", update);
+  selects.forEach((select) => select.addEventListener("change", update));
+});
