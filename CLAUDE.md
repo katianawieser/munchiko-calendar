@@ -216,6 +216,17 @@ See README.md for the planning rules, data model and roadmap.
   full-width help line; use `<span>` inside flex rows. Browser tests needing
   fetch from the file:// harness: Chrome `--disable-web-security` + throwaway
   `--user-data-dir` + `--virtual-time-budget`.
+- **Katiana uses Firefox (on macOS) as her main browser.** Check browser-side
+  changes in Firefox, not only Chrome: headless Firefox with `--marionette` and a
+  throwaway `-profile`, driven by a ~50-line stdlib Python Marionette client
+  (length-prefixed JSON over TCP 2828: `WebDriver:NewSession`, `Navigate`,
+  `ExecuteAsyncScript`, `TakeScreenshot`); it loads the real app pages, so forms and
+  same-origin fetches work. Verified in Firefox 158: color rows, name suggestion,
+  Your shades, photo preview, live fabric colors, real multipart submit (CSRF passes),
+  post-page auto-upload. Firefox/Safari on macOS use the system color panel, which can
+  stay open, so colors.js also treats a shade as settled after 750 ms without
+  changes (not only on "change"). Stop the test server with
+  `lsof -ti tcp:3077 -sTCP:LISTEN`; without `-sTCP:LISTEN` it also kills the browser.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

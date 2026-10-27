@@ -58,13 +58,25 @@ document.querySelectorAll(".color-list").forEach((list) => {
       hex.value = picker.value;
       show();
     };
-    picker.addEventListener("input", pick);
-    // "change" fires once the picker is closed on a shade (unlike "input",
-    // which fires while dragging), so that's when to confirm and name it.
-    picker.addEventListener("change", () => {
-      pick();
+    // Once a shade is settled on: confirm it and suggest a name. "change"
+    // means the picker was closed on a shade, but on a Mac, Firefox (and
+    // Safari) use the system color panel, which can stay open while you carry
+    // on, so "change" may never come. A shade that stops changing for a
+    // moment counts as settled too.
+    let settleTimer;
+    const settled = () => {
+      clearTimeout(settleTimer);
       confirmShade(row, "✓ shade set");
       suggestName(row, picker.value);
+    };
+    picker.addEventListener("input", () => {
+      pick();
+      clearTimeout(settleTimer);
+      settleTimer = setTimeout(settled, 750);
+    });
+    picker.addEventListener("change", () => {
+      pick();
+      settled();
     });
     // Typing makes the name the user's own.
     name.addEventListener("input", () => {
