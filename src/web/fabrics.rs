@@ -11,6 +11,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 
 use super::blockers::{self, Blockers};
+use super::colors;
 use super::forms::{
     Choice, ColorRow, FormData, color_rows, color_rows_from_form, join_list, read_colors,
     split_list,
@@ -146,6 +147,8 @@ struct FabricFormPage {
     photos: PhotoSection,
     /// Main colors of its photos, offered beside the color rows.
     color_ideas: Vec<ColorIdea>,
+    /// Shades already picked elsewhere in the stash, to reuse.
+    your_shades: Vec<ColorIdea>,
     errors: Vec<String>,
 }
 
@@ -175,6 +178,7 @@ impl FabricFormPage {
                 blocked: Blockers::default(),
                 photos: PhotoSection::unsaved(),
                 color_ideas: Vec::new(),
+                your_shades: Vec::new(),
                 errors: Vec::new(),
             },
             None => Self {
@@ -190,6 +194,7 @@ impl FabricFormPage {
                 blocked: Blockers::default(),
                 photos: PhotoSection::unsaved(),
                 color_ideas: Vec::new(),
+                your_shades: Vec::new(),
                 errors: Vec::new(),
             },
         }
@@ -262,13 +267,22 @@ async fn edit_page(state: &AppState, fabric: &Fabric) -> Result<FabricFormPage, 
 }
 
 /// Show the form again with a status code saying what went wrong.
-fn form_response(status: StatusCode, page: FabricFormPage) -> Result<Response, AppError> {
+/// Show the form with `status`. Every form page goes through here, so this
+/// is where "Your shades" (shades already picked elsewhere) are added.
+async fn form_response(
+    state: &AppState,
+    status: StatusCode,
+    mut page: FabricFormPage,
+) -> Result<Response, AppError> {
+    let fabrics = state.db.list_fabrics().await?;
+    let accessories = state.db.list_accessories().await?;
+    page.your_shades = colors::your_shades(&fabrics, &accessories);
     Ok((status, render(page)?).into_response())
 }
 
 pub async fn new_form(State(state): State<AppState>) -> Result<Response, AppError> {
     let fabrics = state.db.list_fabrics().await?;
-    form_response(StatusCode::OK, FabricFormPage::new(None, &fabrics))
+    form_response(&state, StatusCode::OK, FabricFormPage::new(None, &fabrics)).await
 }
 
 pub async fn create(
@@ -287,7 +301,7 @@ pub async fn create(
             let fabrics = state.db.list_fabrics().await?;
             let page = FabricFormPage::new(None, &fabrics).refill(&form, errors);
             // 422: the request arrived fine, but its content needs fixing.
-            return form_response(StatusCode::UNPROCESSABLE_ENTITY, page);
+            return form_response(&state, StatusCode::UNPROCESSABLE_ENTITY, page).await;
         }
     };
     let id = state.db.create_fabric(&input.fabric).await?;
@@ -301,7 +315,7 @@ pub async fn edit_form(
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
     let fabric = state.db.get_fabric(FabricId(id)).await?;
-    form_response(StatusCode::OK, edit_page(&state, &fabric).await?)
+    form_response(&state, StatusCode::OK, edit_page(&state, &fabric).await?).await
 }
 
 pub async fn update(
@@ -320,7 +334,7 @@ pub async fn update(
         Ok(ok) => ok,
         Err(errors) => {
             let page = edit_page(&state, &fabric).await?.refill(&form, errors);
-            return form_response(StatusCode::UNPROCESSABLE_ENTITY, page);
+            return form_response(&state, StatusCode::UNPROCESSABLE_ENTITY, page).await;
         }
     };
     state.db.update_fabric(fabric.id, &input.fabric).await?;
@@ -355,7 +369,7 @@ pub async fn delete(
                 fabric.name
             )];
             // 409 Conflict: the request clashes with the current data.
-            form_response(StatusCode::CONFLICT, page)
+            form_response(&state, StatusCode::CONFLICT, page).await
         }
         Err(e) => Err(e.into()),
     }

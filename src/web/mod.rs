@@ -17,6 +17,7 @@
 mod accessories;
 pub mod blockers;
 mod calendar;
+mod colors;
 mod events;
 mod fabrics;
 pub mod forms;
@@ -93,6 +94,7 @@ pub fn router(state: AppState) -> Router {
 
     Router::new()
         .merge(uploads)
+        .route("/colors/name", get(colors::name_for_hex))
         .route("/photos/{id}", get(photos::serve))
         .route("/photos/{id}/thumb", get(photos::serve_thumbnail))
         .route("/photos/{id}/delete", post(photos::delete))

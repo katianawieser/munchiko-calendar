@@ -11,6 +11,7 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
 
 use super::blockers::{self, Blockers};
+use super::colors;
 use super::forms::{
     Choice, ColorRow, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, color_rows,
     color_rows_from_form, label_of, parse_choice, read_colors,
@@ -239,6 +240,8 @@ struct AccessoryFormPage {
     photos: PhotoSection,
     /// Main colors of its photos, offered beside the color rows.
     color_ideas: Vec<ColorIdea>,
+    /// Shades already picked elsewhere in the stash, to reuse.
+    your_shades: Vec<ColorIdea>,
     errors: Vec<String>,
 }
 
@@ -336,6 +339,7 @@ impl AccessoryFormPage {
             blocked: Blockers::default(),
             photos: PhotoSection::unsaved(),
             color_ideas: Vec::new(),
+            your_shades: Vec::new(),
             errors: Vec::new(),
         }
         .with_fabric_colors()
@@ -502,7 +506,16 @@ async fn edit_page(state: &AppState, accessory: &Accessory) -> Result<AccessoryF
     Ok(page)
 }
 
-fn form_response(status: StatusCode, page: AccessoryFormPage) -> Result<Response, AppError> {
+/// Show the form with `status`. Every form page goes through here, so this
+/// is where "Your shades" (shades already picked elsewhere) are added.
+async fn form_response(
+    state: &AppState,
+    status: StatusCode,
+    mut page: AccessoryFormPage,
+) -> Result<Response, AppError> {
+    let fabrics = state.db.list_fabrics().await?;
+    let accessories = state.db.list_accessories().await?;
+    page.your_shades = colors::your_shades(&fabrics, &accessories);
     Ok((status, render(page)?).into_response())
 }
 
@@ -510,9 +523,11 @@ pub async fn new_form(State(state): State<AppState>) -> Result<Response, AppErro
     let accessories = state.db.list_accessories().await?;
     let fabrics = state.db.list_fabrics().await?;
     form_response(
+        &state,
         StatusCode::OK,
         AccessoryFormPage::new(None, &accessories, &fabrics),
     )
+    .await
 }
 
 pub async fn create(
@@ -531,7 +546,7 @@ pub async fn create(
             let accessories = state.db.list_accessories().await?;
             let fabrics = state.db.list_fabrics().await?;
             let page = AccessoryFormPage::new(None, &accessories, &fabrics).refill(&form, errors);
-            return form_response(StatusCode::UNPROCESSABLE_ENTITY, page);
+            return form_response(&state, StatusCode::UNPROCESSABLE_ENTITY, page).await;
         }
     };
     let id = state.db.create_accessory(&input.accessory).await?;
@@ -545,7 +560,7 @@ pub async fn edit_form(
     Path(id): Path<i64>,
 ) -> Result<Response, AppError> {
     let accessory = state.db.get_accessory(AccessoryId(id)).await?;
-    form_response(StatusCode::OK, edit_page(&state, &accessory).await?)
+    form_response(&state, StatusCode::OK, edit_page(&state, &accessory).await?).await
 }
 
 pub async fn update(
@@ -564,7 +579,7 @@ pub async fn update(
         Ok(ok) => ok,
         Err(errors) => {
             let page = edit_page(&state, &accessory).await?.refill(&form, errors);
-            return form_response(StatusCode::UNPROCESSABLE_ENTITY, page);
+            return form_response(&state, StatusCode::UNPROCESSABLE_ENTITY, page).await;
         }
     };
     state
@@ -597,7 +612,7 @@ pub async fn delete(
                 "{} is still in use, so it can't be deleted yet.",
                 accessory.name
             )];
-            form_response(StatusCode::CONFLICT, page)
+            form_response(&state, StatusCode::CONFLICT, page).await
         }
         Err(e) => Err(e.into()),
     }

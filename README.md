@@ -143,6 +143,12 @@ converted to PNG, and iPhone HEIC photos to JPEG (on a Mac, using the built-in
 gets a small JPEG thumbnail, turned the right way up; the first one is the
 thumbnail in the lists.
 
+Picking a shade for a color with no name fills in a **suggested name** (the
+nearest from a built-in list, shown in italics until you type your own), and
+a short **"✓ shade set"** confirms the pick. **"Your shades"** (a fold-out under
+the colors) lists every shade picked anywhere in the stash, in rainbow
+order, to reuse with one click instead of picking it again.
+
 **"From your photos"** offers the main colors of an item's photos, each with
 its exact shade and the nearest name from a built-in list ("teal", "baby
 pink"). One click adds it; click into one of your own colors first and the
@@ -259,7 +265,7 @@ Settings (all optional environment variables):
   - [x] **M8b**: series: several posts from one setup and photo shoot, published on different days
 - [ ] **M9**: Smoother data entry (from real-use notes)
   - [x] **M9a**: photos inside the fabric/accessory form, previewed before saving, saved by Save
-  - [ ] **M9b**: suggested names for picked shades, "shade set" feedback, reuse your own shades
+  - [x] **M9b**: suggested names for picked shades, "shade set" feedback, reuse your own shades
   - [ ] **M9c**: create a fabric from an accessory's page
 
 Ideas for later: photos in the suggestion box; a calendar nudge for upcoming

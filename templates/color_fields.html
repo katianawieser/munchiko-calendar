@@ -1,5 +1,6 @@
-{#- The color list on the fabric and accessory forms. Expects `colors: Vec<ColorRow>`
-    and `color_ideas: Vec<ColorIdea>` (main colors of the item's photos).
+{#- The color list on the fabric and accessory forms. Expects `colors: Vec<ColorRow>`,
+    `color_ideas: Vec<ColorIdea>` (main colors of the item's photos) and
+    `your_shades: Vec<ColorIdea>` (shades already picked elsewhere).
 
     Without JavaScript this is a list of name boxes (one spare at the end), so
     the form still works. static/colors.js adds the swatch pickers and the
@@ -12,6 +13,7 @@
       <input type="color" class="swatch-picker" value="{% if row.hex.is_empty() %}#ffffff{% else %}{{ row.hex }}{% endif %}" aria-label="Exact shade" title="Pick the exact shade" hidden>
       <input type="hidden" name="color_hex" value="{{ row.hex }}">
       <input name="color_name" value="{{ row.name }}" placeholder="e.g. baby pink" aria-label="Color name">
+      <span class="shade-status" aria-live="polite"></span>
       <button type="button" class="outline secondary small clear-swatch" title="Remove the swatch, keep the name" hidden>No swatch</button>
       <button type="button" class="outline secondary small remove-color" aria-label="Remove this color" hidden>✕</button>
     </div>
@@ -22,6 +24,7 @@
       <input type="color" class="swatch-picker" value="#ffffff" aria-label="Exact shade" title="Pick the exact shade">
       <input type="hidden" name="color_hex" value="">
       <input name="color_name" placeholder="e.g. baby pink" aria-label="Color name">
+      <span class="shade-status" aria-live="polite"></span>
       <button type="button" class="outline secondary small clear-swatch" title="Remove the swatch, keep the name">No swatch</button>
       <button type="button" class="outline secondary small remove-color" aria-label="Remove this color">✕</button>
     </div>
@@ -33,6 +36,14 @@
     <button type="button" class="chip color-idea" data-name="{{ idea.name }}" data-hex="{{ idea.hex }}" title="Add {{ idea.name }} ({{ idea.hex }})"><span class="swatch" style="background: {{ idea.hex }}"></span>{{ idea.name }}</button>
     {% endfor %}
   </p>
+  {% endif %}
+  {% if !your_shades.is_empty() %}
+  <details class="your-shades" hidden>
+    <summary><small>Your shades ({{ your_shades.len() }}): reuse a shade you've picked before</small></summary>
+    {% for idea in your_shades %}
+    <button type="button" class="chip color-idea" data-name="{{ idea.name }}" data-hex="{{ idea.hex }}" title="Use {{ idea.name }} ({{ idea.hex }})"><span class="swatch" style="background: {{ idea.hex }}"></span>{{ idea.name }}</button>
+    {% endfor %}
+  </details>
   {% endif %}
   <button type="button" class="outline small add-color" hidden>+ Add color</button>
 </div>

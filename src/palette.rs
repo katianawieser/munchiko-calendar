@@ -207,6 +207,56 @@ pub fn nearest_name(rgb: [u8; 3]) -> &'static str {
         .unwrap_or("color")
 }
 
+/// Two shades too close to tell apart side by side (a Lab difference under 5;
+/// around 2 is the smallest difference people notice at all).
+pub fn look_alike(a: [u8; 3], b: [u8; 3]) -> bool {
+    distance(to_lab(a), to_lab(b)) < 5.0
+}
+
+/// "#f4c2c2" → [244, 194, 194]. `None` for anything that isn't `#rrggbb`.
+pub fn rgb_from_hex(hex: &str) -> Option<[u8; 3]> {
+    let digits = hex.strip_prefix('#')?;
+    if digits.len() != 6 || !digits.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let channel = |i: usize| u8::from_str_radix(&digits[i..i + 2], 16).ok();
+    Some([channel(0)?, channel(2)?, channel(4)?])
+}
+
+/// Sort key that lays colors out like a rainbow: reds, oranges, yellows,
+/// greens, blues, purples, pinks; then the greys, whites and blacks (which
+/// have no real hue) from light to dark.
+pub fn rainbow_order(rgb: [u8; 3]) -> (bool, u16, u16) {
+    let [r, g, b] = rgb.map(|c| c as f32 / 255.0);
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let lightness = (max + min) / 2.0;
+    let chroma = max - min;
+    // How colorful it is, relative to how colorful it could be at this
+    // lightness (the "S" of HSL).
+    let saturation = if chroma == 0.0 {
+        0.0
+    } else {
+        chroma / (1.0 - (2.0 * lightness - 1.0).abs())
+    };
+    let darkness = ((1.0 - lightness) * 1000.0) as u16;
+    // Too grey to have a meaningful hue: sorted after the colors.
+    if saturation < 0.15 || chroma < 0.08 {
+        return (true, 0, darkness);
+    }
+    let hue = if max == r {
+        60.0 * ((g - b) / chroma).rem_euclid(6.0)
+    } else if max == g {
+        60.0 * ((b - r) / chroma + 2.0)
+    } else {
+        60.0 * ((r - g) / chroma + 4.0)
+    };
+    // Hue is a circle: 0° and 360° are both red, so a slightly bluish red
+    // (356°) would sort after pink (337°). Starting the circle 15° earlier
+    // keeps all reds together at the front.
+    let hue = (hue + 15.0).rem_euclid(360.0);
+    (false, (hue * 10.0) as u16, darkness)
+}
+
 // ---------------------------------------------------------------------------
 // CIE Lab
 // ---------------------------------------------------------------------------
@@ -349,5 +399,42 @@ mod tests {
     #[test]
     fn an_empty_image_has_no_colors() {
         assert!(main_colors(Vec::new(), 6).is_empty());
+    }
+
+    #[test]
+    fn hex_codes_become_rgb() {
+        assert_eq!(rgb_from_hex("#f4c2c2"), Some([244, 194, 194]));
+        assert_eq!(rgb_from_hex("#000000"), Some([0, 0, 0]));
+        assert_eq!(rgb_from_hex("f4c2c2"), None);
+        assert_eq!(rgb_from_hex("#f4c2"), None);
+        assert_eq!(rgb_from_hex("#gggggg"), None);
+    }
+
+    #[test]
+    fn colors_sort_like_a_rainbow_with_greys_last() {
+        let mut colors = [
+            ("grey", [128, 128, 128]),
+            ("blue", [40, 100, 200]),
+            ("white", [250, 250, 250]),
+            ("red", [205, 30, 40]),
+            ("pink", [245, 150, 185]),
+            ("yellow", [250, 220, 40]),
+            ("black", [20, 20, 20]),
+            ("green", [50, 160, 70]),
+        ];
+        colors.sort_by_key(|(_, rgb)| rainbow_order(*rgb));
+        let names: Vec<&str> = colors.iter().map(|(n, _)| *n).collect();
+        assert_eq!(
+            names,
+            vec![
+                "red", "yellow", "green", "blue", "pink", "white", "grey", "black"
+            ]
+        );
+    }
+
+    #[test]
+    fn near_identical_shades_look_alike() {
+        assert!(look_alike([64, 224, 208], [66, 226, 210]));
+        assert!(!look_alike([64, 224, 208], [0, 128, 128]));
     }
 }

@@ -258,3 +258,11 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
   padding: 0.5rem; font-size: 0.8rem; word-break: break-all;
   background: var(--mc-muted-bg);
 }
+
+/* Color naming and reuse (M9b). */
+/* A <span>, not a <small>: Pico makes a <small> right after an input a
+   full-width help line, which squeezed the name box to nothing. */
+.color-row .shade-status { flex: none; color: var(--pico-ins-color, #2e7d32); font-size: 0.8rem; }
+.color-row input[name="color_name"].suggested { font-style: italic; }
+.your-shades { margin: 0 0 0.75rem 0; }
+.your-shades summary { cursor: pointer; }

@@ -1753,3 +1753,46 @@ async fn saving_an_edit_adds_the_chosen_photos() {
     let form = html.find("enctype=\"multipart/form-data\"").unwrap();
     assert!(gallery < form);
 }
+
+// ---------------------------------------------------------------------------
+// Naming and reusing shades (M9b)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn a_picked_shade_gets_a_suggested_name() {
+    let (app, _, _) = setup(d(2026, 10, 5)).await;
+    let (status, name) = get(&app, "/colors/name?hex=%23F4C2C2").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(name, "baby pink");
+    let (status, _) = get(&app, "/colors/name?hex=pink").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn forms_offer_shades_already_picked_elsewhere() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    // Give the black satin (fabric 2) an exact shade.
+    let satin = db.get_fabric(FabricId(2)).await.unwrap();
+    db.update_fabric(
+        satin.id,
+        &crate::db::NewFabric {
+            name: satin.name,
+            description: satin.description,
+            colors: vec![Color::with_hex("black", "#1b1b1b")],
+            keywords: satin.keywords,
+            in_stock: satin.in_stock,
+        },
+    )
+    .await
+    .unwrap();
+
+    for page in ["/fabrics/new", "/accessories/1", "/fabrics/1"] {
+        let (_, html) = get(&app, page).await;
+        let shades = &html[html.find("class=\"your-shades\"").expect(page)..];
+        let shades = &shades[..shades.find("</details>").unwrap()];
+        assert!(shades.contains("Your shades (1)"), "{page}");
+        assert!(shades.contains("data-name=\"black\" data-hex=\"#1b1b1b\""));
+        // "orange" on the velvet has no swatch: nothing to reuse.
+        assert!(!shades.contains("data-name=\"orange\""));
+    }
+}

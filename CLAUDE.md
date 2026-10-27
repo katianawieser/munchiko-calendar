@@ -202,6 +202,20 @@ See README.md for the planning rules, data model and roadmap.
   form with `auto-upload`). `static/photos.js`: object-URL previews (HEIC/TIFF show the
   file name), auto-submit on post pages. Old `/…/{id}/photos` routes kept (tests use
   them). macOS has no `timeout` command; zsh errors on unmatched globs in `rm`.
+- **M9b done:** `GET /colors/name?hex=` (`web/colors.rs`, text/plain, 400 on bad hex)
+  so naming stays in Rust (`palette::nearest_name`), not duplicated in JS.
+  `palette::{rgb_from_hex, rainbow_order (hue +15° so bluish reds stay with reds;
+  greys last), look_alike (ΔE < 5)}`. `colors::your_shades(fabrics, accessories)`:
+  every named shade with a hex, same name + look-alike merged, rainbow order;
+  added to every fabric/accessory form render via async `form_response(&state, …)`.
+  colors.js: picker "change" → "✓ shade set" (`.shade-status`, fades after 4 s) +
+  `suggestName` (only fills empty or previously suggested names; typing clears
+  `data-suggested`); chips handled for `.color-ideas` and `.your-shades`
+  (`<details>`). Katiana's data: 186 shades → 176 after merging (75 names), so the
+  shades really differ. Pico gotcha: a `<small>` right after an input becomes a
+  full-width help line; use `<span>` inside flex rows. Browser tests needing
+  fetch from the file:// harness: Chrome `--disable-web-security` + throwaway
+  `--user-data-dir` + `--virtual-time-budget`.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

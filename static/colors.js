@@ -2,7 +2,10 @@
 //
 // Progressive enhancement: the form works without this script (names only).
 // With it, each row gets a swatch picker, colors can be added/removed, and
-// colors found in the item's photos can be added with one click.
+// colors from the item's photos or from the rest of the stash ("Your shades")
+// can be added with one click. Picking a shade for a row with no name asks
+// the server for the nearest name (GET /colors/name), filled in as a
+// suggestion that typing replaces.
 //
 // A color input always holds *some* color (white by default), so it can't
 // say "no swatch". The picked value is therefore copied into a hidden
@@ -14,9 +17,35 @@ document.querySelectorAll(".color-list").forEach((list) => {
   const template = list.querySelector("template");
   const addButton = list.querySelector(".add-color");
 
+  // A short "✓ shade set" next to the row, so it's clear the pick took.
+  function confirmShade(row, text) {
+    const status = row.querySelector(".shade-status");
+    status.textContent = text;
+    clearTimeout(status.timer);
+    status.timer = setTimeout(() => (status.textContent = ""), 4000);
+  }
+
+  // Fill an empty name (or replace an earlier suggestion) with the nearest
+  // name for the shade. A name the user typed is never touched.
+  async function suggestName(row, hex) {
+    const name = row.querySelector('input[name="color_name"]');
+    if (name.value.trim() !== "" && name.dataset.suggested !== "yes") return;
+    try {
+      const reply = await fetch(`/colors/name?hex=${encodeURIComponent(hex)}`);
+      if (!reply.ok) return;
+      name.value = await reply.text();
+      name.dataset.suggested = "yes";
+      name.classList.add("suggested");
+      confirmShade(row, "✓ shade set · name suggested, change it if you like");
+    } catch {
+      // No name suggestion is fine; the shade is still set.
+    }
+  }
+
   function wire(row) {
     const picker = row.querySelector(".swatch-picker");
     const hex = row.querySelector('input[name="color_hex"]');
+    const name = row.querySelector('input[name="color_name"]');
     const clear = row.querySelector(".clear-swatch");
     const remove = row.querySelector(".remove-color");
 
@@ -30,10 +59,22 @@ document.querySelectorAll(".color-list").forEach((list) => {
       show();
     };
     picker.addEventListener("input", pick);
-    picker.addEventListener("change", pick);
+    // "change" fires once the picker is closed on a shade (unlike "input",
+    // which fires while dragging), so that's when to confirm and name it.
+    picker.addEventListener("change", () => {
+      pick();
+      confirmShade(row, "✓ shade set");
+      suggestName(row, picker.value);
+    });
+    // Typing makes the name the user's own.
+    name.addEventListener("input", () => {
+      delete name.dataset.suggested;
+      name.classList.remove("suggested");
+    });
     clear.addEventListener("click", () => {
       hex.value = "";
       show();
+      confirmShade(row, "swatch removed");
     });
     remove.addEventListener("click", () => row.remove());
 
@@ -55,14 +96,15 @@ document.querySelectorAll(".color-list").forEach((list) => {
     addRow().querySelector('input[name="color_name"]').focus();
   });
 
-  // "From your photos" chips. Which row a chip fills, in order of preference:
+  // Color chips: "From your photos" and "Your shades". Which row a chip
+  // fills, in order of preference:
   //   1. the row whose name box was clicked into last: it gets the exact
   //      shade and keeps its own name ("faded orange" stays "faded orange");
   //   2. a row that already has the chip's name (it gains the exact shade);
   //   3. an empty row, then 4. a new row; these take the chip's name too.
-  const ideas = list.querySelector(".color-ideas");
-  if (ideas) {
-    ideas.hidden = false;
+  const chipBoxes = list.querySelectorAll(".color-ideas, .your-shades");
+  if (chipBoxes.length > 0) {
+    chipBoxes.forEach((box) => (box.hidden = false));
 
     // Remember the row being worked on. Clicking a chip moves focus to the
     // chip, so only focus moving anywhere *else* forgets the row.
@@ -70,7 +112,7 @@ document.querySelectorAll(".color-list").forEach((list) => {
     document.addEventListener("focusin", (event) => {
       if (event.target.matches('.color-row input[name="color_name"]')) {
         chosenRow = rows.contains(event.target) ? event.target.closest(".color-row") : null;
-      } else if (!event.target.closest(".color-ideas")) {
+      } else if (!event.target.closest(".color-ideas, .your-shades")) {
         chosenRow = null;
       }
     });
@@ -79,7 +121,7 @@ document.querySelectorAll(".color-list").forEach((list) => {
     const nameOf = (row) => nameBox(row).value.trim().toLowerCase();
     const hexOf = (row) => row.querySelector('input[name="color_hex"]').value;
 
-    ideas.querySelectorAll(".color-idea").forEach((button) => {
+    list.querySelectorAll(".color-idea").forEach((button) => {
       button.addEventListener("click", () => {
         const { name, hex } = button.dataset;
         const all = [...rows.querySelectorAll(".color-row")];
@@ -90,13 +132,16 @@ document.querySelectorAll(".color-list").forEach((list) => {
           all.find((r) => nameOf(r) === name) ||
           all.find((r) => nameOf(r) === "" && hexOf(r) === "") ||
           addRow();
-        if (nameOf(row) === "") {
+        if (nameOf(row) === "" || nameBox(row).dataset.suggested === "yes") {
           nameBox(row).value = name;
+          delete nameBox(row).dataset.suggested;
+          nameBox(row).classList.remove("suggested");
         }
         const picker = row.querySelector(".swatch-picker");
         picker.value = hex;
         // Let the row's own handler copy the shade into the hidden field.
         picker.dispatchEvent(new Event("input"));
+        confirmShade(row, "✓ shade set");
         button.disabled = true;
         button.title = `Added ${name}`;
       });
