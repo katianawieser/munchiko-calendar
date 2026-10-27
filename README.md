@@ -111,7 +111,7 @@ Example: Halloween (post Oct 31, default lead times):
 | **Calendar** | Month view of holidays, outings and every post's prep tasks; "to do today" box; overdue work outlined in red |
 | **Posts** | Plan a post for an event (with the same ideas shown above the choices), choose who wears what, see its prep timeline and slack, add reference photos; save **ideas** with no date yet |
 | **Events** | Upcoming / past holidays and outings; "Plan a post" from any event; **ideas** for what to wear (or which fabric to make something from, and the date to start by); add and edit your own outings (holidays are edited in `data/holidays.toml`) |
-| **Accessories** | Bows, scarves, costumes: filter, one-click status, fabrics by role, matching sets, photos |
+| **Accessories** | Bows, scarves, costumes: filter, one-click status, fabrics by role (or "+ New fabric…" to add one right there), matching sets, photos |
 | **Fabrics** | Stash and shopping list, pairings, what each fabric is used by, photos |
 
 **Post ideas** are posts with no date yet, like an outing you want to post
@@ -263,10 +263,10 @@ Settings (all optional environment variables):
 - [x] **M8**: Flexible posts
   - [x] **M8a**: post ideas without a date, scheduled later; posts without an event
   - [x] **M8b**: series: several posts from one setup and photo shoot, published on different days
-- [ ] **M9**: Smoother data entry (from real-use notes)
+- [x] **M9**: Smoother data entry (from real-use notes)
   - [x] **M9a**: photos inside the fabric/accessory form, previewed before saving, saved by Save
   - [x] **M9b**: suggested names for picked shades, "shade set" feedback, reuse your own shades
-  - [ ] **M9c**: create a fabric from an accessory's page
+  - [x] **M9c**: create a fabric from an accessory's page
 
 Ideas for later: photos in the suggestion box; a calendar nudge for upcoming
 events with no post planned yet.

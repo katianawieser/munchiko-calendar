@@ -266,3 +266,6 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
 .color-row input[name="color_name"].suggested { font-style: italic; }
 .your-shades { margin: 0 0 0.75rem 0; }
 .your-shades summary { cursor: pointer; }
+
+/* "+ New fabric…" name box under a fabric select (M9c). */
+.new-fabric-name { margin-top: -0.5rem; }

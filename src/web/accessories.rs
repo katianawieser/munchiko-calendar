@@ -18,10 +18,10 @@ use super::forms::{
 };
 use super::photos::{self, ColorIdea, FormWithPhotos, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
-use crate::db::{DbError, NewAccessory};
+use crate::db::{DbError, NewAccessory, NewFabric};
 use crate::models::{
-    Accessory, AccessoryId, AccessoryKind, AccessoryStatus, Color, Fabric, FabricId, FabricUse,
-    PhotoOwner, Source, without_repeats,
+    Accessory, AccessoryId, AccessoryKind, AccessoryStatus, Color, Fabric, FabricId, FabricRole,
+    FabricUse, PhotoOwner, Source, without_repeats,
 };
 
 fn describe_source(source: &Source) -> String {
@@ -212,6 +212,16 @@ struct RoleSelect {
     field: &'static str,
     label: &'static str,
     choices: Vec<Choice>,
+    /// The name box for "+ New fabric…": `new_main_fabric` and so on.
+    new_field: String,
+    new_name: String,
+}
+
+/// The fabric select's value for "+ New fabric…".
+const NEW_FABRIC: &str = "new";
+
+fn new_field(field: &str) -> String {
+    format!("new_{field}")
 }
 
 #[derive(Template)]
@@ -262,6 +272,9 @@ fn fabric_choices(fabrics: &[Fabric], current: Option<FabricId>) -> Vec<Choice> 
         };
         list.push(Choice::new(f.id.0, label, Some(f.id) == current));
     }
+    // Last: make a fabric right here, e.g. for an old bow whose fabric was
+    // never entered (see `fabrics_for_new_names`).
+    list.push(Choice::new(NEW_FABRIC, "+ New fabric…", false));
     list
 }
 
@@ -279,6 +292,8 @@ impl AccessoryFormPage {
                     field,
                     label,
                     choices: fabric_choices(fabrics, current),
+                    new_field: new_field(field),
+                    new_name: String::new(),
                 }
             })
             .collect();
@@ -374,6 +389,7 @@ impl AccessoryFormPage {
         select(&mut self.partner_choices, form.text("partner"));
         for role in &mut self.fabric_selects {
             select(&mut role.choices, form.text(role.field));
+            role.new_name = form.text(&role.new_field);
         }
         self.name = form.text("name");
         self.description = form.text("description");
@@ -391,6 +407,8 @@ impl AccessoryFormPage {
 struct AccessoryInput {
     accessory: NewAccessory,
     partner: Option<AccessoryId>,
+    /// Fabrics typed in with "+ New fabric…", to create (or find) on save.
+    new_fabrics: Vec<(FabricRole, String)>,
 }
 
 fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryInput, Vec<String>> {
@@ -435,7 +453,17 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
     });
 
     let mut fabrics = Vec::new();
+    let mut new_fabrics = Vec::new();
     for (role, field, label) in ROLES {
+        if form.text(field) == NEW_FABRIC {
+            let name = form.text(&new_field(field));
+            if name.is_empty() {
+                errors.push(format!("Give the new {} a name.", label.to_lowercase()));
+            } else {
+                new_fabrics.push((role, name));
+            }
+            continue;
+        }
         match form.optional_id(field) {
             Ok(Some(id)) => fabrics.push(FabricUse {
                 fabric_id: FabricId(id),
@@ -471,9 +499,60 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
                 make_days,
             },
             partner,
+            new_fabrics,
         }),
         _ => Err(errors),
     }
+}
+
+/// Turn the "+ New fabric…" names into fabrics for the accessory: an existing
+/// fabric with the same name (ignoring capitals) is used rather than making a
+/// duplicate; otherwise a new one is created on the shopping list ("not in the
+/// stash"), which suits an old bow whose fabric is used up ("Bought it" on the
+/// fabric list moves it to the stash). The same new name in two roles makes
+/// one fabric. Afterwards the fabrics are put back in role order (main
+/// first), which is the order their colors are listed in.
+async fn fabrics_for_new_names(
+    state: &AppState,
+    input: &mut AccessoryInput,
+) -> Result<(), AppError> {
+    if input.new_fabrics.is_empty() {
+        return Ok(());
+    }
+    let mut known: Vec<(String, FabricId)> = state
+        .db
+        .list_fabrics()
+        .await?
+        .into_iter()
+        .map(|f| (f.name.to_lowercase(), f.id))
+        .collect();
+    for (role, name) in &input.new_fabrics {
+        let key = name.to_lowercase();
+        let fabric_id = match known.iter().find(|(n, _)| *n == key) {
+            Some((_, id)) => *id,
+            None => {
+                let id = state
+                    .db
+                    .create_fabric(&NewFabric {
+                        name: name.clone(),
+                        description: String::new(),
+                        colors: Vec::new(),
+                        keywords: Vec::new(),
+                        in_stock: false,
+                    })
+                    .await?;
+                known.push((key, id));
+                id
+            }
+        };
+        input.accessory.fabrics.push(FabricUse {
+            fabric_id,
+            role: *role,
+        });
+    }
+    let order = |role: FabricRole| ROLES.iter().position(|(r, _, _)| *r == role);
+    input.accessory.fabrics.sort_by_key(|u| order(u.role));
+    Ok(())
 }
 
 /// Make the saved partner match the form: pair, re-pair or unpair.
@@ -549,6 +628,8 @@ pub async fn create(
             return form_response(&state, StatusCode::UNPROCESSABLE_ENTITY, page).await;
         }
     };
+    let mut input = input;
+    fabrics_for_new_names(&state, &mut input).await?;
     let id = state.db.create_accessory(&input.accessory).await?;
     apply_partner(&state, id, None, input.partner).await?;
     photos::save_all(&state, PhotoOwner::Accessory(id), files).await?;
@@ -582,6 +663,8 @@ pub async fn update(
             return form_response(&state, StatusCode::UNPROCESSABLE_ENTITY, page).await;
         }
     };
+    let mut input = input;
+    fabrics_for_new_names(&state, &mut input).await?;
     state
         .db
         .update_accessory(accessory.id, &input.accessory)

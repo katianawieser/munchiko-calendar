@@ -1796,3 +1796,128 @@ async fn forms_offer_shades_already_picked_elsewhere() {
         assert!(!shades.contains("data-name=\"orange\""));
     }
 }
+
+// ---------------------------------------------------------------------------
+// "+ New fabric…" on the accessory form (M9c)
+// ---------------------------------------------------------------------------
+
+/// An accessory form with the given fabric fields.
+fn bow_form(name: &str, fabric_fields: &str) -> String {
+    format!(
+        "kind=bow&status=ready&name={name}&description=&colors_from_fabrics=on\
+         &color_name=&color_hex=&source=handmade&brand=&make_days=&partner=&{fabric_fields}"
+    )
+}
+
+#[tokio::test]
+async fn a_new_fabric_can_be_made_from_the_accessory_form() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let before = db.list_fabrics().await.unwrap().len();
+    let reply = post(
+        &app,
+        "/accessories",
+        &bow_form(
+            "Gingham+bow",
+            "main_fabric=new&new_main_fabric=Red+gingham&middle_fabric=2&new_middle_fabric=\
+             &accent_fabric=&new_accent_fabric=",
+        ),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+
+    let fabrics = db.list_fabrics().await.unwrap();
+    assert_eq!(fabrics.len(), before + 1);
+    let gingham = fabrics.iter().find(|f| f.name == "Red gingham").unwrap();
+    assert!(
+        !gingham.in_stock,
+        "an old bow's fabric: on the shopping list"
+    );
+
+    let bow = db
+        .list_accessories()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|a| a.name == "Gingham bow")
+        .unwrap();
+    let uses: Vec<(FabricId, FabricRole)> =
+        bow.fabrics.iter().map(|u| (u.fabric_id, u.role)).collect();
+    assert_eq!(
+        uses,
+        vec![
+            (gingham.id, FabricRole::Main),
+            (FabricId(2), FabricRole::Middle)
+        ],
+        "main first, even though the new one was made last"
+    );
+}
+
+#[tokio::test]
+async fn a_new_fabric_name_that_already_exists_reuses_that_fabric() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let before = db.list_fabrics().await.unwrap().len();
+    // "orange velvet" is fabric 1; the same new name twice makes one fabric.
+    let reply = post(
+        &app,
+        "/accessories",
+        &bow_form(
+            "Twin+bow",
+            "main_fabric=new&new_main_fabric=orange+velvet&middle_fabric=new\
+             &new_middle_fabric=Polka+dots&accent_fabric=new&new_accent_fabric=polka+dots",
+        ),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let fabrics = db.list_fabrics().await.unwrap();
+    assert_eq!(fabrics.len(), before + 1, "only Polka dots is new");
+    let bow = db
+        .list_accessories()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|a| a.name == "Twin bow")
+        .unwrap();
+    assert_eq!(bow.fabrics[0].fabric_id, FabricId(1));
+    assert_eq!(bow.fabrics[1].fabric_id, bow.fabrics[2].fabric_id);
+}
+
+#[tokio::test]
+async fn a_new_fabric_needs_a_name() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let before = db.list_accessories().await.unwrap().len();
+    let reply = post(
+        &app,
+        "/accessories",
+        &bow_form(
+            "Nameless+fabric+bow",
+            "main_fabric=new&new_main_fabric=&middle_fabric=&new_middle_fabric=\
+             &accent_fabric=&new_accent_fabric=",
+        ),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("Give the new main fabric a name."));
+    assert!(
+        reply.html.contains("<option value=\"new\" selected>"),
+        "the choice is kept"
+    );
+    assert_eq!(db.list_accessories().await.unwrap().len(), before);
+}
+
+#[tokio::test]
+async fn editing_an_old_bow_can_add_its_missing_fabric() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    // The Ghost scarf (3) has no fabrics recorded.
+    let reply = post(
+        &app,
+        "/accessories/3",
+        "kind=scarf&status=idea&name=Ghost+scarf&description=&color_name=white&color_hex=\
+         &source=bought&brand=&make_days=&partner=&main_fabric=new&new_main_fabric=Glow+ghosts\
+         &middle_fabric=&new_middle_fabric=&accent_fabric=&new_accent_fabric=",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let scarf = db.get_accessory(AccessoryId(3)).await.unwrap();
+    let fabric = db.get_fabric(scarf.fabrics[0].fabric_id).await.unwrap();
+    assert_eq!(fabric.name, "Glow ghosts");
+}

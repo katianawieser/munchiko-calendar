@@ -216,6 +216,16 @@ See README.md for the planning rules, data model and roadmap.
   full-width help line; use `<span>` inside flex rows. Browser tests needing
   fetch from the file:// harness: Chrome `--disable-web-security` + throwaway
   `--user-data-dir` + `--virtual-time-budget`.
+- **M9c done (M9 complete):** accessory fabric selects end with "+ New fabric…" (value
+  `new`) and a `new_{field}` name box (colors.js shows it only for "new"; always shown
+  without JS). `read_form` collects `new_fabrics: Vec<(FabricRole, String)>` ("Give the
+  new main fabric a name." if empty); `fabrics_for_new_names` (before create/update)
+  reuses a fabric with the same name ignoring case, else creates it with
+  `in_stock: false` (Shopping list; "Bought it" moves it), one fabric for the same new
+  name in two roles, then sorts fabric uses back into ROLES order (main first). Test
+  gotcha: in Rust strings a trailing `\\` + newline is a literal backslash, not a
+  continuation (Python heredocs make this easy to get wrong). Slow first runs after a
+  rebuild are macOS XProtect scanning the new binary.
 - **Katiana uses Firefox (on macOS) as her main browser.** Check browser-side
   changes in Firefox, not only Chrome: headless Firefox with `--marionette` and a
   throwaway `-profile`, driven by a ~50-line stdlib Python Marionette client

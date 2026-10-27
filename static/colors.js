@@ -191,3 +191,17 @@ document.querySelectorAll(".fabric-colors").forEach((box) => {
   toggle.addEventListener("change", update);
   selects.forEach((select) => select.addEventListener("change", update));
 });
+
+// Accessory form: "+ New fabric…" in a fabric select shows a name box for the
+// new fabric (created when the form is saved). Without this script the boxes
+// are always visible, which works too.
+document.querySelectorAll("select.fabric-select").forEach((select) => {
+  const name = select.parentElement.querySelector(".new-fabric-name");
+  const show = (focus) => {
+    const isNew = select.value === "new";
+    name.hidden = !isNew;
+    if (isNew && focus) name.focus();
+  };
+  select.addEventListener("change", () => show(true));
+  show(false);
+});

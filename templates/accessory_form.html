@@ -31,12 +31,14 @@
     <div class="grid">
       {% for role in fabric_selects %}
       <label>{{ role.label }}
-        <select name="{{ role.field }}">
+        <select name="{{ role.field }}" class="fabric-select">
           {% for c in role.choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
         </select>
+        <input name="{{ role.new_field }}" value="{{ role.new_name }}" class="new-fabric-name" placeholder="Name for &ldquo;+ New fabric…&rdquo;" aria-label="{{ role.label }}: new fabric's name">
       </label>
       {% endfor %}
     </div>
+    <p><small class="muted">Fabric not in the app yet? Choose &ldquo;+ New fabric…&rdquo; and type its name: it's created when you save, on the Shopping list (&ldquo;Bought it&rdquo; on the Fabrics page moves it to the stash). You can add its photo and colors there later.</small></p>
     <label>
       <input type="checkbox" name="colors_from_fabrics" role="switch" {% if colors_from_fabrics %}checked{% endif %}>
       Use colors from these fabrics
