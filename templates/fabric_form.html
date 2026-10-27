@@ -5,7 +5,8 @@
 {% include "form_errors.html" %}
 {% include "photos_section.html" %}
 
-<form method="post" action="{{ action }}">
+<form method="post" action="{{ action }}" enctype="multipart/form-data">
+  {% include "photo_input.html" %}
   <label>Name
     <input name="name" value="{{ name }}" required autofocus>
   </label>

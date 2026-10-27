@@ -1,19 +1,24 @@
 //! Photo pages: uploading, showing and deleting photos of fabrics,
 //! accessories and post plans.
 //!
-//! An upload is a `multipart/form-data` form (the only way a browser can send
-//! a file). Every file in it is checked, converted if needed and given a
-//! thumbnail before any is saved, so an upload is all-or-nothing. Saving is two
-//! steps: record the photo in the database (which assigns its id), then write
-//! the files named after that id. If writing fails, the record is removed again
-//! so the two never disagree.
+//! A browser sends files as a `multipart/form-data` form. Photos arrive two
+//! ways: with the fabric/accessory form itself ([`FormWithPhotos`], saved by its
+//! Save button), or on their own (a post's photos, [`upload_for_post`]).
+//!
+//! Every file is checked, converted if needed and given a thumbnail before any
+//! is saved ([`prepare_all`]), so an upload is all-or-nothing. Saving is two
+//! steps ([`save_all`]): record the photo in the database (which assigns its id),
+//! then write the files named after that id. If writing fails, the record is
+//! removed again so the two never disagree.
 
+use axum::Form;
 use axum::body::Bytes;
 use axum::extract::multipart::MultipartError;
-use axum::extract::{Multipart, Path, State};
+use axum::extract::{FromRequest, Multipart, Path, Request, State};
 use axum::http::{StatusCode, header};
 use axum::response::{IntoResponse, Redirect, Response};
 
+use super::forms::FormData;
 use super::{AppError, AppState};
 use crate::models::{AccessoryId, Color, FabricId, Photo, PhotoId, PhotoOwner, PostPlanId};
 use crate::palette;
@@ -52,7 +57,8 @@ pub struct PhotoView {
 
 /// The photos box on an edit page.
 pub struct PhotoSection {
-    /// `None` on a "new ..." form: there's nothing to attach photos to yet.
+    /// A separate upload form (post pages). Fabric and accessory pages take
+    /// photos in their main form instead (`templates/photo_input.html`).
     pub upload_action: Option<String>,
     pub photos: Vec<PhotoView>,
     /// Describes the pictures for screen readers ("Photo of Orange velvet").
@@ -60,7 +66,7 @@ pub struct PhotoSection {
 }
 
 impl PhotoSection {
-    /// For a form that hasn't been saved yet.
+    /// For a form that hasn't been saved yet: no photos so far.
     pub fn unsaved() -> Self {
         Self {
             upload_action: None,
@@ -69,6 +75,16 @@ impl PhotoSection {
         }
     }
 
+    /// The saved photos, with their delete buttons. New ones are added
+    /// through the page's main form.
+    pub fn gallery(owner: PhotoOwner, name: &str, photos: &[Photo]) -> Self {
+        Self {
+            upload_action: None,
+            ..Self::new(owner, name, photos)
+        }
+    }
+
+    /// The saved photos plus an upload form of their own.
     pub fn new(owner: PhotoOwner, name: &str, photos: &[Photo]) -> Self {
         Self {
             upload_action: Some(format!("{}/photos", owner_href(owner))),
@@ -137,62 +153,108 @@ pub async fn upload_for_post(
 async fn upload(
     state: &AppState,
     owner: PhotoOwner,
-    mut multipart: Multipart,
+    multipart: Multipart,
 ) -> Result<Response, AppError> {
     let back = owner_href(owner);
-    let reject = |status, message: &str| AppError::PhotoRejected {
-        status,
-        message: message.to_string(),
-        back: back.clone(),
-    };
-    let too_big = || {
-        reject(
-            StatusCode::PAYLOAD_TOO_LARGE,
-            &format!(
-                "Photos can be up to {} MB each (and {} MB per upload). \
-                 Try a smaller export of the photo.",
-                MAX_PHOTO_BYTES / 1024 / 1024,
-                MAX_UPLOAD_BYTES / 1024 / 1024
-            ),
-        )
-    };
-    let unreadable = |e: MultipartError| {
-        if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
-            too_big()
-        } else {
-            reject(
-                e.status(),
-                "The upload didn't arrive in one piece. Try again.",
-            )
-        }
-    };
-
-    // 1. Read, check, convert and thumbnail every file before saving anything.
-    let mut files = Vec::new();
-    while let Some(field) = multipart.next_field().await.map_err(unreadable)? {
-        if field.name() != Some("photo") {
-            continue;
-        }
-        let bytes = field.bytes().await.map_err(unreadable)?;
-        if bytes.is_empty() {
-            continue; // the file box was left empty
-        }
-        if bytes.len() > MAX_PHOTO_BYTES {
-            return Err(too_big());
-        }
-        let prepared = prepare(state, bytes)
-            .await
-            .map_err(|why| reject(StatusCode::UNPROCESSABLE_ENTITY, why.message()))?;
-        files.push(prepared);
-    }
-    if files.is_empty() {
-        return Err(reject(
+    let photos = read_photos(multipart, &back).await?;
+    if photos.is_empty() {
+        return Err(rejected(
+            &back,
             StatusCode::UNPROCESSABLE_ENTITY,
             "Choose a photo to upload first.",
         ));
     }
+    let files = prepare_all(state, photos)
+        .await
+        .map_err(|problem| rejected(&back, problem.status, &problem.message))?;
+    save_all(state, owner, files).await?;
+    Ok(Redirect::to(&back).into_response())
+}
 
-    // 2. Save them: the record first (it assigns the id), then the files.
+fn rejected(back: &str, status: StatusCode, message: &str) -> AppError {
+    AppError::PhotoRejected {
+        status,
+        message: message.to_string(),
+        back: back.to_string(),
+    }
+}
+
+fn too_big_message() -> String {
+    format!(
+        "Photos can be up to {} MB each (and {} MB per upload). \
+         Try a smaller export of the photo.",
+        MAX_PHOTO_BYTES / 1024 / 1024,
+        MAX_UPLOAD_BYTES / 1024 / 1024
+    )
+}
+
+/// A multipart body that couldn't be read: too big, or cut off.
+fn unreadable(e: MultipartError, back: &str) -> AppError {
+    if e.status() == StatusCode::PAYLOAD_TOO_LARGE {
+        rejected(back, StatusCode::PAYLOAD_TOO_LARGE, &too_big_message())
+    } else {
+        rejected(
+            back,
+            e.status(),
+            "The upload didn't arrive in one piece. Try again.",
+        )
+    }
+}
+
+/// The files from every "photo" field (an empty file box sends an empty one).
+async fn read_photos(mut multipart: Multipart, back: &str) -> Result<Vec<Bytes>, AppError> {
+    let mut photos = Vec::new();
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| unreadable(e, back))?
+    {
+        if field.name() == Some("photo") {
+            let bytes = field.bytes().await.map_err(|e| unreadable(e, back))?;
+            if !bytes.is_empty() {
+                photos.push(bytes);
+            }
+        }
+    }
+    Ok(photos)
+}
+
+/// Why a photo was turned down: a message for the page, and the status code
+/// for an upload of its own (413 too large, 422 not a usable photo).
+pub struct PhotoProblem {
+    pub status: StatusCode,
+    pub message: String,
+}
+
+/// Check, convert and thumbnail every photo; the first problem stops it.
+pub async fn prepare_all(
+    state: &AppState,
+    photos: Vec<Bytes>,
+) -> Result<Vec<Prepared>, PhotoProblem> {
+    let mut files = Vec::new();
+    for bytes in photos {
+        if bytes.len() > MAX_PHOTO_BYTES {
+            return Err(PhotoProblem {
+                status: StatusCode::PAYLOAD_TOO_LARGE,
+                message: too_big_message(),
+            });
+        }
+        let prepared = prepare(state, bytes).await.map_err(|why| PhotoProblem {
+            status: StatusCode::UNPROCESSABLE_ENTITY,
+            message: why.message().to_string(),
+        })?;
+        files.push(prepared);
+    }
+    Ok(files)
+}
+
+/// Save prepared photos for `owner`: the record first (it assigns the id),
+/// then the files.
+pub async fn save_all(
+    state: &AppState,
+    owner: PhotoOwner,
+    files: Vec<Prepared>,
+) -> Result<(), AppError> {
     for file in files {
         let photo = state.db.add_photo(owner, file.image_type).await?;
         let saved = async {
@@ -208,11 +270,104 @@ async fn upload(
             )));
         }
     }
-    Ok(Redirect::to(&back).into_response())
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Forms that carry photos (fabric and accessory forms)
+// ---------------------------------------------------------------------------
+
+/// A submitted form plus any photos chosen in it.
+///
+/// Accepts both `multipart/form-data` (what a browser sends for a form with a
+/// file box) and a plain form, so handlers don't care which arrived.
+pub struct FormWithPhotos {
+    pub form: FormData,
+    pub photos: Vec<Bytes>,
+}
+
+impl<S: Send + Sync> FromRequest<S> for FormWithPhotos {
+    type Rejection = AppError;
+
+    async fn from_request(request: Request, state: &S) -> Result<Self, Self::Rejection> {
+        // Where to send someone back to if the upload itself is unusable:
+        // the edit page they came from, or the "new" page.
+        let path = request.uri().path().to_string();
+        let back = if path.ends_with(|c: char| c.is_ascii_digit()) {
+            path
+        } else {
+            format!("{path}/new")
+        };
+        let multipart = request
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|v| v.starts_with("multipart/form-data"));
+
+        if !multipart {
+            let Form(pairs) = Form::<Vec<(String, String)>>::from_request(request, state)
+                .await
+                .map_err(|_| AppError::BadRequest)?;
+            return Ok(Self {
+                form: FormData::new(pairs),
+                photos: Vec::new(),
+            });
+        }
+
+        let mut multipart = Multipart::from_request(request, state)
+            .await
+            .map_err(|_| AppError::BadRequest)?;
+        let (mut pairs, mut photos) = (Vec::new(), Vec::new());
+        while let Some(field) = multipart
+            .next_field()
+            .await
+            .map_err(|e| unreadable(e, &back))?
+        {
+            let name = field.name().unwrap_or_default().to_string();
+            if name == "photo" {
+                let bytes = field.bytes().await.map_err(|e| unreadable(e, &back))?;
+                if !bytes.is_empty() {
+                    photos.push(bytes);
+                }
+            } else {
+                let value = field.text().await.map_err(|e| unreadable(e, &back))?;
+                pairs.push((name, value));
+            }
+        }
+        Ok(Self {
+            form: FormData::new(pairs),
+            photos,
+        })
+    }
+}
+
+/// Combine a form's own result with its photos' result, so mistakes in both
+/// are reported together. A browser can't put chosen files back into a file
+/// box, so after any mistake the photos have to be chosen again; say so.
+pub fn with_photos<T>(
+    input: Result<T, Vec<String>>,
+    photos: Result<Vec<Prepared>, PhotoProblem>,
+    photos_were_chosen: bool,
+) -> Result<(T, Vec<Prepared>), Vec<String>> {
+    match (input, photos) {
+        (Ok(input), Ok(photos)) => Ok((input, photos)),
+        (input, photos) => {
+            let mut errors = input.err().unwrap_or_default();
+            if let Err(problem) = photos {
+                errors.push(problem.message);
+            }
+            if photos_were_chosen {
+                errors.push(
+                    "Nothing was saved yet, so choose your photos again before saving.".to_string(),
+                );
+            }
+            Err(errors)
+        }
+    }
 }
 
 /// A photo that has passed every check and is ready to save.
-struct Prepared {
+pub struct Prepared {
     image_type: ImageType,
     bytes: Vec<u8>,
     thumbnail: Vec<u8>,

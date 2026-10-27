@@ -15,7 +15,7 @@ use super::forms::{
     Choice, ColorRow, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, color_rows,
     color_rows_from_form, label_of, parse_choice, read_colors,
 };
-use super::photos::{self, ColorIdea, PhotoSection};
+use super::photos::{self, ColorIdea, FormWithPhotos, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewAccessory};
 use crate::models::{
@@ -495,7 +495,7 @@ async fn edit_page(state: &AppState, accessory: &Accessory) -> Result<AccessoryF
     page.blocked = blockers::for_accessory(accessory.id, &usage);
     let owner = PhotoOwner::Accessory(accessory.id);
     let photos = state.db.list_photos(owner).await?;
-    page.photos = PhotoSection::new(owner, &accessory.name, &photos);
+    page.photos = PhotoSection::gallery(owner, &accessory.name, &photos);
     // Compare with all its colors, including the ones from its fabrics.
     let colors = accessory.effective_colors(&fabrics);
     page.color_ideas = photos::color_ideas(state, &photos, &colors).await;
@@ -517,11 +517,16 @@ pub async fn new_form(State(state): State<AppState>) -> Result<Response, AppErro
 
 pub async fn create(
     State(state): State<AppState>,
-    Form(pairs): Form<Vec<(String, String)>>,
+    FormWithPhotos { form, photos }: FormWithPhotos,
 ) -> Result<Response, AppError> {
-    let form = FormData::new(pairs);
-    let input = match read_form(&form, None) {
-        Ok(input) => input,
+    let chosen = !photos.is_empty();
+    let checked = photos::with_photos(
+        read_form(&form, None),
+        photos::prepare_all(&state, photos).await,
+        chosen,
+    );
+    let (input, files) = match checked {
+        Ok(ok) => ok,
         Err(errors) => {
             let accessories = state.db.list_accessories().await?;
             let fabrics = state.db.list_fabrics().await?;
@@ -531,6 +536,7 @@ pub async fn create(
     };
     let id = state.db.create_accessory(&input.accessory).await?;
     apply_partner(&state, id, None, input.partner).await?;
+    photos::save_all(&state, PhotoOwner::Accessory(id), files).await?;
     Ok(Redirect::to("/accessories").into_response())
 }
 
@@ -545,12 +551,17 @@ pub async fn edit_form(
 pub async fn update(
     State(state): State<AppState>,
     Path(id): Path<i64>,
-    Form(pairs): Form<Vec<(String, String)>>,
+    FormWithPhotos { form, photos }: FormWithPhotos,
 ) -> Result<Response, AppError> {
-    let form = FormData::new(pairs);
     let accessory = state.db.get_accessory(AccessoryId(id)).await?;
-    let input = match read_form(&form, Some(accessory.id)) {
-        Ok(input) => input,
+    let chosen = !photos.is_empty();
+    let checked = photos::with_photos(
+        read_form(&form, Some(accessory.id)),
+        photos::prepare_all(&state, photos).await,
+        chosen,
+    );
+    let (input, files) = match checked {
+        Ok(ok) => ok,
         Err(errors) => {
             let page = edit_page(&state, &accessory).await?.refill(&form, errors);
             return form_response(StatusCode::UNPROCESSABLE_ENTITY, page);
@@ -561,6 +572,7 @@ pub async fn update(
         .update_accessory(accessory.id, &input.accessory)
         .await?;
     apply_partner(&state, accessory.id, accessory.pair_id, input.partner).await?;
+    photos::save_all(&state, PhotoOwner::Accessory(accessory.id), files).await?;
     Ok(Redirect::to("/accessories").into_response())
 }
 

@@ -134,7 +134,10 @@ names; the shade is for people. The browser's picker has an eyedropper, and
 the photos sit right above the color rows, so a shade can be sampled from them.
 
 **Photos** (up to 15 MB each) can be added to fabrics, accessories and post
-plans. JPEG, PNG, WebP and GIF are stored as they are; BMP and TIFF are
+plans. On fabric and accessory forms they're part of the form: chosen photos
+show straight away (so the eyedropper can sample them) and are saved with
+everything else by Save, on new items too. On a post's page, choosing photos
+uploads them at once. JPEG, PNG, WebP and GIF are stored as they are; BMP and TIFF are
 converted to PNG, and iPhone HEIC photos to JPEG (on a Mac, using the built-in
 `sips` tool; elsewhere the page explains how to export a JPEG). Every photo
 gets a small JPEG thumbnail, turned the right way up; the first one is the
@@ -254,6 +257,10 @@ Settings (all optional environment variables):
 - [x] **M8**: Flexible posts
   - [x] **M8a**: post ideas without a date, scheduled later; posts without an event
   - [x] **M8b**: series: several posts from one setup and photo shoot, published on different days
+- [ ] **M9**: Smoother data entry (from real-use notes)
+  - [x] **M9a**: photos inside the fabric/accessory form, previewed before saving, saved by Save
+  - [ ] **M9b**: suggested names for picked shades, "shade set" feedback, reuse your own shades
+  - [ ] **M9c**: create a fabric from an accessory's page
 
 Ideas for later: photos in the suggestion box; a calendar nudge for upcoming
 events with no post planned yet.

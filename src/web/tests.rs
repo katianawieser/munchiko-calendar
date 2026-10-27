@@ -166,6 +166,7 @@ async fn static_files_are_served_with_their_types() {
         ("/static/pico.min.css", "text/css; charset=utf-8"),
         ("/static/style.css", "text/css; charset=utf-8"),
         ("/static/colors.js", "text/javascript; charset=utf-8"),
+        ("/static/photos.js", "text/javascript; charset=utf-8"),
     ] {
         let response = app
             .clone()
@@ -1134,11 +1135,25 @@ async fn deleting_a_photo_or_its_owner_removes_the_file() {
 }
 
 #[tokio::test]
-async fn new_forms_explain_photos_come_after_saving() {
+async fn new_forms_take_photos_in_the_same_form() {
     let (app, _, _) = setup(d(2026, 10, 5)).await;
-    let (_, html) = get(&app, "/fabrics/new").await;
-    assert!(html.contains("You can add photos once this is saved."));
-    assert!(!html.contains("multipart/form-data"));
+    for page in ["/fabrics/new", "/accessories/new"] {
+        let (_, html) = get(&app, page).await;
+        // One form, sent as multipart so it can carry files, with the photo box in it.
+        assert!(
+            html.contains("enctype=\"multipart/form-data\">\n  <label>Add photos"),
+            "{page}"
+        );
+        assert!(html.contains("name=\"photo\" class=\"photo-input\""));
+        assert!(
+            !html.contains("Add photos</button>"),
+            "no separate upload button"
+        );
+    }
+    // A post page keeps its own upload form, which uploads as soon as photos
+    // are chosen.
+    let (_, html) = get(&app, "/posts/1").await;
+    assert!(html.contains("class=\"upload auto-upload\""));
 }
 
 #[tokio::test]
@@ -1584,4 +1599,157 @@ async fn a_series_of_ideas_is_planned_together_and_undated_posts_wait_for_a_date
     let (_, html) = get(&app, "/posts").await;
     assert!(html.contains("Photographed at the series&#39; shoot; it just needs a date"));
     assert!(html.contains("Fossil exhibit series"));
+}
+
+// ---------------------------------------------------------------------------
+// Photos inside the fabric and accessory forms (M9a)
+// ---------------------------------------------------------------------------
+
+/// Submit a form with text fields and files, as a browser does for a form
+/// with a file box.
+async fn submit_multipart(
+    app: &Router,
+    uri: &str,
+    fields: &[(&str, &str)],
+    files: &[&[u8]],
+) -> Reply {
+    const BOUNDARY: &str = "----munchiko-form-boundary";
+    let mut body = Vec::new();
+    for (name, value) in fields {
+        body.extend_from_slice(
+            format!(
+                "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n"
+            )
+            .as_bytes(),
+        );
+    }
+    for file in files {
+        body.extend_from_slice(
+            format!(
+                "--{BOUNDARY}\r\nContent-Disposition: form-data; name=\"photo\"; \
+                 filename=\"fabric.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(file);
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{BOUNDARY}--\r\n").as_bytes());
+    let request = Request::post(uri)
+        .header(
+            header::CONTENT_TYPE,
+            format!("multipart/form-data; boundary={BOUNDARY}"),
+        )
+        .header("sec-fetch-site", "same-origin")
+        .body(Body::from(body))
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let status = response.status();
+    let location = response
+        .headers()
+        .get(header::LOCATION)
+        .map(|v| v.to_str().unwrap().to_string());
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    Reply {
+        status,
+        location,
+        html: String::from_utf8_lossy(&bytes).into_owned(),
+    }
+}
+
+const NEW_FABRIC: &[(&str, &str)] = &[
+    ("name", "Sunflower batik"),
+    ("description", ""),
+    ("color_name", "yellow"),
+    ("color_hex", ""),
+    ("keywords", "batik, sunflower"),
+    ("in_stock", "on"),
+];
+
+#[tokio::test]
+async fn a_new_fabric_and_its_photo_are_saved_together() {
+    let (app, db, _, dir) = setup_with_photos(d(2026, 10, 5)).await;
+    let reply = submit_multipart(&app, "/fabrics", NEW_FABRIC, &[&JPEG]).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+
+    let fabric = db
+        .list_fabrics()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|f| f.name == "Sunflower batik")
+        .unwrap();
+    assert_eq!(fabric.keywords, vec!["batik", "sunflower"]);
+    let photos = db.list_photos(PhotoOwner::Fabric(fabric.id)).await.unwrap();
+    assert_eq!(photos.len(), 1);
+    assert!(
+        dir.path()
+            .join(format!("{}.thumb.jpg", photos[0].id.0))
+            .exists()
+    );
+}
+
+#[tokio::test]
+async fn a_form_mistake_saves_nothing_and_asks_for_the_photos_again() {
+    let (app, db, _, _dir) = setup_with_photos(d(2026, 10, 5)).await;
+    let before = db.list_fabrics().await.unwrap().len();
+    let mut fields = NEW_FABRIC.to_vec();
+    fields[0] = ("name", "");
+    let reply = submit_multipart(&app, "/fabrics", &fields, &[&JPEG]).await;
+
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("Give the fabric a name."));
+    assert!(reply.html.contains("choose your photos again"));
+    assert!(
+        reply.html.contains("value=\"batik, sunflower\""),
+        "typed fields are kept"
+    );
+    assert_eq!(db.list_fabrics().await.unwrap().len(), before);
+    assert!(db.list_all_photos().await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn a_bad_photo_saves_nothing_and_says_why() {
+    let (app, db, _, _dir) = setup_with_photos(d(2026, 10, 5)).await;
+    let before = db.list_fabrics().await.unwrap().len();
+    let reply = submit_multipart(&app, "/fabrics", NEW_FABRIC, &[b"not a photo"]).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("isn&#39;t a photo the app can use"));
+    assert!(reply.html.contains("value=\"Sunflower batik\""));
+    assert_eq!(db.list_fabrics().await.unwrap().len(), before);
+}
+
+#[tokio::test]
+async fn saving_an_edit_adds_the_chosen_photos() {
+    let (app, db, _, _dir) = setup_with_photos(d(2026, 10, 5)).await;
+    // The Ghost scarf (accessory 3), saved with two photos at once.
+    let fields = [
+        ("kind", "scarf"),
+        ("status", "idea"),
+        ("name", "Ghost scarf"),
+        ("description", ""),
+        ("color_name", "white"),
+        ("color_hex", ""),
+        ("source", "bought"),
+        ("brand", ""),
+        ("make_days", ""),
+        ("main_fabric", ""),
+        ("middle_fabric", ""),
+        ("accent_fabric", ""),
+        ("partner", ""),
+    ];
+    let png = sample(10, 10, ImageFormat::Png);
+    let reply = submit_multipart(&app, "/accessories/3", &fields, &[&JPEG, &png]).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let photos = db
+        .list_photos(PhotoOwner::Accessory(AccessoryId(3)))
+        .await
+        .unwrap();
+    assert_eq!(photos.len(), 2);
+
+    // The edit page shows them in its gallery, above the form.
+    let (_, html) = get(&app, "/accessories/3").await;
+    let gallery = html.find("class=\"photo-grid\"").unwrap();
+    let form = html.find("enctype=\"multipart/form-data\"").unwrap();
+    assert!(gallery < form);
 }

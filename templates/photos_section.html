@@ -1,7 +1,9 @@
-{#- The photos box on edit pages. Expects `photos: PhotoSection`.
-    It's its own form (forms can't be nested), placed above the main form so
-    a photo is on screen while you use the color picker's eyedropper. -#}
-{% if let Some(action) = photos.upload_action %}
+{#- Saved photos, with delete buttons. Expects `photos: PhotoSection`.
+    On fabric and accessory pages new photos come in through the main form
+    (photo_input.html); on post pages there's a separate upload form here,
+    which static/photos.js submits as soon as photos are chosen. The gallery
+    sits above the main form, so a photo is on screen for the eyedropper. -#}
+{% if !photos.photos.is_empty() || photos.upload_action.is_some() %}
 <section class="photos">
   {% if !photos.photos.is_empty() %}
   <div class="photo-grid">
@@ -15,12 +17,13 @@
     {% endfor %}
   </div>
   {% endif %}
-  <form method="post" action="{{ action }}" enctype="multipart/form-data" class="upload">
+  {% if let Some(action) = photos.upload_action %}
+  <form method="post" action="{{ action }}" enctype="multipart/form-data" class="upload auto-upload">
     <input type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif,image/bmp,image/tiff" multiple required aria-label="Photos to add">
     <button type="submit" class="outline">Add photos</button>
   </form>
   <small class="muted">JPEG, PNG, WebP, GIF, HEIC, BMP or TIFF, up to 15 MB each. Click a photo to see it full size.</small>
+  <script src="/static/photos.js" defer></script>
+  {% endif %}
 </section>
-{% else %}
-<p><small class="muted">You can add photos once this is saved.</small></p>
 {% endif %}

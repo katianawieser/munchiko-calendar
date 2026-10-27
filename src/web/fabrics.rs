@@ -6,7 +6,6 @@
 //! On a mistake the form is shown again with the user's input and a message.
 
 use askama::Template;
-use axum::Form;
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Redirect, Response};
@@ -16,7 +15,7 @@ use super::forms::{
     Choice, ColorRow, FormData, color_rows, color_rows_from_form, join_list, read_colors,
     split_list,
 };
-use super::photos::{self, ColorIdea, PhotoSection};
+use super::photos::{self, ColorIdea, FormWithPhotos, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewFabric};
 use crate::models::{Accessory, Color, Fabric, FabricId, PhotoOwner};
@@ -257,7 +256,7 @@ async fn edit_page(state: &AppState, fabric: &Fabric) -> Result<FabricFormPage, 
     let mut page = FabricFormPage::new(Some(fabric), &fabrics);
     page.blocked = blockers::for_fabric(fabric.id, &load_usage(state).await?);
     let photos = state.db.list_photos(PhotoOwner::Fabric(fabric.id)).await?;
-    page.photos = PhotoSection::new(PhotoOwner::Fabric(fabric.id), &fabric.name, &photos);
+    page.photos = PhotoSection::gallery(PhotoOwner::Fabric(fabric.id), &fabric.name, &photos);
     page.color_ideas = photos::color_ideas(state, &photos, &fabric.colors).await;
     Ok(page)
 }
@@ -274,11 +273,16 @@ pub async fn new_form(State(state): State<AppState>) -> Result<Response, AppErro
 
 pub async fn create(
     State(state): State<AppState>,
-    Form(pairs): Form<Vec<(String, String)>>,
+    FormWithPhotos { form, photos }: FormWithPhotos,
 ) -> Result<Response, AppError> {
-    let form = FormData::new(pairs);
-    let input = match read_form(&form) {
-        Ok(input) => input,
+    let chosen = !photos.is_empty();
+    let checked = photos::with_photos(
+        read_form(&form),
+        photos::prepare_all(&state, photos).await,
+        chosen,
+    );
+    let (input, files) = match checked {
+        Ok(ok) => ok,
         Err(errors) => {
             let fabrics = state.db.list_fabrics().await?;
             let page = FabricFormPage::new(None, &fabrics).refill(&form, errors);
@@ -288,6 +292,7 @@ pub async fn create(
     };
     let id = state.db.create_fabric(&input.fabric).await?;
     state.db.set_fabric_pairings(id, &input.pairings).await?;
+    photos::save_all(&state, PhotoOwner::Fabric(id), files).await?;
     Ok(Redirect::to("/fabrics").into_response())
 }
 
@@ -302,12 +307,17 @@ pub async fn edit_form(
 pub async fn update(
     State(state): State<AppState>,
     Path(id): Path<i64>,
-    Form(pairs): Form<Vec<(String, String)>>,
+    FormWithPhotos { form, photos }: FormWithPhotos,
 ) -> Result<Response, AppError> {
-    let form = FormData::new(pairs);
     let fabric = state.db.get_fabric(FabricId(id)).await?;
-    let input = match read_form(&form) {
-        Ok(input) => input,
+    let chosen = !photos.is_empty();
+    let checked = photos::with_photos(
+        read_form(&form),
+        photos::prepare_all(&state, photos).await,
+        chosen,
+    );
+    let (input, files) = match checked {
+        Ok(ok) => ok,
         Err(errors) => {
             let page = edit_page(&state, &fabric).await?.refill(&form, errors);
             return form_response(StatusCode::UNPROCESSABLE_ENTITY, page);
@@ -318,6 +328,7 @@ pub async fn update(
         .db
         .set_fabric_pairings(fabric.id, &input.pairings)
         .await?;
+    photos::save_all(&state, PhotoOwner::Fabric(fabric.id), files).await?;
     Ok(Redirect::to("/fabrics").into_response())
 }
 

@@ -180,6 +180,28 @@ See README.md for the planning rules, data model and roadmap.
   are "Done" once the whole timeline is over (`posts::task_rows`, shared with
   series.rs). Post form refactored: `FormOptions` + `NewPost` start. Askama escapes
   `&` as `&#38;` (matters in tests); calendar entries repeat labels in `title=`.
+- **Real-use notes (2026-10-27), planned with Katiana:** M9 smoother entry → M10
+  organizing → M11 accessory types, check in after each. Her answers: note 1 meant a
+  reusable palette of her own picked shades; batik = a tag (keyword); quantity is
+  shown AND lets both pets wear the same bow in one post (warn if a post needs more
+  than owned). Plan: M9a photos in the main form; M9b suggested color name for a
+  custom-picked shade (nearest `palette::NAMES`), "✓ shade set" feedback, "Your shades"
+  chips (derived from existing fabric/accessory colors, no new table); M9c "+ New
+  fabric…" in the accessory form's fabric selects (created on Save, not in stock).
+  M10: grid view for fabrics/accessories, sort/filter by warm/cool/neutral tone (from
+  swatches), accessory tags (used by suggest). M11: kinds hat + prop, quantity,
+  outfits (group pieces like Glinda's crown/dress/wand; choosing it in a look adds all).
+  Data then: 41 fabrics, 21 accessories, 59 photos.
+- **M9a done:** `web/photos.rs`: `FormWithPhotos` extractor (multipart or plain form →
+  `FormData` + photos; back link = edit page or `/new`), `prepare_all` →
+  `PhotoProblem { status, message }` (413 too big / 422), `save_all`, `with_photos`
+  merges form + photo errors and says "choose your photos again" (browsers can't
+  refill file inputs). Fabric/accessory forms are multipart with `photo_input.html`
+  inside; their create/update routes get the 60 MB body limit via `.layer` on the
+  MethodRouter. `PhotoSection::gallery` (no upload form) vs `::new` (post page, upload
+  form with `auto-upload`). `static/photos.js`: object-URL previews (HEIC/TIFF show the
+  file name), auto-submit on post pages. Old `/…/{id}/photos` routes kept (tests use
+  them). macOS has no `timeout` command; zsh errors on unmatched globs in `rm`.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

@@ -1,0 +1,10 @@
+{#- The photo box inside a fabric or accessory form: chosen photos are saved
+    with everything else when the form's Save is clicked. static/photos.js
+    shows them straight away, so the color picker's eyedropper can sample
+    them before saving. -#}
+<label>Add photos
+  <input type="file" name="photo" class="photo-input" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif,image/bmp,image/tiff" multiple>
+  <small>Saved when you click Save. JPEG, PNG, WebP, GIF, HEIC, BMP or TIFF, up to 15 MB each.</small>
+</label>
+<div class="photo-grid photo-preview" hidden></div>
+<script src="/static/photos.js" defer></script>

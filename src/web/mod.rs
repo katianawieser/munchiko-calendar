@@ -115,28 +115,42 @@ pub fn router(state: AppState) -> Router {
         .route("/events/{id}", get(events::show).post(events::update))
         .route("/events/{id}/edit", get(events::edit_form))
         .route("/events/{id}/delete", post(events::delete))
-        .route("/fabrics", get(fabrics::list).post(fabrics::create))
+        // Fabric and accessory forms can carry photos, so they get the
+        // upload size limit too.
+        .route(
+            "/fabrics",
+            get(fabrics::list)
+                .post(fabrics::create)
+                .layer(DefaultBodyLimit::max(photos::MAX_UPLOAD_BYTES)),
+        )
         .route("/fabrics/new", get(fabrics::new_form))
         .route(
             "/fabrics/{id}",
-            get(fabrics::edit_form).post(fabrics::update),
+            get(fabrics::edit_form)
+                .post(fabrics::update)
+                .layer(DefaultBodyLimit::max(photos::MAX_UPLOAD_BYTES)),
         )
         .route("/fabrics/{id}/stock", post(fabrics::toggle_stock))
         .route("/fabrics/{id}/delete", post(fabrics::delete))
         .route(
             "/accessories",
-            get(accessories::list).post(accessories::create),
+            get(accessories::list)
+                .post(accessories::create)
+                .layer(DefaultBodyLimit::max(photos::MAX_UPLOAD_BYTES)),
         )
         .route("/accessories/new", get(accessories::new_form))
         .route(
             "/accessories/{id}",
-            get(accessories::edit_form).post(accessories::update),
+            get(accessories::edit_form)
+                .post(accessories::update)
+                .layer(DefaultBodyLimit::max(photos::MAX_UPLOAD_BYTES)),
         )
         .route("/accessories/{id}/status", post(accessories::set_status))
         .route("/accessories/{id}/delete", post(accessories::delete))
         .route("/static/pico.min.css", get(pico_css))
         .route("/static/style.css", get(style_css))
         .route("/static/colors.js", get(colors_js))
+        .route("/static/photos.js", get(photos_js))
         .fallback(not_found)
         .layer(middleware::from_fn(reject_cross_site))
         .with_state(state)
@@ -311,6 +325,7 @@ fn render(page: impl Template) -> Result<Html<String>, AppError> {
 const PICO_CSS: &str = include_str!("../../static/pico.min.css");
 const STYLE_CSS: &str = include_str!("../../static/style.css");
 const COLORS_JS: &str = include_str!("../../static/colors.js");
+const PHOTOS_JS: &str = include_str!("../../static/photos.js");
 
 async fn pico_css() -> impl IntoResponse {
     (
@@ -323,6 +338,14 @@ async fn style_css() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/css; charset=utf-8")],
         STYLE_CSS,
+    )
+}
+
+/// Photo previews and instant uploads; the forms work without it.
+async fn photos_js() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        PHOTOS_JS,
     )
 }
 

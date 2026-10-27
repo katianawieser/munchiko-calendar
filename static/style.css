@@ -249,3 +249,12 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
 .series-note { border-left: 4px solid var(--mc-shoot); padding-left: 0.75rem; }
 .series-posts { padding-left: 1rem; }
 .series-posts li { margin-bottom: 0.4rem; }
+
+/* Photos chosen but not saved yet (M9a). */
+.photo-preview figcaption { font-size: 0.75rem; color: var(--pico-muted-color); }
+.photo-preview .no-preview {
+  width: 10rem; height: 10rem; border-radius: 0.4rem;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  padding: 0.5rem; font-size: 0.8rem; word-break: break-all;
+  background: var(--mc-muted-bg);
+}
