@@ -263,8 +263,11 @@ See README.md for the planning rules, data model and roadmap.
   `controls(path, filters, params, tags)` adds the tag dropdown (all tags in use, not
   only those shown; a stale tag from a link stays selected), `encode` percent-encodes
   params. Real data: 14 batik fabrics → 3 batik accessories; 26 of 54 accessories have
-  no fabrics linked, so they inherit nothing. Firefox 159 update was still pending
-  (not reopened), so checks used curl + headless Chrome.
+  no fabrics linked, so they inherit nothing. Verified in Firefox 159 (after Katiana
+  restarted it): Table→Grid click, square photos (54 cards), cookie carries grid to
+  /fabrics, real filter-form submit keeps selects, status button returns to the
+  filtered list. Turtle Batik Bow is "mixed": its pale baby blue (#b4d7e1) counts as
+  neutral, leaving 4 cool : 2 warm, and exactly 2× isn't more than 2×.
 - **Next: M11** kinds hat + prop, quantity (×N, both pets can share, warn when a post
   needs more than owned), outfits. Ask before starting.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
