@@ -111,8 +111,8 @@ Example: Halloween (post Oct 31, default lead times):
 | **Calendar** | Month view of holidays, outings and every post's prep tasks; "to do today" box; overdue work outlined in red |
 | **Posts** | Plan a post for an event (with the same ideas shown above the choices), choose who wears what, see its prep timeline and slack, add reference photos; save **ideas** with no date yet |
 | **Events** | Upcoming / past holidays and outings; "Plan a post" from any event; **ideas** for what to wear (or which fabric to make something from, and the date to start by); add and edit your own outings (holidays are edited in `data/holidays.toml`) |
-| **Accessories** | Bows, scarves, costumes: filter, one-click status, fabrics by role (or "+ New fabric…" to add one right there), matching sets, photos |
-| **Fabrics** | Stash and shopping list, pairings, what each fabric is used by, photos |
+| **Accessories** | Bows, scarves, costumes: table or photo grid, filter by kind, status and warm/cool tone, sort by color, one-click status, fabrics by role (or "+ New fabric…" to add one right there), matching sets, photos |
+| **Fabrics** | Stash and shopping list as a table or photo grid, warm/cool filter, sort by color, pairings, what each fabric is used by, photos |
 
 **Post ideas** are posts with no date yet, like an outing you want to post
 about "sometime". You can plan who wears what and the backdrop. The Posts
@@ -267,6 +267,9 @@ Settings (all optional environment variables):
   - [x] **M9a**: photos inside the fabric/accessory form, previewed before saving, saved by Save
   - [x] **M9b**: suggested names for picked shades, "shade set" feedback, reuse your own shades
   - [x] **M9c**: create a fabric from an accessory's page
+- [ ] **M10**: Organizing the stash
+  - [x] **M10a**: grid view with photos; filter by warm / cool / neutral tone; sort by color
+  - [ ] **M10b**: accessory tags (like "batik"), used by suggestions
 
 Ideas for later: photos in the suggestion box; a calendar nudge for upcoming
 events with no post planned yet.

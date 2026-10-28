@@ -237,6 +237,24 @@ See README.md for the planning rules, data model and roadmap.
   stay open, so colors.js also treats a shade as settled after 750 ms without
   changes (not only on "change"). Stop the test server with
   `lsof -ti tcp:3077 -sTCP:LISTEN`; without `-sTCP:LISTEN` it also kills the browser.
+- **M10a done:** `palette::{Tone, tone}` (Lab chroma < 15 → Neutral, else HSL hue
+  330°–75° Warm, else Cool; browns warm, magenta cool, hot pink warm). `web/browse.rs`
+  (pure, tested): `item_tone` (picked hex, else a `palette::NAMES` name; a tone wins at
+  more than 2× the other, else Mixed "Warm + cool"; neutrals ignored). The first rule
+  (any cool → mixed) put 25/54 real accessories in Mixed, now 19 warm / 11 cool / 18
+  mixed / 2 neutral. `Browse::read(query, headers)`: `tone`, `sort=color` (stable sort by
+  `rainbow_order` of the first known shade, unknown last), `view` from the address else
+  the `list_view` cookie (Set-Cookie only when the address chose). `Controls`/`Filter`
+  feed the shared `templates/browse_controls.html` (page's own selects + tone + sort +
+  Table | Grid links that keep the filters). Grid cards: square photo crop needs
+  `overflow: hidden` (else tall photos stretch the aspect-ratio box). Accessory `back`
+  keeps all params. **Firefox gotcha (2026-10-28):** when Firefox has a staged update
+  (`~/Library/Caches/Mozilla/updates/.../update.status` = `applied`), a headless launch
+  tries to install it, spawns `org.mozilla.updater`, and never opens Marionette; it may
+  also have closed Katiana's open Firefox. Don't launch Firefox then; use headless
+  Chrome for HTML/CSS-only checks, or ask her to restart Firefox first. Also: `pkill -f`
+  with a pattern in the same command line kills its own shell.
+- **Next: M10b** accessory tags (batik as a tag), used by suggest.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

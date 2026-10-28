@@ -1921,3 +1921,105 @@ async fn editing_an_old_bow_can_add_its_missing_fabric() {
     let fabric = db.get_fabric(scarf.fabrics[0].fabric_id).await.unwrap();
     assert_eq!(fabric.name, "Glow ghosts");
 }
+
+// ---------------------------------------------------------------------------
+// Browsing: tone filter, color sort, grid view
+// ---------------------------------------------------------------------------
+
+/// Like [`get`], with request headers, returning the response headers too.
+async fn get_with(
+    app: &Router,
+    uri: &str,
+    headers: &[(&str, &str)],
+) -> (StatusCode, axum::http::HeaderMap, String) {
+    let mut request = Request::get(uri);
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    let response = app
+        .clone()
+        .oneshot(request.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let (status, headers) = (response.status(), response.headers().clone());
+    let bytes = to_bytes(response.into_body(), usize::MAX).await.unwrap();
+    (status, headers, String::from_utf8(bytes.to_vec()).unwrap())
+}
+
+async fn add_leaf_fabric(db: &Repository) {
+    db.create_fabric(&crate::db::NewFabric {
+        name: "Leaf print cotton".into(),
+        description: String::new(),
+        colors: vec![Color::with_hex("green", "#32a046")],
+        keywords: vec![],
+        in_stock: true,
+    })
+    .await
+    .unwrap();
+}
+
+#[tokio::test]
+async fn fabrics_can_be_filtered_by_tone() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    add_leaf_fabric(&db).await;
+
+    // Each listed fabric's name is a link; "Black satin" can still appear as
+    // plain text, as the fabric Orange velvet pairs with.
+    let (_, warm) = get(&app, "/fabrics?tone=warm").await;
+    assert!(warm.contains(">Orange velvet</a>"));
+    assert!(!warm.contains(">Black satin</a>") && !warm.contains(">Leaf print cotton</a>"));
+    assert!(warm.contains(r#"<option value="warm" selected>"#));
+
+    let (_, neutral) = get(&app, "/fabrics?tone=neutral").await;
+    assert!(neutral.contains(">Black satin</a>"));
+    assert!(!neutral.contains(">Orange velvet</a>"));
+}
+
+#[tokio::test]
+async fn fabrics_can_be_sorted_by_color() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    add_leaf_fabric(&db).await;
+    let position = |html: &str, name: &str| html.find(name).unwrap();
+
+    // Both in the stash. By name, Black comes first; by color, black is a
+    // neutral and goes after the green.
+    let (_, by_name) = get(&app, "/fabrics").await;
+    assert!(position(&by_name, "Black satin") < position(&by_name, "Leaf print cotton"));
+    let (_, by_color) = get(&app, "/fabrics?sort=color").await;
+    assert!(position(&by_color, "Leaf print cotton") < position(&by_color, "Black satin"));
+}
+
+#[tokio::test]
+async fn the_grid_view_is_remembered() {
+    let (app, _, _) = setup(d(2026, 10, 5)).await;
+
+    let (_, _, table) = get_with(&app, "/accessories", &[]).await;
+    assert!(table.contains("<table>") && !table.contains("card-grid"));
+
+    let (_, headers, grid) = get_with(&app, "/accessories?view=grid", &[]).await;
+    assert!(grid.contains("card-grid") && grid.contains("Pumpkin bow"));
+    let cookie = headers[axum::http::header::SET_COOKIE].to_str().unwrap();
+    assert!(cookie.starts_with("list_view=grid;"), "{cookie}");
+
+    // The next visit, with the cookie and no choice in the address: still a grid,
+    // on the fabrics page too.
+    let (_, _, fabrics) = get_with(&app, "/fabrics", &[("cookie", "list_view=grid")]).await;
+    assert!(fabrics.contains("card-grid") && !fabrics.contains("<table>"));
+}
+
+#[tokio::test]
+async fn accessory_filters_combine_and_status_buttons_keep_them() {
+    let (app, _, _) = setup(d(2026, 10, 5)).await;
+
+    // The pumpkin bow is orange velvet with a black middle: warm. The bat bow
+    // is all black satin: neutral (its name still shows, as the pumpkin's set).
+    let (_, html) = get(&app, "/accessories?kind=bow&tone=warm&sort=color").await;
+    assert!(html.contains(">Pumpkin bow</a>") && !html.contains(">Bat bow</a>"));
+    assert!(
+        html.contains(r#"name="back" value="/accessories?kind=bow&#38;tone=warm&#38;sort=color""#)
+    );
+    // The Table | Grid links keep the filters too.
+    assert!(
+        html.contains(r#"href="/accessories?kind=bow&#38;tone=warm&#38;sort=color&#38;view=grid""#)
+    );
+}

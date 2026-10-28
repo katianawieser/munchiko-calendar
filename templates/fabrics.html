@@ -6,10 +6,28 @@
   <a href="/fabrics/new" role="button">+ New fabric</a>
 </div>
 
+{% include "browse_controls.html" %}
+{% if filtered %}<p class="muted">Showing only fabrics of the chosen tone.</p>{% endif %}
+
 {% for section in sections %}
 <h3>{{ section.heading }}</h3>
 {% if section.rows.is_empty() %}
 <p class="muted">Nothing here.</p>
+{% else if grid %}
+<div class="card-grid">
+  {% for row in section.rows %}
+  <article class="item-card">
+    <a href="{{ row.href }}" class="card-photo" tabindex="-1" aria-hidden="true">{% if let Some(src) = row.thumb %}<img src="{{ src }}" alt="" loading="lazy">{% else %}<span>No photo</span>{% endif %}</a>
+    <div class="card-body">
+      <a href="{{ row.href }}" class="card-name">{{ row.name }}</a>
+      <div class="card-colors">{% for color in row.colors %}{% include "color_chip.html" %} {% endfor %}</div>
+      <form method="post" action="{{ row.stock_action }}" class="inline">
+        <button type="submit" class="outline secondary small">{{ section.move_label }}</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</div>
 {% else %}
 <div class="table-scroll">
 <table>

@@ -130,7 +130,7 @@ button.small, [role="button"].small {
   margin: 0 0 0 0.3rem;
   width: auto;
 }
-.filters { display: flex; gap: 0.75rem; align-items: center; }
+.filters { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
 .filters select, .filters button { margin-bottom: 0; width: auto; }
 .inline-check { display: inline-flex; align-items: center; gap: 0.35rem; margin-right: 1.25rem; }
 .form-actions { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 2rem; }
@@ -269,3 +269,61 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
 
 /* "+ New fabric…" name box under a fabric select (M9c). */
 .new-fabric-name { margin-top: -0.5rem; }
+
+/* Above the fabric and accessory lists: filters on the left, Table | Grid on the right. */
+.browse-bar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+.browse-bar .filters { margin: 0; }
+.view-switch { display: flex; }
+.view-switch a {
+  padding: 0.3rem 0.8rem;
+  border: 1px solid var(--pico-muted-border-color);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+.view-switch a:first-child { border-radius: 0.4rem 0 0 0.4rem; }
+.view-switch a:last-child { border-radius: 0 0.4rem 0.4rem 0; border-left: none; }
+.view-switch a[aria-current] {
+  background: var(--pico-primary-background);
+  color: var(--pico-primary-inverse);
+  border-color: var(--pico-primary-background);
+}
+
+/* Grid view: a card per item, photo on top. */
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+@media (max-width: 30rem) {
+  /* Two narrower cards side by side on a phone. */
+  .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+}
+.item-card { margin: 0; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.card-photo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Every photo cropped to a square, so cards line up. Without overflow
+     hidden, a tall photo stretches the box past its aspect ratio. */
+  aspect-ratio: 1;
+  overflow: hidden;
+  background: var(--mc-muted-bg);
+  color: var(--pico-muted-color);
+  font-size: 0.85rem;
+  text-decoration: none;
+}
+.card-photo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.card-body { padding: 0.6rem 0.75rem 0.75rem; display: flex; flex-direction: column; gap: 0.4rem; flex: 1; }
+.card-body .card-name { font-weight: 600; line-height: 1.25; }
+.card-body .card-meta { font-size: 0.8rem; color: var(--pico-muted-color); }
+.card-colors { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.card-body form, .card-body .card-actions { margin-top: auto; }
+.card-body button.small { margin-left: 0; }

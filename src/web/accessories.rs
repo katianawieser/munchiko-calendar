@@ -7,10 +7,11 @@ use std::collections::HashMap;
 use askama::Template;
 use axum::Form;
 use axum::extract::{Path, Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 
 use super::blockers::{self, Blockers};
+use super::browse::{Browse, Controls, Filter, query_string};
 use super::colors;
 use super::forms::{
     Choice, ColorRow, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, color_rows,
@@ -81,8 +82,8 @@ struct AccessoryRow {
 #[template(path = "accessories.html")]
 struct AccessoriesPage {
     rows: Vec<AccessoryRow>,
-    kind_filter: Vec<Choice>,
-    status_filter: Vec<Choice>,
+    grid: bool,
+    controls: Controls,
     /// This page's address including filters, so status buttons come back here.
     back: String,
 }
@@ -103,7 +104,9 @@ fn filter_choices<T: Copy + PartialEq>(
 pub async fn list(
     State(state): State<AppState>,
     Query(query): Query<HashMap<String, String>>,
+    headers: HeaderMap,
 ) -> Result<Response, AppError> {
+    let browse = Browse::read(&query, &headers);
     let kind = query.get("kind").and_then(|v| parse_choice(&KINDS, v));
     let status = query.get("status").and_then(|v| parse_choice(&STATUSES, v));
 
@@ -111,11 +114,13 @@ pub async fn list(
     let fabrics = state.db.list_fabrics().await?;
     let thumbnails = photos::thumbnails(&state).await?;
 
-    let rows = accessories
+    let mut rows: Vec<AccessoryRow> = accessories
         .iter()
         .filter(|a| kind.is_none_or(|k| a.kind == k))
         .filter(|a| status.is_none_or(|s| a.status == s))
-        .map(|a| {
+        .map(|a| (a, a.effective_colors(&fabrics)))
+        .filter(|(_, colors)| browse.keeps(colors))
+        .map(|(a, colors)| {
             let next_step = match a.status {
                 AccessoryStatus::Idea => Some(("in_progress", "Start")),
                 AccessoryStatus::InProgress => Some(("ready", "Mark ready")),
@@ -145,10 +150,11 @@ pub async fn list(
                     .map(|p| p.name.clone())
                     .unwrap_or_default(),
                 source: describe_source(&a.source),
-                colors: a.effective_colors(&fabrics),
+                colors,
             }
         })
         .collect();
+    browse.sort(&mut rows, |row| &row.colors);
 
     // Rebuild this page's address so the status buttons can return to it.
     let mut params = Vec::new();
@@ -164,19 +170,33 @@ pub async fn list(
             STATUSES.iter().find(|(x, _, _)| *x == s).unwrap().1
         ));
     }
-    let back = if params.is_empty() {
-        "/accessories".to_string()
-    } else {
-        format!("/accessories?{}", params.join("&"))
-    };
+    let filters = vec![
+        Filter {
+            name: "kind",
+            label: "Kind",
+            choices: filter_choices(&KINDS, "All kinds", kind),
+        },
+        Filter {
+            name: "status",
+            label: "Status",
+            choices: filter_choices(&STATUSES, "Any status", status),
+        },
+    ];
+    let controls = browse.controls("/accessories", filters, &params);
+    params.extend(browse.params());
+    let back = format!("/accessories{}", query_string(&params));
 
-    Ok(render(AccessoriesPage {
+    let mut response = render(AccessoriesPage {
         rows,
-        kind_filter: filter_choices(&KINDS, "All kinds", kind),
-        status_filter: filter_choices(&STATUSES, "Any status", status),
+        grid: browse.is_grid(),
+        controls,
         back,
     })?
-    .into_response())
+    .into_response();
+    if let Some((name, value)) = browse.cookie() {
+        response.headers_mut().insert(name, value);
+    }
+    Ok(response)
 }
 
 /// The quick "Start" / "Mark ready" buttons.

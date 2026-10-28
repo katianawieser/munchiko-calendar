@@ -1,0 +1,14 @@
+<div class="browse-bar">
+  <form method="get" action="{{ controls.path }}" class="filters">
+    {% for filter in controls.filters %}
+    <select name="{{ filter.name }}" aria-label="{{ filter.label }}">
+      {% for c in filter.choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+    </select>
+    {% endfor %}
+    <input type="hidden" name="view" value="{{ controls.view }}">
+    <button type="submit" class="secondary">Show</button>
+  </form>
+  <nav class="view-switch" aria-label="View">
+    {% for link in controls.view_links %}<a href="{{ link.href }}" {% if link.current %}aria-current="page"{% endif %}>{{ link.label }}</a>{% endfor %}
+  </nav>
+</div>

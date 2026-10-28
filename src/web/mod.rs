@@ -16,6 +16,7 @@
 
 mod accessories;
 pub mod blockers;
+mod browse;
 mod calendar;
 mod colors;
 mod events;

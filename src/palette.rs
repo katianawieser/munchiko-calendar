@@ -243,18 +243,66 @@ pub fn rainbow_order(rgb: [u8; 3]) -> (bool, u16, u16) {
     if saturation < 0.15 || chroma < 0.08 {
         return (true, 0, darkness);
     }
-    let hue = if max == r {
+    // Hue is a circle: 0° and 360° are both red, so a slightly bluish red
+    // (356°) would sort after pink (337°). Starting the circle 15° earlier
+    // keeps all reds together at the front.
+    let hue = (hue(rgb) + 15.0).rem_euclid(360.0);
+    (false, (hue * 10.0) as u16, darkness)
+}
+
+/// Where a color sits on the color wheel, 0–360°: 0 red, 60 yellow,
+/// 120 green, 240 blue, 300 magenta (the "H" of HSL). Meaningless for greys.
+fn hue(rgb: [u8; 3]) -> f32 {
+    let [r, g, b] = rgb.map(|c| c as f32 / 255.0);
+    let (max, min) = (r.max(g).max(b), r.min(g).min(b));
+    let chroma = max - min;
+    if chroma == 0.0 {
+        0.0
+    } else if max == r {
         60.0 * ((g - b) / chroma).rem_euclid(6.0)
     } else if max == g {
         60.0 * ((b - r) / chroma + 2.0)
     } else {
         60.0 * ((r - g) / chroma + 4.0)
-    };
-    // Hue is a circle: 0° and 360° are both red, so a slightly bluish red
-    // (356°) would sort after pink (337°). Starting the circle 15° earlier
-    // keeps all reds together at the front.
-    let hue = (hue + 15.0).rem_euclid(360.0);
-    (false, (hue * 10.0) as u16, darkness)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Warm and cool
+// ---------------------------------------------------------------------------
+
+/// Warm or cool, the way sewers and painters sort colors.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Tone {
+    /// Reds, pinks, oranges, yellows (and the browns and tans made from them).
+    Warm,
+    /// Greens, blues, purples.
+    Cool,
+    /// Almost no color at all: white, cream, greys, black.
+    Neutral,
+}
+
+/// Below this colorfulness (Lab chroma) a color counts as neutral. Cream is
+/// about 12; the palest pastels (baby pink, baby blue) are about 17, so they
+/// keep their tone.
+const NEUTRAL_CHROMA: f32 = 15.0;
+
+/// The tone of one shade. Colorfulness is measured in Lab, like the color
+/// names: in plain RGB a pale cream looks "very saturated", because the
+/// formula divides by how much room is left near white.
+pub fn tone(rgb: [u8; 3]) -> Tone {
+    let [_, a, b] = to_lab(rgb);
+    if a.hypot(b) < NEUTRAL_CHROMA {
+        return Tone::Neutral;
+    }
+    // Warm runs from pink (330°) through red and orange to yellow (75°);
+    // past that, yellow turns green and the rest of the wheel is cool.
+    let hue = hue(rgb);
+    if !(75.0..330.0).contains(&hue) {
+        Tone::Warm
+    } else {
+        Tone::Cool
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -304,6 +352,43 @@ fn distance(a: Lab, b: Lab) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tones_follow_the_color_wheel() {
+        let tone_of = |name: &str| {
+            let (_, rgb) = NAMES.iter().find(|(n, _)| *n == name).unwrap();
+            tone(*rgb)
+        };
+        for warm in [
+            "red",
+            "coral",
+            "orange",
+            "gold",
+            "yellow",
+            "hot pink",
+            "baby pink",
+            "brown",
+        ] {
+            assert_eq!(tone_of(warm), Tone::Warm, "{warm}");
+        }
+        for cool in [
+            "lime",
+            "sage",
+            "teal",
+            "baby blue",
+            "navy",
+            "lavender",
+            "purple",
+            "magenta",
+        ] {
+            assert_eq!(tone_of(cool), Tone::Cool, "{cool}");
+        }
+        for neutral in ["white", "cream", "silver", "charcoal", "black"] {
+            assert_eq!(tone_of(neutral), Tone::Neutral, "{neutral}");
+        }
+        // A bluish red is still red, across the 0°/360° seam.
+        assert_eq!(tone([200, 20, 40]), Tone::Warm);
+    }
 
     fn close(a: Lab, b: Lab) -> bool {
         a.iter().zip(b).all(|(x, y)| (x - y).abs() < 0.1)

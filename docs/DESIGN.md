@@ -209,6 +209,23 @@ Thanksgiving + 1).
 - **Computed from thumbnails on each page load:** fast enough that nothing
   needs storing or keeping in sync.
 
+### Warm and cool
+
+- **One shade:** neutral if it has almost no color (Lab chroma under 15:
+  white, cream, greys, black); otherwise warm from pink through red and
+  orange to yellow (hue 330°–75°), cool for the rest of the wheel. Browns and
+  tans count as warm. Colorfulness uses Lab because in plain RGB a pale cream
+  looks "very saturated".
+- **A whole item:** a tone wins when it has more than twice as many colors as
+  the other; otherwise it's "warm + cool". My first rule (any cool color makes
+  it mixed) put half of my real bows in "mixed", because one navy accent was
+  enough, so the filter wasn't useful. Neutrals don't count either way.
+- **Computed, never stored:** tone is derived from the swatches on each page
+  load, so it can't go stale when a color is edited, and there's no migration.
+- **Filters live in the address** (`?tone=warm&sort=color`), so a filtered list
+  can be bookmarked and the status buttons return to it. Table vs grid is a
+  standing preference, so it's also remembered in a cookie.
+
 ## Performance: measure first
 
 Pages with photos first took ~0.9 s in a debug build. Timing showed a

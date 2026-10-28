@@ -5,12 +5,15 @@
 //! way refreshing the page afterwards doesn't submit the form a second time.
 //! On a mistake the form is shown again with the user's input and a message.
 
+use std::collections::HashMap;
+
 use askama::Template;
-use axum::extract::{Path, State};
-use axum::http::StatusCode;
+use axum::extract::{Path, Query, State};
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 
 use super::blockers::{self, Blockers};
+use super::browse::{Browse, Controls};
 use super::colors;
 use super::forms::{
     Choice, ColorRow, FormData, color_rows, color_rows_from_form, join_list, read_colors,
@@ -49,6 +52,10 @@ struct Section {
 #[template(path = "fabrics.html")]
 struct FabricsPage {
     sections: Vec<Section>,
+    grid: bool,
+    controls: Controls,
+    /// Shown when a filter is on, since some fabrics may be hidden.
+    filtered: bool,
 }
 
 /// Names of the accessories that use `fabric`, for "used by" and for
@@ -61,7 +68,12 @@ fn used_by(fabric: FabricId, accessories: &[Accessory]) -> Vec<String> {
         .collect()
 }
 
-pub async fn list(State(state): State<AppState>) -> Result<Response, AppError> {
+pub async fn list(
+    State(state): State<AppState>,
+    Query(query): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let browse = Browse::read(&query, &headers);
     let fabrics = state.db.list_fabrics().await?;
     let accessories = state.db.list_accessories().await?;
     let thumbnails = photos::thumbnails(&state).await?;
@@ -74,7 +86,7 @@ pub async fn list(State(state): State<AppState>) -> Result<Response, AppError> {
     };
 
     let (mut in_stock, mut shopping) = (Vec::new(), Vec::new());
-    for fabric in &fabrics {
+    for fabric in fabrics.iter().filter(|f| browse.keeps(&f.colors)) {
         let row = FabricRow {
             href: format!("/fabrics/{}", fabric.id.0),
             thumb: thumbnails.get(&PhotoOwner::Fabric(fabric.id)).cloned(),
@@ -96,6 +108,8 @@ pub async fn list(State(state): State<AppState>) -> Result<Response, AppError> {
             shopping.push(row);
         }
     }
+    browse.sort(&mut in_stock, |row| &row.colors);
+    browse.sort(&mut shopping, |row| &row.colors);
     let sections = vec![
         Section {
             heading: "In the stash",
@@ -108,7 +122,17 @@ pub async fn list(State(state): State<AppState>) -> Result<Response, AppError> {
             rows: shopping,
         },
     ];
-    Ok(render(FabricsPage { sections })?.into_response())
+    let mut response = render(FabricsPage {
+        sections,
+        grid: browse.is_grid(),
+        controls: browse.controls("/fabrics", vec![], &[]),
+        filtered: browse.tone.is_some(),
+    })?
+    .into_response();
+    if let Some((name, value)) = browse.cookie() {
+        response.headers_mut().insert(name, value);
+    }
+    Ok(response)
 }
 
 /// Flip a fabric between the stash and the shopping list.
