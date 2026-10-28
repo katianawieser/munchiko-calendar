@@ -163,6 +163,7 @@ mod tests {
             description: String::new(),
             colors: colors_of(colors),
             colors_from_fabrics: false,
+            tags: vec![],
             fabrics: vec![],
             source: Source::Handmade,
             status: AccessoryStatus::Idea,

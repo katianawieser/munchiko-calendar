@@ -254,7 +254,19 @@ See README.md for the planning rules, data model and roadmap.
   also have closed Katiana's open Firefox. Don't launch Firefox then; use headless
   Chrome for HTML/CSS-only checks, or ask her to restart Firefox first. Also: `pkill -f`
   with a pattern in the same command line kills its own shell.
-- **Next: M10b** accessory tags (batik as a tag), used by suggest.
+- **M10b done (M10 complete):** migration 0008 `accessories.tags` (JSON array, default
+  `[]`); `Accessory::all_tags(fabrics)` = own tags + fabrics' keywords (main first),
+  deduped ignoring case; used by `suggest_accessories` (replacing name + fabric
+  keywords) and the list. Form: "Tags" input (`split_list`, so lowercased). UI calls
+  fabric keywords "Tags" too (column still `keywords`). `Browse.tag` (`?tag=`,
+  compared by `tag_key` = lowercase + `singular`), `keeps(colors, tags)`,
+  `controls(path, filters, params, tags)` adds the tag dropdown (all tags in use, not
+  only those shown; a stale tag from a link stays selected), `encode` percent-encodes
+  params. Real data: 14 batik fabrics → 3 batik accessories; 26 of 54 accessories have
+  no fabrics linked, so they inherit nothing. Firefox 159 update was still pending
+  (not reopened), so checks used curl + headless Chrome.
+- **Next: M11** kinds hat + prop, quantity (×N, both pets can share, warn when a post
+  needs more than owned), outfits. Ask before starting.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

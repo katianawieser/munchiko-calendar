@@ -86,7 +86,10 @@ pub async fn list(
     };
 
     let (mut in_stock, mut shopping) = (Vec::new(), Vec::new());
-    for fabric in fabrics.iter().filter(|f| browse.keeps(&f.colors)) {
+    for fabric in fabrics
+        .iter()
+        .filter(|f| browse.keeps(&f.colors, &f.keywords))
+    {
         let row = FabricRow {
             href: format!("/fabrics/{}", fabric.id.0),
             thumb: thumbnails.get(&PhotoOwner::Fabric(fabric.id)).cloned(),
@@ -125,7 +128,12 @@ pub async fn list(
     let mut response = render(FabricsPage {
         sections,
         grid: browse.is_grid(),
-        controls: browse.controls("/fabrics", vec![], &[]),
+        controls: browse.controls(
+            "/fabrics",
+            vec![],
+            &[],
+            fabrics.iter().flat_map(|f| &f.keywords),
+        ),
         filtered: browse.tone.is_some(),
     })?
     .into_response();

@@ -170,6 +170,7 @@ mod tests {
             description: String::new(),
             colors: vec![],
             colors_from_fabrics: true,
+            tags: vec![],
             fabrics: fabric_ids
                 .iter()
                 .map(|&f| FabricUse {

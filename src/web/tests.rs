@@ -2023,3 +2023,64 @@ async fn accessory_filters_combine_and_status_buttons_keep_them() {
         html.contains(r#"href="/accessories?kind=bow&#38;tone=warm&#38;sort=color&#38;view=grid""#)
     );
 }
+
+// ---------------------------------------------------------------------------
+// Tags
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn accessory_tags_are_saved_and_shown_in_the_form() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let reply = post(
+        &app,
+        "/accessories",
+        &format!(
+            "{}&tags=Batik%2C+japanese%2C+",
+            bow_form("Sakura+bow", "main_fabric=&middle_fabric=&accent_fabric=")
+        ),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let bow = db
+        .list_accessories()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|a| a.name == "Sakura bow")
+        .unwrap();
+    // Lowercased like fabric tags; the empty one after the last comma is dropped.
+    assert_eq!(bow.tags, ["batik", "japanese"]);
+
+    let (_, form) = get(&app, &format!("/accessories/{}", bow.id.0)).await;
+    assert!(form.contains(r#"name="tags" value="batik, japanese""#));
+}
+
+#[tokio::test]
+async fn accessories_can_be_filtered_by_their_tags_or_their_fabrics_tags() {
+    let (app, _, _) = setup(d(2026, 10, 5)).await;
+    let reply = post(
+        &app,
+        "/accessories",
+        &format!(
+            "{}&tags=batik",
+            bow_form("Sakura+bow", "main_fabric=&middle_fabric=&accent_fabric=")
+        ),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+
+    // Its own tag, matched ignoring capitals and plurals.
+    let (_, html) = get(&app, "/accessories?tag=Batiks").await;
+    assert!(html.contains(">Sakura bow</a>") && !html.contains(">Pumpkin bow</a>"));
+    assert!(html.contains(r#"<option value="batik" selected>"#));
+
+    // "pumpkin" is a tag of the orange velvet, so the pumpkin bow has it too;
+    // the bat bow (black satin only) doesn't.
+    let (_, html) = get(&app, "/accessories?tag=pumpkin").await;
+    assert!(html.contains(">Pumpkin bow</a>") && !html.contains(">Bat bow</a>"));
+    assert!(!html.contains(">Sakura bow</a>"));
+
+    // Fabrics filter by their own tags.
+    let (_, html) = get(&app, "/fabrics?tag=formal").await;
+    assert!(html.contains(">Black satin</a>") && !html.contains(">Orange velvet</a>"));
+}

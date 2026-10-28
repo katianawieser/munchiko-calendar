@@ -10,8 +10,8 @@
 //!   lowercase, without filler like "day", "the" or "national".
 //! - Plurals match their singular ("Fall Leaves" finds the leaf bow): every
 //!   word on both sides goes through [`singular`] before comparing.
-//! - An accessory has no keywords of its own, so it borrows: the words in its
-//!   name, plus its fabrics' keywords. Its colors are
+//! - An accessory's keywords are the words in its name, its tags and its
+//!   fabrics' keywords ([`Accessory::all_tags`]). Its colors are
 //!   [`Accessory::effective_colors`]: its fabrics' colors only if it's set to
 //!   use them, plus any colors of its own.
 //! - Each event word scores once: [`KEYWORD_POINTS`] if it matches a keyword,
@@ -259,13 +259,9 @@ pub fn suggest_accessories(
     let mut suggestions: Vec<AccessorySuggestion> = accessories
         .iter()
         .filter_map(|acc| {
-            let used: Vec<&Fabric> = acc
-                .fabrics
-                .iter()
-                .filter_map(|u| fabrics.iter().find(|f| f.id == u.fabric_id))
-                .collect();
-            let keywords =
-                words(std::iter::once(&acc.name).chain(used.iter().flat_map(|f| &f.keywords)));
+            // Its name's words, its tags and its fabrics' keywords.
+            let tags = acc.all_tags(fabrics);
+            let keywords = words(std::iter::once(&acc.name).chain(&tags));
             // Only color names count; swatches are for people, not matching.
             let effective = acc.effective_colors(fabrics);
             let colors = words(effective.iter().map(|c| &c.name));
@@ -338,6 +334,7 @@ fn start_by_for_new_bow(fabric: &Fabric, post_date: NaiveDate, lead: &LeadTimes)
         description: String::new(),
         colors: vec![],
         colors_from_fabrics: true,
+        tags: vec![],
         fabrics: vec![FabricUse {
             fabric_id: fabric.id,
             role: FabricRole::Main,
@@ -420,6 +417,7 @@ mod tests {
             description: String::new(),
             colors: colors_of(colors),
             colors_from_fabrics: false,
+            tags: vec![],
             fabrics: fabric_ids
                 .iter()
                 .map(|&f| FabricUse {
@@ -684,6 +682,17 @@ mod tests {
         let harvest = event("Pumpkin Red Harvest", &[], d(2026, 10, 1));
         let found = suggest_accessories(&harvest, &[patch], &fabrics);
         assert_eq!(found[0].score, KEYWORD_POINTS + COLOR_POINTS);
+    }
+
+    #[test]
+    fn an_accessorys_own_tags_count_as_keywords() {
+        // A bought bow with no fabrics recorded: only its tag can match.
+        let mut sakura = accessory(1, "Pink bow", &[], &[]);
+        sakura.tags = vec!["Cherry blossoms".into()];
+        let festival = event("Cherry Blossom Festival", &[], d(2027, 3, 20));
+        let found = suggest_accessories(&festival, &[sakura], &[]);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].score, 2 * KEYWORD_POINTS, "cherry + blossom");
     }
 
     #[test]

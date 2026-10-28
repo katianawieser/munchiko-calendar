@@ -222,6 +222,12 @@ Thanksgiving + 1).
   enough, so the filter wasn't useful. Neutrals don't count either way.
 - **Computed, never stored:** tone is derived from the swatches on each page
   load, so it can't go stale when a color is edited, and there's no migration.
+- **Tags are inherited, like colors:** an accessory's tags are its own plus
+  its fabrics' tags, so a bow made of batik fabric is a batik bow without
+  tagging it twice. Tags match ignoring capitals and plurals, with the same
+  `singular` rule as suggestions. Fabric "keywords" are called tags in the
+  interface (one idea, one name), but the column kept its name: renaming it
+  would be a migration for no user benefit.
 - **Filters live in the address** (`?tone=warm&sort=color`), so a filtered list
   can be bookmarked and the status buttons return to it. Table vs grid is a
   standing preference, so it's also remembered in a cookie.

@@ -182,6 +182,9 @@ pub struct Accessory {
     pub colors: Vec<Color>,
     /// Take colors from the fabrics instead of typing them in.
     pub colors_from_fabrics: bool,
+    /// Its own tags, like "batik". See [`Accessory::all_tags`] for these plus
+    /// its fabrics' keywords.
+    pub tags: Vec<String>,
     /// Empty is allowed (bought scarves often have no tracked fabric).
     pub fabrics: Vec<FabricUse>,
     pub source: Source,
@@ -193,6 +196,24 @@ pub struct Accessory {
 }
 
 impl Accessory {
+    /// Its own tags, then its fabrics' keywords (main fabric first), each
+    /// once ignoring capitals. A bow made of batik fabric is a batik bow
+    /// without tagging it twice.
+    pub fn all_tags(&self, fabrics: &[Fabric]) -> Vec<String> {
+        let from_fabrics = self
+            .fabrics
+            .iter()
+            .filter_map(|u| fabrics.iter().find(|f| f.id == u.fabric_id))
+            .flat_map(|f| &f.keywords);
+        let mut seen = Vec::new();
+        for tag in self.tags.iter().chain(from_fabrics) {
+            if !seen.iter().any(|s: &String| s.eq_ignore_ascii_case(tag)) {
+                seen.push(tag.clone());
+            }
+        }
+        seen
+    }
+
     pub fn effective_make_days(&self) -> u32 {
         self.make_days
             .unwrap_or_else(|| self.kind.default_make_days())
@@ -359,6 +380,7 @@ mod tests {
             description: String::new(),
             colors: colors.iter().map(|&c| c.into()).collect(),
             colors_from_fabrics: from_fabrics,
+            tags: vec![],
             fabrics: vec![
                 FabricUse {
                     fabric_id: FabricId(1),
@@ -405,6 +427,21 @@ mod tests {
         // The bow's own "orange" has no swatch; the fabric's comes first and wins.
         let colors = bow(&["orange"], true).effective_colors(&[velvet]);
         assert_eq!(colors, vec![Color::with_hex("orange", "#f28c28")]);
+    }
+
+    #[test]
+    fn tags_include_the_fabrics_keywords_once() {
+        let mut velvet = fabric(1, &[]);
+        velvet.keywords = vec!["Batik".into(), "pumpkin".into()];
+        let mut satin = fabric(2, &[]);
+        satin.keywords = vec!["halloween".into(), "pumpkin".into()];
+        let mut bow = bow(&[], true);
+        bow.tags = vec!["batik".into(), "japanese".into()];
+        // Own tags first; "Batik" and the second "pumpkin" are repeats.
+        assert_eq!(
+            bow.all_tags(&[velvet, satin]),
+            vec!["batik", "japanese", "pumpkin", "halloween"]
+        );
     }
 
     #[test]

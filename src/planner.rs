@@ -528,6 +528,7 @@ mod tests {
             pair_id: None,
             make_days: None,
             colors_from_fabrics: false,
+            tags: vec![],
         }
     }
 

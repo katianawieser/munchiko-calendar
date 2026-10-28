@@ -15,7 +15,7 @@ use super::browse::{Browse, Controls, Filter, query_string};
 use super::colors;
 use super::forms::{
     Choice, ColorRow, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, color_rows,
-    color_rows_from_form, label_of, parse_choice, read_colors,
+    color_rows_from_form, join_list, label_of, parse_choice, read_colors, split_list,
 };
 use super::photos::{self, ColorIdea, FormWithPhotos, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
@@ -76,6 +76,8 @@ struct AccessoryRow {
     partner: String,
     source: String,
     colors: Vec<Color>,
+    /// Its own tags and its fabrics' keywords.
+    tags: String,
 }
 
 #[derive(Template)]
@@ -118,9 +120,9 @@ pub async fn list(
         .iter()
         .filter(|a| kind.is_none_or(|k| a.kind == k))
         .filter(|a| status.is_none_or(|s| a.status == s))
-        .map(|a| (a, a.effective_colors(&fabrics)))
-        .filter(|(_, colors)| browse.keeps(colors))
-        .map(|(a, colors)| {
+        .map(|a| (a, a.effective_colors(&fabrics), a.all_tags(&fabrics)))
+        .filter(|(_, colors, tags)| browse.keeps(colors, tags))
+        .map(|(a, colors, tags)| {
             let next_step = match a.status {
                 AccessoryStatus::Idea => Some(("in_progress", "Start")),
                 AccessoryStatus::InProgress => Some(("ready", "Mark ready")),
@@ -151,6 +153,7 @@ pub async fn list(
                     .unwrap_or_default(),
                 source: describe_source(&a.source),
                 colors,
+                tags: join_list(&tags),
             }
         })
         .collect();
@@ -182,7 +185,13 @@ pub async fn list(
             choices: filter_choices(&STATUSES, "Any status", status),
         },
     ];
-    let controls = browse.controls("/accessories", filters, &params);
+    // Every tag in use, not only on the accessories shown, so choosing one
+    // doesn't empty the dropdown.
+    let all_tags: Vec<String> = accessories
+        .iter()
+        .flat_map(|a| a.all_tags(&fabrics))
+        .collect();
+    let controls = browse.controls("/accessories", filters, &params, &all_tags);
     params.extend(browse.params());
     let back = format!("/accessories{}", query_string(&params));
 
@@ -254,6 +263,8 @@ struct AccessoryFormPage {
     status_choices: Vec<Choice>,
     name: String,
     description: String,
+    /// Comma-separated, like the fabric form's keywords.
+    tags: String,
     colors: Vec<ColorRow>,
     colors_from_fabrics: bool,
     /// The chosen fabrics' colors, shown under the switch.
@@ -351,6 +362,7 @@ impl AccessoryFormPage {
             status_choices: choices(&STATUSES, status),
             name: editing.map(|a| a.name.clone()).unwrap_or_default(),
             description: editing.map(|a| a.description.clone()).unwrap_or_default(),
+            tags: editing.map(|a| join_list(&a.tags)).unwrap_or_default(),
             colors: color_rows(editing.map_or(&[], |a| &a.colors)),
             // New accessories start with the box ticked: less typing.
             colors_from_fabrics: editing.is_none_or(|a| a.colors_from_fabrics),
@@ -413,6 +425,7 @@ impl AccessoryFormPage {
         }
         self.name = form.text("name");
         self.description = form.text("description");
+        self.tags = form.text("tags");
         self.colors = color_rows_from_form(form);
         self.colors_from_fabrics = form.checked("colors_from_fabrics");
         self = self.with_fabric_colors();
@@ -513,6 +526,7 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
                 description: form.text("description"),
                 colors,
                 colors_from_fabrics: form.checked("colors_from_fabrics"),
+                tags: split_list(&form.text("tags")),
                 fabrics,
                 source,
                 status,

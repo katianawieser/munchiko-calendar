@@ -181,6 +181,7 @@ pub struct NewAccessory {
     /// Extra colors when `colors_from_fabrics` is on.
     pub colors: Vec<Color>,
     pub colors_from_fabrics: bool,
+    pub tags: Vec<String>,
     pub fabrics: Vec<FabricUse>,
     pub source: Source,
     pub status: AccessoryStatus,
@@ -238,6 +239,7 @@ struct AccessoryRow {
     description: String,
     colors: Json<Vec<Color>>,
     colors_from_fabrics: bool,
+    tags: Json<Vec<String>>,
     source: String,
     brand: Option<String>,
     status: String,
@@ -362,6 +364,7 @@ impl AccessoryRow {
             description: self.description,
             colors: self.colors.0,
             colors_from_fabrics: self.colors_from_fabrics,
+            tags: self.tags.0,
             fabrics,
             source,
             status: AccessoryStatus::from_sql(&self.status)?,
@@ -730,9 +733,9 @@ impl Repository {
 
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO accessories
-                 (kind, name, description, colors, colors_from_fabrics, source, brand, status,
-                  make_days)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 (kind, name, description, colors, colors_from_fabrics, tags, source, brand,
+                  status, make_days)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              RETURNING id",
         )
         .bind(new.kind.to_sql())
@@ -740,6 +743,7 @@ impl Repository {
         .bind(&new.description)
         .bind(Json(&new.colors))
         .bind(new.colors_from_fabrics)
+        .bind(Json(&new.tags))
         .bind(source)
         .bind(brand)
         .bind(new.status.to_sql())
@@ -768,8 +772,8 @@ impl Repository {
         let mut tx = self.pool.begin().await?;
 
         let rows: Vec<AccessoryRow> = sqlx::query_as(
-            "SELECT id, kind, name, description, colors, colors_from_fabrics, source, brand, status,
-                    pair_id, make_days
+            "SELECT id, kind, name, description, colors, colors_from_fabrics, tags, source, brand,
+                    status, pair_id, make_days
              FROM accessories
              WHERE ?1 IS NULL OR id = ?1
              ORDER BY name, id",
@@ -819,7 +823,7 @@ impl Repository {
         let result = sqlx::query(
             "UPDATE accessories
              SET kind = ?, name = ?, description = ?, colors = ?, colors_from_fabrics = ?,
-                 source = ?, brand = ?,
+                 tags = ?, source = ?, brand = ?,
                  status = ?, make_days = ?
              WHERE id = ?",
         )
@@ -828,6 +832,7 @@ impl Repository {
         .bind(&new.description)
         .bind(Json(&new.colors))
         .bind(new.colors_from_fabrics)
+        .bind(Json(&new.tags))
         .bind(source)
         .bind(brand)
         .bind(new.status.to_sql())
@@ -1541,6 +1546,7 @@ mod tests {
             description: String::new(),
             colors: colors(&["orange"]),
             colors_from_fabrics: false,
+            tags: vec![],
             fabrics: fabrics
                 .iter()
                 .map(|&(fabric_id, role)| FabricUse { fabric_id, role })

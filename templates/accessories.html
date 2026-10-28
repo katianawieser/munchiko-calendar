@@ -19,6 +19,7 @@
       <a href="{{ row.href }}" class="card-name">{{ row.name }}</a>
       <span class="card-meta">{{ row.kind }}{% if !row.partner.is_empty() %} · set with {{ row.partner }}{% endif %}</span>
       <div class="card-colors">{% for color in row.colors %}{% include "color_chip.html" %} {% endfor %}</div>
+      {% if !row.tags.is_empty() %}<span class="card-meta">{{ row.tags }}</span>{% endif %}
       <div class="card-actions nowrap">
         <span class="badge {{ row.status_class }}">{{ row.status }}</span>
         {% if let Some(step) = row.next_step %}
@@ -36,7 +37,7 @@
 {% else %}
 <div class="table-scroll">
 <table>
-  <thead><tr><th>Name</th><th>Kind</th><th>Status</th><th>Fabrics</th><th>Colors</th><th>Matching set</th><th>Source</th></tr></thead>
+  <thead><tr><th>Name</th><th>Kind</th><th>Status</th><th>Fabrics</th><th>Colors</th><th>Tags</th><th>Matching set</th><th>Source</th></tr></thead>
   <tbody>
     {% for row in rows %}
     <tr>
@@ -54,6 +55,7 @@
       </td>
       <td>{{ row.fabrics }}</td>
       <td>{% for color in row.colors %}{% include "color_chip.html" %} {% endfor %}</td>
+      <td>{{ row.tags }}</td>
       <td>{{ row.partner }}</td>
       <td>{{ row.source }}</td>
     </tr>

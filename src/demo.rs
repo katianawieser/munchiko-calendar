@@ -42,6 +42,7 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
             description: "Orange velvet with a black satin middle".into(),
             colors: vec![],
             colors_from_fabrics: true,
+            tags: vec![],
             fabrics: vec![
                 FabricUse {
                     fabric_id: velvet,
@@ -64,6 +65,7 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
             description: "Black satin bat-wing bow".into(),
             colors: vec![],
             colors_from_fabrics: true,
+            tags: vec![],
             fabrics: vec![FabricUse {
                 fabric_id: satin,
                 role: FabricRole::Main,
@@ -82,6 +84,7 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
             description: "Glow-in-the-dark ghost print".into(),
             colors: vec!["white".into()],
             colors_from_fabrics: false,
+            tags: vec![],
             fabrics: vec![],
             source: Source::Bought { brand: None },
             status: AccessoryStatus::Idea,

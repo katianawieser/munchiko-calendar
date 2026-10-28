@@ -1,5 +1,6 @@
 //! Browsing the fabric and accessory lists: a table or a grid of photo cards,
-//! a warm / cool filter, and sorting by color. Shared by both list pages.
+//! a tag filter, a warm / cool filter, and sorting by color. Shared by both
+//! list pages.
 //!
 //! Everything comes from the page address (`?tone=warm&sort=color`), so a
 //! filtered list can be bookmarked or reloaded. The one exception is the
@@ -14,6 +15,7 @@ use axum::http::{HeaderMap, HeaderValue};
 use super::forms::{Choice, parse_choice};
 use crate::models::Color;
 use crate::palette::{self, Tone};
+use crate::suggest::singular;
 
 /// The cookie that remembers table or grid.
 const VIEW_COOKIE: &str = "list_view";
@@ -97,6 +99,8 @@ fn color_key(colors: &[Color]) -> (bool, (bool, u16, u16)) {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Browse {
     pub view: View,
+    /// The tag asked for, as written in the address.
+    pub tag: Option<String>,
     pub tone: Option<ItemTone>,
     pub by_color: bool,
     /// Set when the address chose a view, so the cookie gets updated.
@@ -115,6 +119,10 @@ impl Browse {
             .and_then(|v| parse_choice(&VIEWS, v));
         Self {
             view: chosen.or(remembered).unwrap_or(View::Table),
+            tag: query
+                .get("tag")
+                .map(|t| t.trim().to_string())
+                .filter(|t| !t.is_empty()),
             tone: query.get("tone").and_then(|v| parse_choice(&TONES, v)),
             by_color: query.get("sort").is_some_and(|v| v == "color"),
             view_chosen: chosen.is_some(),
@@ -125,10 +133,17 @@ impl Browse {
         self.view == View::Grid
     }
 
-    /// Does an item with these colors pass the tone filter?
-    pub fn keeps(&self, colors: &[Color]) -> bool {
-        self.tone
-            .is_none_or(|wanted| item_tone(colors) == Some(wanted))
+    /// Does an item with these colors and tags pass the filters? Tags match
+    /// ignoring capitals and plurals, like suggestions ("Batiks" = "batik").
+    pub fn keeps(&self, colors: &[Color], tags: &[String]) -> bool {
+        let tag_ok = self.tag.as_ref().is_none_or(|wanted| {
+            let wanted = tag_key(wanted);
+            tags.iter().any(|t| tag_key(t) == wanted)
+        });
+        tag_ok
+            && self
+                .tone
+                .is_none_or(|wanted| item_tone(colors) == Some(wanted))
     }
 
     /// Sort by color if asked; otherwise leave the order alone (the database
@@ -143,6 +158,9 @@ impl Browse {
     /// The tone and sort as address parameters, for links back to this page.
     pub fn params(&self) -> Vec<String> {
         let mut params = Vec::new();
+        if let Some(tag) = &self.tag {
+            params.push(format!("tag={}", encode(tag)));
+        }
         if let Some(tone) = self.tone {
             let value = TONES.iter().find(|(t, _, _)| *t == tone).unwrap().1;
             params.push(format!("tone={value}"));
@@ -155,8 +173,37 @@ impl Browse {
 
     /// The filter bar for the page at `path`. `filters` are the page's own
     /// dropdowns (shown first) and `params` their current values, so the
-    /// Table | Grid links keep them.
-    pub fn controls(&self, path: &str, mut filters: Vec<Filter>, params: &[String]) -> Controls {
+    /// Table | Grid links keep them. `tags` are every tag on the page's items,
+    /// for the tag dropdown.
+    pub fn controls<'a>(
+        &self,
+        path: &str,
+        mut filters: Vec<Filter>,
+        params: &[String],
+        tags: impl IntoIterator<Item = &'a String>,
+    ) -> Controls {
+        let mut choices = vec![Choice::new("", "Any tag", self.tag.is_none())];
+        let wanted = self.tag.as_deref().map(tag_key);
+        for tag in tag_list(tags) {
+            let selected = wanted.as_deref() == Some(tag_key(&tag).as_str());
+            choices.push(Choice::new(&tag, tag.clone(), selected));
+        }
+        // A tag from an old link that nothing has any more: still shown as chosen.
+        if let Some(tag) = self
+            .tag
+            .as_ref()
+            .filter(|_| !choices.iter().any(|c| c.selected))
+        {
+            choices.push(Choice::new(tag, tag.clone(), true));
+        }
+        if choices.len() > 1 {
+            filters.push(Filter {
+                name: "tag",
+                label: "Tag",
+                choices,
+            });
+        }
+
         let mut tones = vec![Choice::new("", "Any tone", self.tone.is_none())];
         for (tone, value, label) in TONES {
             tones.push(Choice::new(value, label, self.tone == Some(tone)));
@@ -231,6 +278,38 @@ pub struct ViewLink {
     pub href: String,
     pub label: &'static str,
     pub current: bool,
+}
+
+/// How tags are compared: lowercase and singular.
+fn tag_key(tag: &str) -> String {
+    singular(&tag.trim().to_lowercase())
+}
+
+/// Each tag once (the first spelling seen wins), in alphabetical order.
+fn tag_list<'a>(tags: impl IntoIterator<Item = &'a String>) -> Vec<String> {
+    let mut unique: std::collections::BTreeMap<String, String> = Default::default();
+    for tag in tags {
+        unique
+            .entry(tag_key(tag))
+            .or_insert_with(|| tag.trim().to_string());
+    }
+    unique.into_values().collect()
+}
+
+/// Percent-encode a value for an address, so a tag like "red & green"
+/// doesn't break the `&` between parameters. Letters, digits and `-._~`
+/// stay as they are; everything else (including each byte of non-English
+/// letters) becomes `%XX`.
+fn encode(value: &str) -> String {
+    value
+        .bytes()
+        .map(|b| match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                (b as char).to_string()
+            }
+            _ => format!("%{b:02X}"),
+        })
+        .collect()
 }
 
 /// Join address parameters into `?a=1&b=2` (or nothing).
@@ -332,5 +411,23 @@ mod tests {
         let (_, value) = chosen.cookie().unwrap();
         assert!(value.to_str().unwrap().starts_with("list_view=table;"));
         assert_eq!(chosen.params(), ["tone=cool"]);
+    }
+
+    #[test]
+    fn tags_match_ignoring_capitals_and_plurals() {
+        let query: HashMap<String, String> = [("tag".to_string(), " Batiks ".to_string())].into();
+        let browse = Browse::read(&query, &HeaderMap::new());
+        assert!(browse.keeps(&[], &["batik".into(), "leaf".into()]));
+        assert!(!browse.keeps(&[], &["japanese".into()]));
+        assert_eq!(browse.params(), ["tag=Batiks"]);
+    }
+
+    #[test]
+    fn the_tag_dropdown_lists_each_tag_once() {
+        let tags: Vec<String> = ["leaf", "Batik", "batiks", "red & green"]
+            .map(String::from)
+            .into();
+        assert_eq!(tag_list(&tags), ["Batik", "leaf", "red & green"]);
+        assert_eq!(encode("red & green"), "red%20%26%20green");
     }
 }
