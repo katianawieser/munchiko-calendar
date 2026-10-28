@@ -128,6 +128,20 @@ Thanksgiving + 1).
   JSON functions, keeping their order. A test writes an old-format row and runs
   the migration's SQL on it, because a fresh test database has nothing to convert.
 
+### Changing a rule in the schema means rebuilding the table
+
+Allowed values (kinds of accessory, statuses) are `CHECK` rules in the
+schema, so bad data can't get in even through a bug. The cost shows when the
+list grows: SQLite can't change a `CHECK` in place, so adding hats and props
+(migration 0009) rebuilt the accessories table. Tables that point at it would
+lose rows (cascade) or block the drop, so their rows are saved, removed and
+put back, all in one transaction. The table also points at itself (matching
+sets), so the new copy refers to itself by its temporary name; otherwise
+dropping the old table would clear every set. A test builds a version-8
+database and checks that sets, fabric order, looks and photos survive; I also
+compared every row of a copy of my real data before and after. I kept the
+`CHECK` anyway: new kinds are rare, and the rule protects the data every day.
+
 ## Web: server-rendered pages with one optional script
 
 - **Askama templates compiled into the binary** (a template typo is a build

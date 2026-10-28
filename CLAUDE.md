@@ -268,8 +268,19 @@ See README.md for the planning rules, data model and roadmap.
   /fabrics, real filter-form submit keeps selects, status button returns to the
   filtered list. Turtle Batik Bow is "mixed": its pale baby blue (#b4d7e1) counts as
   neutral, leaving 4 cool : 2 warm, and exactly 2× isn't more than 2×.
-- **Next: M11** kinds hat + prop, quantity (×N, both pets can share, warn when a post
-  needs more than owned), outfits. Ask before starting.
+- **M11 plan:** M11a kinds, M11b quantity (×N, both pets can share, warn when a post
+  needs more than owned), M11c outfits; check in after each.
+- **M11a done:** `AccessoryKind::{Hat (3 days), Prop (2 days)}`; KINDS has 5. Migration
+  0009 rebuilds `accessories` (CHECK on kind can't be altered): saves
+  accessory_fabrics / looks / accessory photos to temp tables (old rowid order), deletes
+  them, creates `accessories_new` whose `pair_id REFERENCES accessories_new` (if it
+  referenced `accessories`, dropping the old table would SET NULL every pair in the new
+  one; RENAME rewrites the self-reference), single INSERT…SELECT (FKs checked at
+  statement end), recreates `accessories_one_partner`, re-inserts children.
+  `db::tests::database_at_version(n)` helper (used by the 0006 and 0009 tests). Real
+  data copy 7→9: every row of accessories / accessory_fabrics / looks / photos
+  identical, foreign_key_check + integrity_check clean. "hat"/"prop" are NOT filler
+  words in suggest, so "National Hat Day" matches hats by name. Verified in Firefox 159.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

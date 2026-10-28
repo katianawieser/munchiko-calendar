@@ -453,7 +453,7 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
     }
     let kind = parse_choice(&KINDS, &form.text("kind"));
     if kind.is_none() {
-        errors.push("Choose bow, scarf or costume.".to_string());
+        errors.push("Choose what kind of accessory it is.".to_string());
     }
     let status = parse_choice(&STATUSES, &form.text("status"));
     if status.is_none() {

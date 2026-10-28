@@ -191,10 +191,12 @@ impl Choice {
 // The values the forms use for each enum, and how to show them. One table
 // per enum serves both directions (drawing the form and reading it back).
 
-pub const KINDS: [(AccessoryKind, &str, &str); 3] = [
+pub const KINDS: [(AccessoryKind, &str, &str); 5] = [
     (AccessoryKind::Bow, "bow", "Bow"),
     (AccessoryKind::Scarf, "scarf", "Scarf"),
     (AccessoryKind::Costume, "costume", "Costume"),
+    (AccessoryKind::Hat, "hat", "Hat"),
+    (AccessoryKind::Prop, "prop", "Prop"),
 ];
 
 pub const STATUSES: [(AccessoryStatus, &str, &str); 3] = [
@@ -369,7 +371,8 @@ mod tests {
     #[test]
     fn enum_tables_work_both_ways() {
         assert_eq!(parse_choice(&KINDS, "scarf"), Some(AccessoryKind::Scarf));
-        assert_eq!(parse_choice(&KINDS, "hat"), None);
+        assert_eq!(parse_choice(&KINDS, "hat"), Some(AccessoryKind::Hat));
+        assert_eq!(parse_choice(&KINDS, "cape"), None);
         assert_eq!(
             label_of(&STATUSES, AccessoryStatus::InProgress),
             "In progress"
@@ -378,6 +381,6 @@ mod tests {
             .iter()
             .map(|c| c.selected)
             .collect();
-        assert_eq!(selected, vec![true, false, false]);
+        assert_eq!(selected, vec![true, false, false, false, false]);
     }
 }

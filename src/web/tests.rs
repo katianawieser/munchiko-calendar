@@ -2084,3 +2084,21 @@ async fn accessories_can_be_filtered_by_their_tags_or_their_fabrics_tags() {
     let (_, html) = get(&app, "/fabrics?tag=formal").await;
     assert!(html.contains(">Black satin</a>") && !html.contains(">Orange velvet</a>"));
 }
+
+#[tokio::test]
+async fn hats_and_props_can_be_added_and_filtered() {
+    let (app, _, _) = setup(d(2026, 10, 5)).await;
+    for (kind, name) in [("hat", "Glinda+crown"), ("prop", "Bubble+wand")] {
+        let form = bow_form(name, "main_fabric=&middle_fabric=&accent_fabric=")
+            .replace("kind=bow", &format!("kind={kind}"));
+        assert_eq!(
+            post(&app, "/accessories", &form).await.status,
+            StatusCode::SEE_OTHER
+        );
+    }
+    let (_, html) = get(&app, "/accessories?kind=hat&view=table").await;
+    assert!(html.contains(">Glinda crown</a>") && !html.contains(">Bubble wand</a>"));
+    assert!(html.contains("<td>Hat</td>"));
+    let (_, html) = get(&app, "/accessories/new").await;
+    assert!(html.contains(r#"<option value="prop""#));
+}

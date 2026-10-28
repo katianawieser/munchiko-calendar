@@ -111,7 +111,7 @@ Example: Halloween (post Oct 31, default lead times):
 | **Calendar** | Month view of holidays, outings and every post's prep tasks; "to do today" box; overdue work outlined in red |
 | **Posts** | Plan a post for an event (with the same ideas shown above the choices), choose who wears what, see its prep timeline and slack, add reference photos; save **ideas** with no date yet |
 | **Events** | Upcoming / past holidays and outings; "Plan a post" from any event; **ideas** for what to wear (or which fabric to make something from, and the date to start by); add and edit your own outings (holidays are edited in `data/holidays.toml`) |
-| **Accessories** | Bows, scarves, costumes: table or photo grid, tags (plus their fabrics' tags), filter by kind, status, tag and warm/cool tone, sort by color, one-click status, fabrics by role (or "+ New fabric…" to add one right there), matching sets, photos |
+| **Accessories** | Bows, scarves, costumes, hats, props: table or photo grid, tags (plus their fabrics' tags), filter by kind, status, tag and warm/cool tone, sort by color, one-click status, fabrics by role (or "+ New fabric…" to add one right there), matching sets, photos |
 | **Fabrics** | Stash and shopping list as a table or photo grid, tags, tag and warm/cool filters, sort by color, pairings, what each fabric is used by, photos |
 
 **Post ideas** are posts with no date yet, like an outing you want to post
@@ -178,7 +178,7 @@ out by the planner itself.
 | Model | Key fields |
 |---|---|
 | **Fabric** | name, description, colors (name + optional `#rrggbb` swatch), keywords, pairings, in stock |
-| **Accessory** (bow / scarf / costume) | name, description, colors, fabrics (main/middle/accent), handmade or bought (brand), status (idea → in progress → ready), matching pair |
+| **Accessory** (bow / scarf / costume / hat / prop) | name, description, tags, colors, fabrics (main/middle/accent), handmade or bought (brand), status (idea → in progress → ready), matching pair |
 | **Event** | name, description, type, start/end date, keywords |
 | **Post plan** | title, event (optional), post date (none = an idea), series (optional), who wears what, backdrop idea |
 | **Series** | title, shared backdrop, notes; its posts share one setup and shoot |
@@ -214,7 +214,7 @@ when the app starts.
 |---|---|
 | `fabrics` | fabric stash and shopping list |
 | `fabric_pairings` | "goes well with" links, stored in both directions |
-| `accessories` | bows, scarves, costumes; `pair_id` links a matching set (both ways) |
+| `accessories` | bows, scarves, costumes, hats, props; `pair_id` links a matching set (both ways) |
 | `accessory_fabrics` | which fabrics each accessory uses, as main / middle / accent |
 | `events` | holidays, notable days, seasons, outings (optional end date); holiday rows remember which file entry and year they came from |
 | `post_plans` | a planned post or idea (needs a title or an event; no date = an idea); optionally part of a series |
@@ -270,6 +270,10 @@ Settings (all optional environment variables):
 - [x] **M10**: Organizing the stash
   - [x] **M10a**: grid view with photos; filter by warm / cool / neutral tone; sort by color
   - [x] **M10b**: accessory tags (like "batik"), used by filters and suggestions
+- [ ] **M11**: More kinds of accessory
+  - [x] **M11a**: hats and props
+  - [ ] **M11b**: how many of each you own; both pets can wear the same design
+  - [ ] **M11c**: outfits: pieces that go together (Glinda's crown, dress and wand)
 
 Ideas for later: photos in the suggestion box; a calendar nudge for upcoming
 events with no post planned yet.

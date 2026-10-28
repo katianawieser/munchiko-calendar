@@ -150,7 +150,13 @@ macro_rules! sql_text {
 }
 
 sql_text!(Pet { Mochi => "mochi", Momo => "momo" });
-sql_text!(AccessoryKind { Bow => "bow", Scarf => "scarf", Costume => "costume" });
+sql_text!(AccessoryKind {
+    Bow => "bow",
+    Scarf => "scarf",
+    Costume => "costume",
+    Hat => "hat",
+    Prop => "prop",
+});
 sql_text!(FabricRole { Main => "main", Middle => "middle", Accent => "accent" });
 sql_text!(AccessoryStatus { Idea => "idea", InProgress => "in_progress", Ready => "ready" });
 sql_text!(EventKind {
@@ -1884,9 +1890,9 @@ mod tests {
         ));
     }
 
-    #[tokio::test]
-    async fn migration_0006_keeps_posts_looks_and_photos() {
-        // A database as it was before 0006: run migrations 1-5 only.
+    /// An in-memory database as it was at schema `version`: only the
+    /// migrations up to that one have run. For testing later migrations.
+    async fn database_at_version(version: i64) -> SqlitePool {
         let options = SqliteConnectOptions::from_str("sqlite::memory:")
             .unwrap()
             .foreign_keys(true);
@@ -1898,16 +1904,97 @@ mod tests {
             .connect_with(options)
             .await
             .unwrap();
-        let up_to_5 = Migrator {
+        let up_to = Migrator {
             migrations: MIGRATOR
                 .migrations
                 .iter()
-                .filter(|m| m.version <= 5)
+                .filter(|m| m.version <= version)
                 .cloned()
                 .collect(),
             ..Migrator::DEFAULT
         };
-        up_to_5.run(&pool).await.unwrap();
+        up_to.run(&pool).await.unwrap();
+        pool
+    }
+
+    #[tokio::test]
+    async fn migration_0009_keeps_sets_fabrics_looks_and_photos() {
+        let pool = database_at_version(8).await;
+        // A matching set (pointing at each other), one bow with two fabrics in
+        // a set order, a post wearing both, and a photo of each bow.
+        sqlx::raw_sql(
+            "INSERT INTO fabrics (id, name) VALUES (1, 'Leaf print'), (2, 'Moss velvet');
+             INSERT INTO accessories (id, kind, name, source, status, tags) VALUES
+                 (1, 'bow', 'Leaf bow', 'handmade', 'ready', '[\"batik\"]'),
+                 (2, 'scarf', 'Moss scarf', 'bought', 'ready', '[]');
+             UPDATE accessories SET pair_id = 2 WHERE id = 1;
+             UPDATE accessories SET pair_id = 1 WHERE id = 2;
+             INSERT INTO accessory_fabrics (accessory_id, fabric_id, role)
+                 VALUES (1, 2, 'middle'), (1, 1, 'main');
+             INSERT INTO events (id, name, kind, start_date) VALUES (1, 'Earth Day', 'notable_day', '2027-04-22');
+             INSERT INTO post_plans (id, event_id, post_date) VALUES (7, 1, '2027-04-22');
+             INSERT INTO looks (post_plan_id, pet, accessory_id) VALUES (7, 'momo', 2), (7, 'mochi', 1);
+             INSERT INTO photos (id, accessory_id, content_type) VALUES (4, 1, 'image/jpeg'), (9, 2, 'image/png');",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let db = Repository::migrate(pool).await.unwrap();
+
+        let leaf = db.get_accessory(AccessoryId(1)).await.unwrap();
+        let moss = db.get_accessory(AccessoryId(2)).await.unwrap();
+        assert_eq!(leaf.pair_id, Some(AccessoryId(2)), "the set survives");
+        assert_eq!(moss.pair_id, Some(AccessoryId(1)));
+        assert_eq!(leaf.tags, ["batik"]);
+        let uses: Vec<(i64, FabricRole)> = leaf
+            .fabrics
+            .iter()
+            .map(|u| (u.fabric_id.0, u.role))
+            .collect();
+        assert_eq!(
+            uses,
+            [(2, FabricRole::Middle), (1, FabricRole::Main)],
+            "same order"
+        );
+        let looks: Vec<(Pet, i64)> = db
+            .get_post_plan(PostPlanId(7))
+            .await
+            .unwrap()
+            .looks
+            .iter()
+            .map(|l| (l.pet, l.accessory_id.0))
+            .collect();
+        assert_eq!(looks, [(Pet::Momo, 2), (Pet::Mochi, 1)]);
+        assert_eq!(
+            db.get_photo(PhotoId(9)).await.unwrap().owner,
+            PhotoOwner::Accessory(AccessoryId(2))
+        );
+
+        // The new kinds are allowed, and the foreign keys still protect things.
+        let mut crown = bow("Glinda crown", &[]);
+        crown.kind = AccessoryKind::Hat;
+        let crown = db.create_accessory(&crown).await.unwrap();
+        assert_eq!(
+            db.get_accessory(crown).await.unwrap().kind,
+            AccessoryKind::Hat
+        );
+        assert!(matches!(
+            db.delete_accessory(AccessoryId(1)).await,
+            Err(DbError::InUse { .. })
+        ));
+        let problems: Vec<(String,)> =
+            sqlx::query_as("SELECT \"table\" FROM pragma_foreign_key_check")
+                .fetch_all(&db.pool)
+                .await
+                .unwrap();
+        assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[tokio::test]
+    async fn migration_0006_keeps_posts_looks_and_photos() {
+        // A database as it was before 0006.
+        let pool = database_at_version(5).await;
 
         // A post with two looks (order matters) and a photo, written the old way.
         sqlx::raw_sql(

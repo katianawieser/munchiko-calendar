@@ -3,7 +3,7 @@
 //! Design notes:
 //! - IDs are "newtypes" (`FabricId(i64)`) instead of bare integers, so the
 //!   compiler stops us from passing a fabric ID where a bow ID is expected.
-//! - Bows, scarves and costumes share almost every field in the outline, so they
+//! - Bows, scarves, costumes, hats and props share almost every field, so they
 //!   are one `Accessory` type with an `AccessoryKind`. Each one is still its own
 //!   separate item, and `pair_id` links two of them into a matching set
 //!   ("bows need to be separate but have pair option").
@@ -119,6 +119,10 @@ pub enum AccessoryKind {
     Scarf,
     /// The "sometimes other elaborate get-ups".
     Costume,
+    /// Crowns, witch hats, party hats.
+    Hat,
+    /// Something the pets pose with rather than wear: a wand, a sign, a basket.
+    Prop,
 }
 
 impl AccessoryKind {
@@ -129,6 +133,9 @@ impl AccessoryKind {
             AccessoryKind::Bow => 4,
             AccessoryKind::Scarf => 3,
             AccessoryKind::Costume => 10,
+            AccessoryKind::Hat => 3,
+            // Often bought or quick to make (a cardboard sign).
+            AccessoryKind::Prop => 2,
         }
     }
 
@@ -137,6 +144,8 @@ impl AccessoryKind {
             AccessoryKind::Bow => "bow",
             AccessoryKind::Scarf => "scarf",
             AccessoryKind::Costume => "costume",
+            AccessoryKind::Hat => "hat",
+            AccessoryKind::Prop => "prop",
         }
     }
 }
@@ -170,7 +179,7 @@ pub enum AccessoryStatus {
     Ready,
 }
 
-/// A bow, scarf or costume.
+/// A bow, scarf, costume, hat or prop.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Accessory {
     pub id: AccessoryId,
