@@ -1,0 +1,7 @@
+{#- A task's "Done" button. Expects `done` (a DoneButton) and `back` (this
+    page's address, to come back to). -#}
+<form method="post" action="{{ done.action }}" class="inline done-form">
+  <input type="hidden" name="{{ done.field }}" value="{{ done.value }}">
+  <input type="hidden" name="back" value="{{ back }}">
+  <button type="submit" class="outline small">{{ done.label }}</button>
+</form>

@@ -15,6 +15,7 @@ use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Redirect, Response};
 use chrono::NaiveDate;
 
+use super::done::{self, DoneButton};
 use super::forms::{Choice, FormData, KINDS, NotADate, PETS, STATUSES, label_of};
 use super::ideas::{self, Ideas};
 use super::photos::{self, PhotoSection};
@@ -277,6 +278,8 @@ pub(super) struct TaskRow {
     pub(super) title: String,
     pub(super) status: String,
     pub(super) class: &'static str,
+    /// "✓ Made it", while the timeline isn't over.
+    pub(super) done: Option<DoneButton>,
 }
 
 /// The rows of a timeline table. Once the timeline is over (for a series,
@@ -309,6 +312,7 @@ pub(super) fn task_rows(timeline: &Timeline, today: NaiveDate) -> Vec<TaskRow> {
                 title: task.title.clone(),
                 status,
                 class,
+                done: if finished { None } else { done::for_task(task) },
             }
         })
         .collect()
@@ -371,6 +375,8 @@ struct PostPage {
     backdrop: String,
     notes: String,
     tasks: Vec<TaskRow>,
+    /// This page, for the "Done" buttons to come back to.
+    back: String,
     photos: PhotoSection,
 }
 
@@ -535,6 +541,7 @@ pub async fn show(
         backdrop,
         notes: post.plan.notes.clone(),
         tasks,
+        back: format!("/posts/{id}"),
         photos,
     })
 }

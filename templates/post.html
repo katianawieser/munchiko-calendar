@@ -93,7 +93,8 @@
     <tr class="{{ task.class }}">
       <td>{{ task.when }}</td>
       <td>{{ task.title }}</td>
-      <td><span class="badge {{ task.class }}">{{ task.status }}</span></td>
+      <td class="nowrap"><span class="badge {{ task.class }}">{{ task.status }}</span>
+        {% if let Some(done) = task.done %}{% include "done_button.html" %}{% endif %}</td>
     </tr>
     {% endfor %}
   </tbody>

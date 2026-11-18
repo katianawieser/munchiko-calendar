@@ -2450,3 +2450,61 @@ async fn turning_down_a_new_piece_and_published_posts() {
     assert!(html.contains("Published"));
     assert!(!html.contains("new piece"));
 }
+
+// ---------------------------------------------------------------------------
+// Done buttons (M12a)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn tasks_can_be_marked_done_from_the_calendar_and_the_post() {
+    // Oct 21: ordering the Ghost scarf (bought) is due; nothing else yet.
+    let (app, db, post_id) = setup(d(2026, 10, 21)).await;
+    let (_, html) = get(&app, "/").await;
+    assert!(html.contains("To do today"), "{html}");
+    assert!(html.contains("action=\"/accessories/3/status\""));
+    assert!(html.contains("✓ It arrived"));
+    assert!(html.contains("<input type=\"hidden\" name=\"back\" value=\"/\">"));
+
+    // The button marks the scarf ready and comes back to the calendar.
+    let reply = post(&app, "/accessories/3/status", "status=ready&back=/").await;
+    assert_eq!(reply.location.as_deref(), Some("/"));
+    assert_eq!(
+        db.get_accessory(AccessoryId(3)).await.unwrap().status,
+        AccessoryStatus::Ready
+    );
+    let (_, html) = get(&app, "/").await;
+    assert!(
+        !html.contains("action=\"/accessories/3/status\""),
+        "the task is gone"
+    );
+
+    // The post page: buying fabric and making bows get buttons, the
+    // backdrop and the shoot don't.
+    let page = format!("/posts/{}", post_id.0);
+    let (_, html) = get(&app, &page).await;
+    assert!(html.contains("action=\"/fabrics/1/stock\""));
+    assert!(html.contains("✓ Bought it"));
+    assert!(html.contains("✓ Made it"));
+    // Buy fabric + make two bows; the scarf is done, the rest are untracked.
+    assert_eq!(html.matches("done-form").count(), 3);
+    assert!(html.contains(&format!("name=\"back\" value=\"{page}\"")));
+
+    // "Bought it" sets, never toggles: twice still leaves it in the stash.
+    let bought = format!("in_stock=1&back={page}");
+    let reply = post(&app, "/fabrics/1/stock", &bought).await;
+    assert_eq!(reply.location.as_deref(), Some(page.as_str()));
+    post(&app, "/fabrics/1/stock", &bought).await;
+    assert!(db.get_fabric(FabricId(1)).await.unwrap().in_stock);
+
+    // The lists' own buttons still flip, and a foreign address is ignored.
+    let reply = post(&app, "/fabrics/1/stock", "back=https://evil.example").await;
+    assert_eq!(reply.location.as_deref(), Some("/fabrics"));
+    assert!(!db.get_fabric(FabricId(1)).await.unwrap().in_stock);
+    let reply = post(
+        &app,
+        "/accessories/1/status",
+        "status=ready&back=//evil.example",
+    )
+    .await;
+    assert_eq!(reply.location.as_deref(), Some("/accessories"));
+}

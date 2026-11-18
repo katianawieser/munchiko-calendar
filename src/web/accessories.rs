@@ -15,7 +15,7 @@ use super::browse::{Browse, Controls, Filter, query_string};
 use super::colors;
 use super::forms::{
     Choice, ColorRow, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, color_rows,
-    color_rows_from_form, join_list, label_of, parse_choice, read_colors, split_list,
+    color_rows_from_form, join_list, label_of, local_back, parse_choice, read_colors, split_list,
 };
 use super::outfits;
 use super::photos::{self, ColorIdea, FormWithPhotos, PhotoSection};
@@ -225,14 +225,8 @@ pub async fn set_status(
         .set_accessory_status(AccessoryId(id), status)
         .await?;
 
-    // Only ever redirect within this page, never to an address someone
-    // slipped into the form (an "open redirect").
-    let back = form.text("back");
-    let back = if back.starts_with("/accessories") {
-        back
-    } else {
-        "/accessories".into()
-    };
+    // Back to the list, the calendar or a post: wherever the button was.
+    let back = local_back(&form.text("back"), "/accessories");
     Ok(Redirect::to(&back).into_response())
 }
 

@@ -344,6 +344,16 @@ See README.md for the planning rules, data model and roadmap.
   fabric thumbnails in accessory list, M14c partner suggestions via fabric
   pairings. Deferred: naming consistency (her names follow colors + line + style +
   size, e.g. "Red & Orange Celebration Japanese Large/Small").
+- **M12a done:** `web/done.rs` (pure): `for_task(PlanTask) -> Option<DoneButton>`:
+  make → "✓ Made it", order → "✓ It arrived" (both POST /accessories/{id}/status
+  status=ready), buy fabric → "✓ Bought it" (POST /fabrics/{id}/stock `in_stock=1`:
+  sets, not toggles; without the field the list's button still flips). Partial
+  `done_button.html` (needs `done` + `back`). Shown in the calendar's to-do box (now
+  and next up; NOT in grid cells, which repeat a task per day) and on post/series
+  timeline rows until the timeline is over. `forms::local_back(back, fallback)`:
+  any app path (starts with one `/`, no `//`, no `\`), used by both routes.
+  Katiana's real data has no scheduled upcoming posts right now, so no buttons
+  show until she schedules one.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

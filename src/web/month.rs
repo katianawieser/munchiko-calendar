@@ -6,6 +6,7 @@
 //! before the 1st and ends on the Saturday on or after the last day. The days
 //! from the neighboring months are shown greyed out.
 
+use super::done::{self, DoneButton};
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 
 use crate::models::{Event, EventKind, PostPlanId, SeriesId};
@@ -235,6 +236,8 @@ pub struct AgendaItem {
     pub when: String,
     pub href: String,
     pub overdue: bool,
+    /// "✓ Made it", for tasks the app can mark done.
+    pub done: Option<DoneButton>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -259,12 +262,14 @@ pub fn agenda(today: NaiveDate, posts: &[PlannedPost<'_>]) -> Agenda {
                     when: format!("due {}", task.due.format("%b %-d")),
                     href: post.href(),
                     overdue: false,
+                    done: done::for_task(task),
                 }),
                 TaskStatus::Overdue { days_late } => agenda.now.push(AgendaItem {
                     label,
                     when: format!("{days_late}d late"),
                     href: post.href(),
                     overdue: true,
+                    done: done::for_task(task),
                 }),
                 TaskStatus::Upcoming { starts_in_days } => {
                     if next.as_ref().is_none_or(|(start, _)| task.start < *start) {
@@ -276,6 +281,8 @@ pub fn agenda(today: NaiveDate, posts: &[PlannedPost<'_>]) -> Agenda {
                             ),
                             href: post.href(),
                             overdue: false,
+                            // Finishing early is fine too.
+                            done: done::for_task(task),
                         };
                         next = Some((task.start, item));
                     }

@@ -17,6 +17,8 @@ use crate::planner::PlanError;
 struct CalendarPage {
     view: MonthView,
     agenda: Agenda,
+    /// This page, for the "Done" buttons to come back to.
+    back: String,
     /// Posts that couldn't be planned, e.g. "Halloween: accessory #4 is missing".
     problems: Vec<String>,
 }
@@ -69,9 +71,15 @@ async fn render_month(state: &AppState, year: i32, month: u32) -> Result<Html<St
     let view =
         month::month_view(year, month, today, &events, &planned).ok_or(AppError::NotFound)?;
     let agenda = month::agenda(today, &planned);
+    let back = if (year, month) == (today.year(), today.month()) {
+        "/".to_string()
+    } else {
+        format!("/calendar/{year}/{month}")
+    };
     render(CalendarPage {
         view,
         agenda,
+        back,
         problems,
     })
 }

@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 
 use askama::Template;
+use axum::Form;
 use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
@@ -16,8 +17,8 @@ use super::blockers::{self, Blockers};
 use super::browse::{Browse, Controls};
 use super::colors;
 use super::forms::{
-    Choice, ColorRow, FormData, color_rows, color_rows_from_form, join_list, read_colors,
-    split_list,
+    Choice, ColorRow, FormData, color_rows, color_rows_from_form, join_list, local_back,
+    read_colors, split_list,
 };
 use super::photos::{self, ColorIdea, FormWithPhotos, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
@@ -143,17 +144,23 @@ pub async fn list(
     Ok(response)
 }
 
-/// Flip a fabric between the stash and the shopping list.
+/// Move a fabric between the stash and the shopping list. The list's
+/// buttons flip it; a task's "Bought it" sends `in_stock=1` to set it, so
+/// clicking twice can't flip it back. `back` says where to return to.
 pub async fn toggle_stock(
     State(state): State<AppState>,
     Path(id): Path<i64>,
+    Form(pairs): Form<Vec<(String, String)>>,
 ) -> Result<Redirect, AppError> {
+    let form = FormData::new(pairs);
     let fabric = state.db.get_fabric(FabricId(id)).await?;
-    state
-        .db
-        .set_fabric_in_stock(fabric.id, !fabric.in_stock)
-        .await?;
-    Ok(Redirect::to("/fabrics"))
+    let in_stock = match form.text("in_stock").as_str() {
+        "1" => true,
+        "0" => false,
+        _ => !fabric.in_stock,
+    };
+    state.db.set_fabric_in_stock(fabric.id, in_stock).await?;
+    Ok(Redirect::to(&local_back(&form.text("back"), "/fabrics")))
 }
 
 // ---------------------------------------------------------------------------

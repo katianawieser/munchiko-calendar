@@ -223,6 +223,16 @@ pub const ROLES: [(FabricRole, &str, &str); 3] = [
     (FabricRole::Accent, "accent_fabric", "Accent fabric"),
 ];
 
+/// A form's `back` address if it's a page of this app, else `fallback`.
+/// Only ever redirect within the app, never to an address someone slipped
+/// into the form (an "open redirect"): it must start with one `/`, since
+/// `//example.com` would mean another website, and browsers treat `\` like
+/// `/` there too.
+pub fn local_back(back: &str, fallback: &str) -> String {
+    let ok = back.starts_with('/') && !back.starts_with("//") && !back.contains('\\');
+    if ok { back } else { fallback }.to_string()
+}
+
 /// Look up an enum by its form value.
 pub fn parse_choice<T: Copy>(table: &[(T, &str, &str)], value: &str) -> Option<T> {
     table
@@ -251,6 +261,19 @@ pub fn choices<T: PartialEq>(table: &[(T, &str, &str)], current: T) -> Vec<Choic
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn back_addresses_stay_in_the_app() {
+        assert_eq!(local_back("/posts/3", "/x"), "/posts/3");
+        assert_eq!(
+            local_back("/accessories?kind=bow", "/x"),
+            "/accessories?kind=bow"
+        );
+        assert_eq!(local_back("https://evil.example", "/x"), "/x");
+        assert_eq!(local_back("//evil.example", "/x"), "/x");
+        assert_eq!(local_back("/\\evil.example", "/x"), "/x");
+        assert_eq!(local_back("", "/x"), "/x");
+    }
 
     fn form(pairs: &[(&str, &str)]) -> FormData {
         FormData::new(

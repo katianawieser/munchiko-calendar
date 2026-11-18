@@ -40,6 +40,8 @@ struct SeriesPage {
     posts: Vec<MemberRow>,
     /// The shared prep timeline, once a post has a date.
     tasks: Vec<TaskRow>,
+    /// This page, for the "Done" buttons to come back to.
+    back: String,
     /// When no post has a date yet: what's still to do, and the soonest the
     /// first post could go up.
     readiness: Option<String>,
@@ -115,6 +117,7 @@ pub async fn show(
         notes: series.notes,
         posts: rows,
         tasks,
+        back: format!("/series/{id}"),
         readiness,
         problem,
         add_href: format!("/posts/new?series={id}"),

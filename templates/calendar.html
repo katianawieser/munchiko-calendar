@@ -16,6 +16,7 @@
     {% if let Some(next) = agenda.next %}
       <strong>Nothing due today.</strong>
       Next up: <a href="{{ next.href }}">{{ next.label }}</a>, {{ next.when }}.
+      {% if let Some(done) = next.done %}{% include "done_button.html" %}{% endif %}
     {% else %}
       <strong>Nothing planned.</strong> Enjoy the day off with Mochi &amp; Momo!
     {% endif %}
@@ -25,6 +26,7 @@
       {% for item in agenda.now %}
       <li class="{% if item.overdue %}overdue{% endif %}">
         <a href="{{ item.href }}">{{ item.label }}</a> ({{ item.when }})
+        {% if let Some(done) = item.done %}{% include "done_button.html" %}{% endif %}
       </li>
       {% endfor %}
     </ul>
