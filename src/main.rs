@@ -11,7 +11,7 @@ use std::path::Path;
 use chrono::{Datelike, Local};
 use munchiko_calendar::db::Repository;
 use munchiko_calendar::photos::PhotoStore;
-use munchiko_calendar::photos::heic::HeicConverter;
+use munchiko_calendar::photos::convert::PhotoConverter;
 use munchiko_calendar::web::{AppState, router};
 use munchiko_calendar::{demo, holidays};
 
@@ -68,8 +68,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
 
     let photos_dir = std::env::var("PHOTOS_DIR").unwrap_or_else(|_| DEFAULT_PHOTOS_DIR.into());
     let mut state = AppState::new(db, PhotoStore::new(photos_dir));
-    state.heic = HeicConverter::system();
-    println!("HEIC photos: {}", state.heic.describe());
+    state.converter = PhotoConverter::system();
+    println!("HEIC and AVIF photos: {}", state.converter.describe());
 
     axum::serve(listener, router(state))
         .with_graceful_shutdown(async {

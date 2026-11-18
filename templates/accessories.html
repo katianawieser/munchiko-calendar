@@ -11,7 +11,7 @@
 {% if rows.is_empty() %}
 <p class="muted">No accessories match.</p>
 {% else if grid %}
-<div class="card-grid">
+<div class="card-grid size-{{ card_size }}">
   {% for row in rows %}
   <article class="item-card">
     <a href="{{ row.href }}" class="card-photo" tabindex="-1" aria-hidden="true">{% if let Some(src) = row.thumb %}<img src="{{ src }}" alt="" loading="lazy">{% else %}<span>No photo</span>{% endif %}</a>
@@ -19,7 +19,7 @@
       <a href="{{ row.href }}" class="card-name">{{ row.name }}</a>{% if row.quantity > 1 %} <span class="muted" title="{{ row.quantity }} of them">×{{ row.quantity }}</span>{% endif %}
       <span class="card-meta">{{ row.kind }}{% if !row.partner.is_empty() %} · set with {{ row.partner }}{% endif %}</span>
       <div class="card-colors">{% for color in row.colors %}{% include "color_chip.html" %} {% endfor %}</div>
-      {% if !row.tags.is_empty() %}<span class="card-meta">{{ row.tags }}</span>{% endif %}
+      {% if !row.tags.is_empty() %}<span class="card-meta card-tags">{{ row.tags }}</span>{% endif %}
       <div class="card-actions nowrap">
         <span class="badge {{ row.status_class }}">{{ row.status }}</span>
         {% if let Some(step) = row.next_step %}

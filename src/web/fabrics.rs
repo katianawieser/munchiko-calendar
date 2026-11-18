@@ -54,6 +54,8 @@ struct Section {
 struct FabricsPage {
     sections: Vec<Section>,
     grid: bool,
+    /// "small", "medium" or "large" (the grid's CSS class).
+    card_size: &'static str,
     controls: Controls,
     /// Shown when a filter is on, since some fabrics may be hidden.
     filtered: bool,
@@ -129,6 +131,7 @@ pub async fn list(
     let mut response = render(FabricsPage {
         sections,
         grid: browse.is_grid(),
+        card_size: browse.size_name(),
         controls: browse.controls(
             "/fabrics",
             vec![],
@@ -138,8 +141,8 @@ pub async fn list(
         filtered: browse.tone.is_some(),
     })?
     .into_response();
-    if let Some((name, value)) = browse.cookie() {
-        response.headers_mut().insert(name, value);
+    for (name, value) in browse.cookies() {
+        response.headers_mut().append(name, value);
     }
     Ok(response)
 }

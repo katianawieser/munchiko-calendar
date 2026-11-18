@@ -280,8 +280,9 @@ output (the existing tests guarded the refactor).
 
 - **Single user, localhost only.** Sharing it would need authentication and
   per-user data; the repository layer is the natural seam for that.
-- **HEIC conversion needs macOS**; AVIF isn't accepted (decoding it needs a C
-  library, the same trade-off as HEIC).
+- **HEIC and AVIF conversion needs macOS**: neither has a dependable pure-Rust
+  decoder, so both are handed to macOS's `sips` tool and stored as JPEG. On
+  other systems the upload page asks for a JPEG instead.
 - **Color names are approximate** (a salmon-pink can come out as "peach"), and
   a photo's background can show up as a suggested color. Both are one click
   to ignore or rename.

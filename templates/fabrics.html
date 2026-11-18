@@ -14,14 +14,14 @@
 {% if section.rows.is_empty() %}
 <p class="muted">Nothing here.</p>
 {% else if grid %}
-<div class="card-grid">
+<div class="card-grid size-{{ card_size }}">
   {% for row in section.rows %}
   <article class="item-card">
     <a href="{{ row.href }}" class="card-photo" tabindex="-1" aria-hidden="true">{% if let Some(src) = row.thumb %}<img src="{{ src }}" alt="" loading="lazy">{% else %}<span>No photo</span>{% endif %}</a>
     <div class="card-body">
       <a href="{{ row.href }}" class="card-name">{{ row.name }}</a>
       <div class="card-colors">{% for color in row.colors %}{% include "color_chip.html" %} {% endfor %}</div>
-      {% if !row.keywords.is_empty() %}<span class="card-meta">{{ row.keywords }}</span>{% endif %}
+      {% if !row.keywords.is_empty() %}<span class="card-meta card-tags">{{ row.keywords }}</span>{% endif %}
       <form method="post" action="{{ row.stock_action }}" class="inline">
         <button type="submit" class="outline secondary small">{{ section.move_label }}</button>
       </form>

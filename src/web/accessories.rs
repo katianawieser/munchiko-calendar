@@ -88,6 +88,8 @@ struct AccessoryRow {
 struct AccessoriesPage {
     rows: Vec<AccessoryRow>,
     grid: bool,
+    /// "small", "medium" or "large" (the grid's CSS class).
+    card_size: &'static str,
     controls: Controls,
     /// This page's address including filters, so status buttons come back here.
     back: String,
@@ -202,12 +204,13 @@ pub async fn list(
     let mut response = render(AccessoriesPage {
         rows,
         grid: browse.is_grid(),
+        card_size: browse.size_name(),
         controls,
         back,
     })?
     .into_response();
-    if let Some((name, value)) = browse.cookie() {
-        response.headers_mut().insert(name, value);
+    for (name, value) in browse.cookies() {
+        response.headers_mut().append(name, value);
     }
     Ok(response)
 }

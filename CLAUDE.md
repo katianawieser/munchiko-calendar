@@ -119,7 +119,8 @@ See README.md for the planning rules, data model and roadmap.
   `spawn_blocking`, saves `<id>.thumb.jpg` beside the photo. `/photos/{id}/thumb` makes
   missing thumbnails on first view (photos from M6b) and keeps them; falls back to the
   original if it can't. Lists and galleries use thumbnails; click opens the original.
-  AVIF not accepted (decoding needs a C library).
+  AVIF not accepted (decoding needs a C library). [M12c: AVIF now via sips too; heic.rs
+  renamed convert.rs, HeicConverter → PhotoConverter, state.heic → state.converter.]
 - **M6d done (M6 complete):** `src/palette.rs` (pure): pixels → 4,096 buckets (array,
   4 bits/channel) → merge biggest-first by CIE Lab ΔE76 < 15 (Lab cached per group) →
   keep ≥4% share, ≤6, one per name. Deterministic (no k-means). `NAMES` ≈46 sewing
@@ -362,6 +363,19 @@ See README.md for the planning rules, data model and roadmap.
   name is reused unchanged (stock + colors untouched). Note: new accessories start
   with "colors from fabrics" on, so their own rows are often empty → nothing copied.
   Show/hide verified in headless Chrome (Firefox update still staged).
+- **M12c done (M12 complete):** AVIF: `Foreign::Avif` (brands avif/avis; generic
+  mif1/msf1 decided by the ftyp box's compatible brands, `compatible_brands` stops at
+  the box size), converted to JPEG by sips like HEIC; `photos/convert.rs`
+  (`PhotoConverter`, `to_jpeg(format, bytes)`, temp file extension per format);
+  `NotAPhoto::{NoConverter, ConversionFailed}(Foreign)`, `message()` → String; real
+  sips AVIF round-trip test. Card size: `browse::CardSize` S/M/L (`?size=`, cookie
+  `card_size`, default medium), `Browse::cookies()` (Vec; pages `append` Set-Cookie,
+  since view + size can both be set), `size_links` only in grid, grid class
+  `size-{small,medium,large}`; small cards hide `.card-tags` and show colors as dots
+  (`color_chip.html` now wraps the name in `.chip-name`, title = name). Back to top:
+  `<a href="#top" class="back-to-top hidden">` in base.html, `static/page.js` shows it
+  after one screen of scrolling (starts hidden so it doesn't fade out on every
+  load; without JS it never shows). Checked in headless Chrome.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

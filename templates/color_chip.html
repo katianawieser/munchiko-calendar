@@ -1,2 +1,3 @@
-{#- One color in a list: a dot of the exact shade (if picked), then its name. -#}
-<span class="chip">{% if let Some(hex) = color.hex %}<span class="swatch" style="background: {{ hex }}" title="{{ hex }}"></span>{% endif %}{{ color.name }}</span>
+{#- One color in a list: a dot of the exact shade (if picked), then its name.
+    Small grid cards hide the name and keep the dot (the name is the tooltip). -#}
+<span class="chip" title="{{ color.name }}">{% if let Some(hex) = color.hex %}<span class="swatch" style="background: {{ hex }}"></span>{% endif %}<span class="chip-name">{{ color.name }}</span></span>

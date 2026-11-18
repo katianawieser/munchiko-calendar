@@ -44,7 +44,7 @@ use chrono::{Local, NaiveDate};
 use crate::db::{DbError, Repository};
 use crate::models::{Accessory, Event, EventId, PostPlan, Series, SeriesId};
 use crate::photos::PhotoStore;
-use crate::photos::heic::HeicConverter;
+use crate::photos::convert::PhotoConverter;
 use crate::planner::{
     Inventory, LeadTimes, PlanError, Readiness, SeriesPost, Timeline, build_series_timeline,
     build_timeline, combined_plan, readiness,
@@ -59,7 +59,7 @@ pub struct AppState {
     pub photos: PhotoStore,
     /// How HEIC uploads are converted. `new` starts with none; `main` picks
     /// the system's (so tests behave the same on every computer).
-    pub heic: HeicConverter,
+    pub converter: PhotoConverter,
     pub lead_times: LeadTimes,
     /// Pretend today is this date. Tests use it so their output doesn't
     /// depend on when they run; the real app leaves it `None`.
@@ -71,7 +71,7 @@ impl AppState {
         Self {
             db,
             photos,
-            heic: HeicConverter::Unavailable,
+            converter: PhotoConverter::Unavailable,
             lead_times: LeadTimes::default(),
             today_override: None,
         }
@@ -172,6 +172,7 @@ pub fn router(state: AppState) -> Router {
         .route("/static/colors.js", get(colors_js))
         .route("/static/photos.js", get(photos_js))
         .route("/static/outfits.js", get(outfits_js))
+        .route("/static/page.js", get(page_js))
         .fallback(not_found)
         .layer(middleware::from_fn(reject_cross_site))
         .with_state(state)
@@ -348,6 +349,7 @@ const STYLE_CSS: &str = include_str!("../../static/style.css");
 const COLORS_JS: &str = include_str!("../../static/colors.js");
 const PHOTOS_JS: &str = include_str!("../../static/photos.js");
 const OUTFITS_JS: &str = include_str!("../../static/outfits.js");
+const PAGE_JS: &str = include_str!("../../static/page.js");
 
 async fn pico_css() -> impl IntoResponse {
     (
@@ -368,6 +370,14 @@ async fn photos_js() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
         PHOTOS_JS,
+    )
+}
+
+/// Small things for every page (the back-to-top button).
+async fn page_js() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        PAGE_JS,
     )
 }
 

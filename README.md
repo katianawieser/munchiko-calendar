@@ -297,7 +297,7 @@ src/
   photos/     uploaded photos + tests
     mod.rs      recognises files by their first bytes, saves them on disk
     process.rs  thumbnails and BMP/TIFF → PNG (the `image` crate, pure Rust)
-    heic.rs     HEIC → JPEG with macOS's `sips` tool
+    convert.rs  HEIC and AVIF → JPEG with macOS's `sips` tool
   db.rs       SQLite repository: saves and loads the models + its tests
   demo.rs     the example Halloween post
   web/        the Axum web app

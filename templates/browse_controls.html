@@ -11,4 +11,9 @@
   <nav class="view-switch" aria-label="View">
     {% for link in controls.view_links %}<a href="{{ link.href }}" {% if link.current %}aria-current="page"{% endif %}>{{ link.label }}</a>{% endfor %}
   </nav>
+  {% if !controls.size_links.is_empty() %}
+  <nav class="view-switch" aria-label="Card size">
+    {% for link in controls.size_links %}<a href="{{ link.href }}" {% if link.current %}aria-current="page"{% endif %} title="{% if link.label == "S" %}Small{% else if link.label == "M" %}Medium{% else %}Large{% endif %} cards">{{ link.label }}</a>{% endfor %}
+  </nav>
+  {% endif %}
 </div>

@@ -16,7 +16,7 @@ use std::sync::LazyLock;
 
 use image::ImageFormat;
 
-use crate::photos::heic::HeicConverter;
+use crate::photos::convert::PhotoConverter;
 use crate::photos::process::{self, tests::sample};
 use crate::photos::{ImageType, PhotoStore};
 use crate::{demo, holidays};
@@ -167,6 +167,7 @@ async fn static_files_are_served_with_their_types() {
         ("/static/style.css", "text/css; charset=utf-8"),
         ("/static/colors.js", "text/javascript; charset=utf-8"),
         ("/static/outfits.js", "text/javascript; charset=utf-8"),
+        ("/static/page.js", "text/javascript; charset=utf-8"),
         ("/static/photos.js", "text/javascript; charset=utf-8"),
     ] {
         let response = app
@@ -1211,11 +1212,11 @@ async fn photos_from_before_thumbnails_get_one_when_first_shown() {
 
 #[tokio::test]
 async fn heic_is_converted_to_jpeg_where_sips_exists() {
-    let converter = HeicConverter::system();
-    let HeicConverter::Sips(sips) = &converter else {
+    let converter = PhotoConverter::system();
+    let PhotoConverter::Sips(sips) = &converter else {
         return; // not a Mac: covered by the "can't convert HEIC" test
     };
-    let heic = crate::photos::heic::tests::sample_heic(sips).await;
+    let heic = crate::photos::convert::tests::sample_heic(sips).await;
 
     let dir = tempfile::tempdir().unwrap();
     let db = Repository::in_memory().await.unwrap();
@@ -1231,7 +1232,7 @@ async fn heic_is_converted_to_jpeg_where_sips_exists() {
         .await
         .unwrap();
     let mut state = AppState::new(db.clone(), PhotoStore::new(dir.path()));
-    state.heic = converter.clone();
+    state.converter = converter.clone();
     let app = router(state);
 
     let reply = upload(
@@ -2535,4 +2536,56 @@ async fn tasks_can_be_marked_done_from_the_calendar_and_the_post() {
     )
     .await;
     assert_eq!(reply.location.as_deref(), Some("/accessories"));
+}
+
+// ---------------------------------------------------------------------------
+// Small helpers (M12c)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn grid_card_size_is_chosen_and_remembered() {
+    let (app, _, _) = setup(d(2026, 10, 5)).await;
+
+    // The table has no size links; the grid has S / M / L, medium by default.
+    let (_, html) = get(&app, "/accessories").await;
+    assert!(!html.contains("aria-label=\"Card size\""));
+    let (_, html) = get(&app, "/accessories?view=grid&tone=warm").await;
+    assert!(html.contains("<div class=\"card-grid size-medium\">"));
+    assert!(
+        html.contains("href=\"/accessories?tone=warm&#38;view=grid&#38;size=large\""),
+        "{html}"
+    );
+
+    // Choosing a size sets its own cookie; the view cookie is set too.
+    let request = Request::get("/accessories?view=grid&size=large")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let cookies: Vec<&str> = response
+        .headers()
+        .get_all(header::SET_COOKIE)
+        .iter()
+        .map(|v| v.to_str().unwrap())
+        .collect();
+    assert_eq!(cookies.len(), 2, "{cookies:?}");
+    assert!(cookies.iter().any(|c| c.starts_with("card_size=large;")));
+
+    // The cookie carries the size to the fabrics grid.
+    let request = Request::get("/fabrics?view=grid")
+        .header(header::COOKIE, "card_size=large")
+        .body(Body::empty())
+        .unwrap();
+    let response = app.clone().oneshot(request).await.unwrap();
+    let html = String::from_utf8(
+        to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap()
+            .to_vec(),
+    )
+    .unwrap();
+    assert!(html.contains("card-grid size-large"));
+    assert!(
+        html.contains("class=\"back-to-top hidden\""),
+        "shown by page.js once scrolled"
+    );
 }

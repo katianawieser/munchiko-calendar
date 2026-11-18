@@ -306,9 +306,21 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
   gap: 1rem;
   margin-bottom: 2rem;
 }
+/* S / M / L card sizes (medium is the default above). */
+.card-grid.size-small { grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: 0.6rem; }
+.card-grid.size-small .card-body { font-size: 0.8rem; }
+/* Small cards skip the tag line, so a row of them stays short. */
+.card-grid.size-small .card-tags { display: none; }
+/* ...and show colors as dots only (a color with no picked shade keeps its name). */
+.card-grid.size-small .chip:has(.swatch) .chip-name { display: none; }
+.card-grid.size-small .chip:has(.swatch) { padding: 0.15rem; }
+.card-grid.size-small .chip:has(.swatch) .swatch { margin: 0; }
+.card-grid.size-large { grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); }
 @media (max-width: 30rem) {
   /* Two narrower cards side by side on a phone. */
   .card-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+  .card-grid.size-small { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .card-grid.size-large { grid-template-columns: minmax(0, 1fr); }
 }
 .item-card { margin: 0; padding: 0; overflow: hidden; display: flex; flex-direction: column; }
 .card-photo {
@@ -338,3 +350,20 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
 .outfit-offer { margin: 0.75rem 0 0; }
 .outfit-offer p { margin-bottom: 0.4rem; }
 .outfit-offer button { width: auto; margin: 0 0.4rem 0 0; }
+
+/* "↑ Top": fixed in the corner; page.js hides it near the top of the page. */
+.back-to-top {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 2rem;
+  background: var(--pico-primary-background);
+  color: var(--pico-primary-inverse);
+  font-size: 0.85rem;
+  text-decoration: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+  z-index: 10;
+  transition: opacity 0.2s;
+}
+.back-to-top.hidden { opacity: 0; pointer-events: none; }

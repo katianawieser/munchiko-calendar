@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header class="container">
+  <header class="container" id="top">
     <nav>
       <ul><li><a href="/" class="brand">🐶🐱🎀 Munchiko Calendar</a></li></ul>
       <ul>
@@ -24,5 +24,7 @@
   <main class="container">
     {% block content %}{% endblock %}
   </main>
+  <a href="#top" class="back-to-top hidden" aria-label="Back to top">↑ Top</a>
+  <script src="/static/page.js" defer></script>
 </body>
 </html>

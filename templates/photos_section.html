@@ -19,10 +19,10 @@
   {% endif %}
   {% if let Some(action) = photos.upload_action %}
   <form method="post" action="{{ action }}" enctype="multipart/form-data" class="upload auto-upload">
-    <input type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif,image/bmp,image/tiff" multiple required aria-label="Photos to add">
+    <input type="file" name="photo" accept="image/jpeg,image/png,image/webp,image/gif,image/heic,image/heif,.heic,.heif,image/avif,.avif,image/bmp,image/tiff" multiple required aria-label="Photos to add">
     <button type="submit" class="outline">Add photos</button>
   </form>
-  <small class="muted">JPEG, PNG, WebP, GIF, HEIC, BMP or TIFF, up to 15 MB each. Click a photo to see it full size.</small>
+  <small class="muted">JPEG, PNG, WebP, GIF, HEIC, AVIF, BMP or TIFF, up to 15 MB each. Click a photo to see it full size.</small>
   <script src="/static/photos.js" defer></script>
   {% endif %}
 </section>

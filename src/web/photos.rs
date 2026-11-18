@@ -380,7 +380,10 @@ pub struct Prepared {
 async fn prepare(state: &AppState, upload: Bytes) -> Result<Prepared, NotAPhoto> {
     let (image_type, bytes) = match photos::detect(&upload)? {
         Upload::Ready(image_type) => (image_type, upload.to_vec()),
-        Upload::Convert(Foreign::Heic) => (ImageType::Jpeg, state.heic.to_jpeg(&upload).await?),
+        Upload::Convert(format @ (Foreign::Heic | Foreign::Avif)) => (
+            ImageType::Jpeg,
+            state.converter.to_jpeg(format, &upload).await?,
+        ),
         Upload::Convert(Foreign::Bmp | Foreign::Tiff) => (
             ImageType::Png,
             on_cpu(move || process::to_png(&upload)).await?,

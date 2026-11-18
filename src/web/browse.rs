@@ -19,6 +19,38 @@ use crate::suggest::singular;
 
 /// The cookie that remembers table or grid.
 const VIEW_COOKIE: &str = "list_view";
+/// The cookie that remembers the grid's card size.
+const SIZE_COOKIE: &str = "card_size";
+
+/// How big the grid's cards (and their photos) are.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CardSize {
+    Small,
+    Medium,
+    Large,
+}
+
+const SIZES: [(CardSize, &str, &str); 3] = [
+    (CardSize::Small, "small", "S"),
+    (CardSize::Medium, "medium", "M"),
+    (CardSize::Large, "large", "L"),
+];
+
+/// The value of cookie `name` in the request, if it was sent.
+fn cookie_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers
+        .get_all(COOKIE)
+        .iter()
+        .filter_map(|value| value.to_str().ok())
+        .flat_map(|cookies| cookies.split(';'))
+        .find_map(|cookie| cookie.trim().strip_prefix(name)?.strip_prefix('='))
+}
+
+/// A year-long cookie; `SameSite=Lax` so other sites can't set it.
+fn remember(name: &str, value: &str) -> Option<(axum::http::HeaderName, HeaderValue)> {
+    let cookie = format!("{name}={value}; Path=/; Max-Age=31536000; SameSite=Lax");
+    Some((SET_COOKIE, HeaderValue::from_str(&cookie).ok()?))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -103,21 +135,23 @@ pub struct Browse {
     pub tag: Option<String>,
     pub tone: Option<ItemTone>,
     pub by_color: bool,
+    pub size: CardSize,
     /// Set when the address chose a view, so the cookie gets updated.
     view_chosen: bool,
+    /// Likewise for the card size.
+    size_chosen: bool,
 }
 
 impl Browse {
     pub fn read(query: &HashMap<String, String>, headers: &HeaderMap) -> Self {
         let chosen = query.get("view").and_then(|v| parse_choice(&VIEWS, v));
-        let remembered = headers
-            .get_all(COOKIE)
-            .iter()
-            .filter_map(|value| value.to_str().ok())
-            .flat_map(|cookies| cookies.split(';'))
-            .find_map(|cookie| cookie.trim().strip_prefix(VIEW_COOKIE)?.strip_prefix('='))
-            .and_then(|v| parse_choice(&VIEWS, v));
+        let remembered = cookie_value(headers, VIEW_COOKIE).and_then(|v| parse_choice(&VIEWS, v));
+        let size_chosen = query.get("size").and_then(|v| parse_choice(&SIZES, v));
+        let size_remembered =
+            cookie_value(headers, SIZE_COOKIE).and_then(|v| parse_choice(&SIZES, v));
         Self {
+            size: size_chosen.or(size_remembered).unwrap_or(CardSize::Medium),
+            size_chosen: size_chosen.is_some(),
             view: chosen.or(remembered).unwrap_or(View::Table),
             tag: query
                 .get("tag")
@@ -131,6 +165,11 @@ impl Browse {
 
     pub fn is_grid(&self) -> bool {
         self.view == View::Grid
+    }
+
+    /// "small", "medium" or "large", for the grid's CSS class.
+    pub fn size_name(&self) -> &'static str {
+        SIZES.iter().find(|(s, _, _)| *s == self.size).unwrap().1
     }
 
     /// Does an item with these colors and tags pass the filters? Tags match
@@ -236,23 +275,46 @@ impl Browse {
                 }
             })
             .collect();
+        // S / M / L, only in the grid: the same filters, in the grid.
+        let size_links = if self.is_grid() {
+            SIZES
+                .iter()
+                .map(|(size, value, label)| {
+                    let mut all = kept.clone();
+                    all.push("view=grid".to_string());
+                    all.push(format!("size={value}"));
+                    ViewLink {
+                        href: format!("{path}?{}", all.join("&")),
+                        label,
+                        current: *size == self.size,
+                    }
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         Controls {
             path: path.to_string(),
             filters,
             view: VIEWS.iter().find(|(v, _, _)| *v == self.view).unwrap().1,
             view_links,
+            size_links,
         }
     }
 
-    /// A `Set-Cookie` header remembering the view, when the address chose
-    /// one. Lasts a year; `SameSite=Lax` so other sites can't set it.
-    pub fn cookie(&self) -> Option<(axum::http::HeaderName, HeaderValue)> {
-        if !self.view_chosen {
-            return None;
-        }
-        let value = VIEWS.iter().find(|(v, _, _)| *v == self.view).unwrap().1;
-        let cookie = format!("{VIEW_COOKIE}={value}; Path=/; Max-Age=31536000; SameSite=Lax");
-        Some((SET_COOKIE, HeaderValue::from_str(&cookie).ok()?))
+    /// `Set-Cookie` headers remembering the view and the card size, for
+    /// whichever the address chose. Add them with `append`: there can be two.
+    pub fn cookies(&self) -> Vec<(axum::http::HeaderName, HeaderValue)> {
+        let view = VIEWS.iter().find(|(v, _, _)| *v == self.view).unwrap().1;
+        [
+            self.view_chosen.then(|| remember(VIEW_COOKIE, view)),
+            self.size_chosen
+                .then(|| remember(SIZE_COOKIE, self.size_name())),
+        ]
+        .into_iter()
+        .flatten()
+        .flatten()
+        .collect()
     }
 }
 
@@ -272,6 +334,8 @@ pub struct Controls {
     /// The current view, kept when the filters are submitted.
     pub view: &'static str,
     pub view_links: Vec<ViewLink>,
+    /// S / M / L card sizes; empty in the table view.
+    pub size_links: Vec<ViewLink>,
 }
 
 pub struct ViewLink {
@@ -398,17 +462,19 @@ mod tests {
         let default = Browse::read(&query(&[]), &HeaderMap::new());
         assert_eq!(default.view, View::Table);
         assert!(
-            default.cookie().is_none(),
+            default.cookies().is_empty(),
             "nothing chosen, nothing to remember"
         );
 
         let remembered = Browse::read(&query(&[]), &cookie);
         assert!(remembered.is_grid());
-        assert!(remembered.cookie().is_none());
+        assert!(remembered.cookies().is_empty());
 
         let chosen = Browse::read(&query(&[("view", "table"), ("tone", "cool")]), &cookie);
         assert_eq!(chosen.view, View::Table, "the address wins over the cookie");
-        let (_, value) = chosen.cookie().unwrap();
+        let [(_, value)] = &chosen.cookies()[..] else {
+            panic!("one cookie")
+        };
         assert!(value.to_str().unwrap().starts_with("list_view=table;"));
         assert_eq!(chosen.params(), ["tone=cool"]);
     }

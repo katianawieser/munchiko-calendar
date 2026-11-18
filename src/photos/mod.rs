@@ -15,7 +15,7 @@
 //! - Only the record of a photo is in the database ([`crate::models::Photo`]);
 //!   this module never touches the database, and the database never touches files.
 
-pub mod heic;
+pub mod convert;
 pub mod process;
 
 use std::io;
@@ -44,8 +44,24 @@ pub enum Foreign {
     Bmp,
     /// Scanner and camera files; Safari only. Converted to PNG.
     Tiff,
-    /// iPhone's default; Safari only. Converted to JPEG (see [`heic`]).
+    /// iPhone's default; Safari only. Converted to JPEG (see [`convert`]).
     Heic,
+    /// A newer format some websites and phones save in. Browsers show it,
+    /// but decoding it in Rust needs a C library, so (like HEIC) it's
+    /// converted to JPEG for thumbnails and color ideas (see [`convert`]).
+    Avif,
+}
+
+impl Foreign {
+    /// Its name in messages.
+    pub fn name(self) -> &'static str {
+        match self {
+            Foreign::Bmp => "BMP",
+            Foreign::Tiff => "TIFF",
+            Foreign::Heic => "HEIC",
+            Foreign::Avif => "AVIF",
+        }
+    }
 }
 
 /// What an uploaded file turned out to be.
@@ -64,33 +80,51 @@ pub enum NotAPhoto {
     Unknown,
     /// Starts like an image but can't be decoded (damaged, or not really one).
     Unreadable,
-    /// HEIC, and this computer has no converter.
-    HeicUnsupported,
-    /// HEIC, but the converter failed.
-    ConversionFailed,
+    /// HEIC or AVIF, and this computer has no converter.
+    NoConverter(Foreign),
+    /// HEIC or AVIF, but the converter failed.
+    ConversionFailed(Foreign),
 }
 
 impl NotAPhoto {
-    pub fn message(self) -> &'static str {
+    pub fn message(self) -> String {
         match self {
-            NotAPhoto::Unknown => {
-                "That file isn't a photo the app can use. \
-                 It takes JPEG, PNG, WebP, GIF, HEIC, BMP and TIFF."
-            }
+            NotAPhoto::Unknown => "That file isn't a photo the app can use. \
+                 It takes JPEG, PNG, WebP, GIF, HEIC, AVIF, BMP and TIFF."
+                .to_string(),
             NotAPhoto::Unreadable => {
                 "That file looks like an image but couldn't be read. It may be damaged; \
                  try exporting it again."
+                    .to_string()
             }
-            NotAPhoto::HeicUnsupported => {
+            NotAPhoto::NoConverter(Foreign::Heic) => {
                 "That's a HEIC photo (the iPhone default). This computer can't convert HEIC, \
                  so export it as JPEG first (in Photos: File → Export), then upload that."
+                    .to_string()
             }
-            NotAPhoto::ConversionFailed => {
-                "That HEIC photo couldn't be converted. Export it as JPEG first \
-                 (in Photos: File → Export), then upload that."
-            }
+            NotAPhoto::NoConverter(format) => format!(
+                "That's an {} photo, and this computer can't convert it. \
+                 Save it as JPEG or PNG first, then upload that.",
+                format.name()
+            ),
+            NotAPhoto::ConversionFailed(format) => format!(
+                "That {} photo couldn't be converted. Save or export it as JPEG first, \
+                 then upload that.",
+                format.name()
+            ),
         }
     }
+}
+
+/// The "compatible brands" of an ISO media file: four-letter codes after the
+/// main brand and a version number, up to the end of the "ftyp" box (whose
+/// size is the first 4 bytes, big-endian).
+fn compatible_brands(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let size = bytes
+        .get(0..4)
+        .map_or(0, |b| u32::from_be_bytes([b[0], b[1], b[2], b[3]]) as usize);
+    let end = size.min(bytes.len());
+    bytes.get(16..end).unwrap_or(&[]).chunks_exact(4)
 }
 
 /// Recognise an upload from its first bytes.
@@ -112,9 +146,19 @@ pub fn detect(bytes: &[u8]) -> Result<Upload, NotAPhoto> {
     } else if bytes.starts_with(b"II*\0") || bytes.starts_with(b"MM\0*") {
         // Little-endian ("Intel") or big-endian ("Motorola") TIFF.
         Upload::Convert(Foreign::Tiff)
+    } else if matches!(iso_brand, Some(b"avif" | b"avis")) {
+        Upload::Convert(Foreign::Avif)
+    } else if matches!(iso_brand, Some(b"mif1" | b"msf1")) {
+        // A general "image file" brand used by both HEIC and AVIF: the list
+        // of compatible brands that follows says which.
+        if compatible_brands(bytes).any(|b| b == b"avif" || b == b"avis") {
+            Upload::Convert(Foreign::Avif)
+        } else {
+            Upload::Convert(Foreign::Heic)
+        }
     } else if matches!(
         iso_brand,
-        Some(b"heic" | b"heix" | b"hevc" | b"heim" | b"heis" | b"mif1" | b"msf1")
+        Some(b"heic" | b"heix" | b"hevc" | b"heim" | b"heis")
     ) {
         Upload::Convert(Foreign::Heic)
     } else {
@@ -234,6 +278,24 @@ mod tests {
         );
         assert_eq!(
             detect(b"\0\0\0\x18ftypmif1\0\0\0\0"),
+            convert(Foreign::Heic)
+        );
+        assert_eq!(
+            detect(b"\0\0\0\x18ftypavif\0\0\0\0"),
+            convert(Foreign::Avif)
+        );
+        // "mif1" is shared: the compatible brands decide.
+        assert_eq!(
+            detect(b"\0\0\0\x20ftypmif1\0\0\0\0mif1avifmiafMA1B"),
+            convert(Foreign::Avif)
+        );
+        assert_eq!(
+            detect(b"\0\0\0\x18ftypmif1\0\0\0\0mif1heic"),
+            convert(Foreign::Heic)
+        );
+        // An "avif" after the end of the ftyp box doesn't count.
+        assert_eq!(
+            detect(b"\0\0\0\x14ftypmif1\0\0\0\0heicavif"),
             convert(Foreign::Heic)
         );
         assert_eq!(detect(b"II*\0rest"), convert(Foreign::Tiff));
