@@ -35,15 +35,20 @@
     <legend>Fabrics</legend>
     <div class="grid">
       {% for role in fabric_selects %}
-      <label>{{ role.label }}
-        <select name="{{ role.field }}" class="fabric-select">
-          {% for c in role.choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
-        </select>
-        <input name="{{ role.new_field }}" value="{{ role.new_name }}" class="new-fabric-name" placeholder="Name for &ldquo;+ New fabric…&rdquo;" aria-label="{{ role.label }}: new fabric's name">
-      </label>
+      <div class="fabric-role">
+        <label>{{ role.label }}
+          <select name="{{ role.field }}" class="fabric-select">
+            {% for c in role.choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
+          </select>
+        </label>
+        <div class="new-fabric">
+          <input name="{{ role.new_field }}" value="{{ role.new_name }}" class="new-fabric-name" placeholder="Name for &ldquo;+ New fabric…&rdquo;" aria-label="{{ role.label }}: new fabric's name">
+          <label class="inline-check"><input type="checkbox" name="{{ role.buy_field }}" {% if role.buy %}checked{% endif %}> Need to buy it</label>
+        </div>
+      </div>
       {% endfor %}
     </div>
-    <p><small class="muted">Fabric not in the app yet? Choose &ldquo;+ New fabric…&rdquo; and type its name: it's created when you save, on the Shopping list (&ldquo;Bought it&rdquo; on the Fabrics page moves it to the stash). You can add its photo and colors there later.</small></p>
+    <p><small class="muted">Fabric not in the app yet? Choose &ldquo;+ New fabric…&rdquo; and type its name: it's created when you save, with this accessory's colors, in your stash (or on the Shopping list if you tick &ldquo;Need to buy it&rdquo;). You can add its photo and fix its colors on the Fabrics page later. A name you already have uses that fabric as it is.</small></p>
     <label>
       <input type="checkbox" name="colors_from_fabrics" role="switch" {% if colors_from_fabrics %}checked{% endif %}>
       Use colors from these fabrics

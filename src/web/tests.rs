@@ -1830,8 +1830,8 @@ async fn a_new_fabric_can_be_made_from_the_accessory_form() {
     assert_eq!(fabrics.len(), before + 1);
     let gingham = fabrics.iter().find(|f| f.name == "Red gingham").unwrap();
     assert!(
-        !gingham.in_stock,
-        "an old bow's fabric: on the shopping list"
+        gingham.in_stock,
+        "\"Need to buy it\" wasn't ticked: in the stash"
     );
 
     let bow = db
@@ -1851,6 +1851,34 @@ async fn a_new_fabric_can_be_made_from_the_accessory_form() {
         ],
         "main first, even though the new one was made last"
     );
+}
+
+#[tokio::test]
+async fn a_new_fabric_to_buy_goes_on_the_shopping_list_with_the_bows_colors() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    let body = "kind=bow&status=idea&name=Candy+bow&description=&color_name=red&color_hex=%23CC0000\
+                &color_name=white&color_hex=&source=handmade&brand=&make_days=&partner=\
+                &main_fabric=new&new_main_fabric=Candy+stripe&buy_new_main_fabric=on\
+                &middle_fabric=&new_middle_fabric=&accent_fabric=&new_accent_fabric=";
+    let reply = post(&app, "/accessories", body).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let fabrics = db.list_fabrics().await.unwrap();
+    let candy = fabrics.iter().find(|f| f.name == "Candy stripe").unwrap();
+    assert!(!candy.in_stock);
+    assert_eq!(
+        candy.colors,
+        [Color::with_hex("red", "#cc0000"), Color::from("white")]
+    );
+
+    // A mistake elsewhere keeps the tick.
+    let reply = post(
+        &app,
+        "/accessories",
+        &body.replace("name=Candy+bow", "name="),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("name=\"buy_new_main_fabric\" checked"));
 }
 
 #[tokio::test]

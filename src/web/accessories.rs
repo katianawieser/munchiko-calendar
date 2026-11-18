@@ -242,10 +242,37 @@ struct RoleSelect {
     /// The name box for "+ New fabric…": `new_main_fabric` and so on.
     new_field: String,
     new_name: String,
+    /// "Need to buy it" for the new fabric: `buy_new_main_fabric`.
+    buy_field: String,
+    buy: bool,
 }
 
 /// The fabric select's value for "+ New fabric…".
 const NEW_FABRIC: &str = "new";
+
+/// A fabric named in an accessory's form with "+ New fabric…".
+#[derive(Debug, Clone, PartialEq)]
+struct NewFabricName {
+    role: FabricRole,
+    name: String,
+    /// False if "Need to buy it" was ticked.
+    in_stock: bool,
+}
+
+/// The fabric to create for `new`, with the accessory's own colors.
+fn new_fabric(new: &NewFabricName, accessory: &NewAccessory) -> NewFabric {
+    NewFabric {
+        name: new.name.clone(),
+        description: String::new(),
+        colors: accessory.colors.clone(),
+        keywords: Vec::new(),
+        in_stock: new.in_stock,
+    }
+}
+
+fn buy_field(field: &str) -> String {
+    format!("buy_{}", new_field(field))
+}
 
 fn new_field(field: &str) -> String {
     format!("new_{field}")
@@ -327,6 +354,8 @@ impl AccessoryFormPage {
                     choices: fabric_choices(fabrics, current),
                     new_field: new_field(field),
                     new_name: String::new(),
+                    buy_field: buy_field(field),
+                    buy: false,
                 }
             })
             .collect();
@@ -426,6 +455,7 @@ impl AccessoryFormPage {
         for role in &mut self.fabric_selects {
             select(&mut role.choices, form.text(role.field));
             role.new_name = form.text(&role.new_field);
+            role.buy = form.checked(&role.buy_field);
         }
         self.name = form.text("name");
         self.description = form.text("description");
@@ -446,7 +476,7 @@ struct AccessoryInput {
     accessory: NewAccessory,
     partner: Option<AccessoryId>,
     /// Fabrics typed in with "+ New fabric…", to create (or find) on save.
-    new_fabrics: Vec<(FabricRole, String)>,
+    new_fabrics: Vec<NewFabricName>,
 }
 
 fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryInput, Vec<String>> {
@@ -510,7 +540,11 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
             if name.is_empty() {
                 errors.push(format!("Give the new {} a name.", label.to_lowercase()));
             } else {
-                new_fabrics.push((role, name));
+                new_fabrics.push(NewFabricName {
+                    role,
+                    name,
+                    in_stock: !form.checked(&buy_field(field)),
+                });
             }
             continue;
         }
@@ -558,12 +592,13 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
 }
 
 /// Turn the "+ New fabric…" names into fabrics for the accessory: an existing
-/// fabric with the same name (ignoring capitals) is used rather than making a
-/// duplicate; otherwise a new one is created on the shopping list ("not in the
-/// stash"), which suits an old bow whose fabric is used up ("Bought it" on the
-/// fabric list moves it to the stash). The same new name in two roles makes
-/// one fabric. Afterwards the fabrics are put back in role order (main
-/// first), which is the order their colors are listed in.
+/// fabric with the same name (ignoring capitals) is used as it is, rather
+/// than making a duplicate; otherwise a new one is created, in the stash
+/// unless "Need to buy it" was ticked, starting with the accessory's own
+/// colors (a bow is usually made from fabric of its colors; they can be fixed
+/// on the fabric's page). The same new name in two roles makes one fabric.
+/// Afterwards the fabrics are put back in role order (main first), which is
+/// the order their colors are listed in.
 async fn fabrics_for_new_names(
     state: &AppState,
     input: &mut AccessoryInput,
@@ -578,20 +613,14 @@ async fn fabrics_for_new_names(
         .into_iter()
         .map(|f| (f.name.to_lowercase(), f.id))
         .collect();
-    for (role, name) in &input.new_fabrics {
-        let key = name.to_lowercase();
+    for new in &input.new_fabrics {
+        let key = new.name.to_lowercase();
         let fabric_id = match known.iter().find(|(n, _)| *n == key) {
             Some((_, id)) => *id,
             None => {
                 let id = state
                     .db
-                    .create_fabric(&NewFabric {
-                        name: name.clone(),
-                        description: String::new(),
-                        colors: Vec::new(),
-                        keywords: Vec::new(),
-                        in_stock: false,
-                    })
+                    .create_fabric(&new_fabric(new, &input.accessory))
                     .await?;
                 known.push((key, id));
                 id
@@ -599,7 +628,7 @@ async fn fabrics_for_new_names(
         };
         input.accessory.fabrics.push(FabricUse {
             fabric_id,
-            role: *role,
+            role: new.role,
         });
     }
     let order = |role: FabricRole| ROLES.iter().position(|(r, _, _)| *r == role);

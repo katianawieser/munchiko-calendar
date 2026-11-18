@@ -270,7 +270,9 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
 .your-shades summary { cursor: pointer; }
 
 /* "+ New fabric…" name box under a fabric select (M9c). */
-.new-fabric-name { margin-top: -0.5rem; }
+.new-fabric { margin-top: -0.5rem; }
+.new-fabric[hidden] { display: none; }
+.new-fabric .new-fabric-name { margin-bottom: 0.25rem; }
 
 /* Above the fabric and accessory lists: filters on the left, Table | Grid on the right. */
 .browse-bar {

@@ -354,6 +354,14 @@ See README.md for the planning rules, data model and roadmap.
   any app path (starts with one `/`, no `//`, no `\`), used by both routes.
   Katiana's real data has no scheduled upcoming posts right now, so no buttons
   show until she schedules one.
+- **M12b done:** "+ New fabric…" box is now `.new-fabric` (name + "Need to buy it"
+  checkbox `buy_new_{field}`, unticked = in stash) in a `.fabric-role` wrapper beside
+  the select's label (no nested labels); colors.js hides/shows the whole box.
+  `NewFabricName { role, name, in_stock }`; a newly created fabric copies the
+  accessory's OWN color rows (`accessory.colors`, not effective colors); an existing
+  name is reused unchanged (stock + colors untouched). Note: new accessories start
+  with "colors from fabrics" on, so their own rows are often empty → nothing copied.
+  Show/hide verified in headless Chrome (Firefox update still staged).
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

@@ -196,10 +196,11 @@ document.querySelectorAll(".fabric-colors").forEach((box) => {
 // new fabric (created when the form is saved). Without this script the boxes
 // are always visible, which works too.
 document.querySelectorAll("select.fabric-select").forEach((select) => {
-  const name = select.parentElement.querySelector(".new-fabric-name");
+  const box = select.closest(".fabric-role").querySelector(".new-fabric");
+  const name = box.querySelector(".new-fabric-name");
   const show = (focus) => {
     const isNew = select.value === "new";
-    name.hidden = !isNew;
+    box.hidden = !isNew;
     if (isNew && focus) name.focus();
   };
   select.addEventListener("change", () => show(true));
