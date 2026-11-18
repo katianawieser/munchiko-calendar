@@ -2169,3 +2169,85 @@ async fn both_pets_in_one_bow_warns_until_there_are_two() {
     assert!(html.contains("Published"));
     assert!(!html.contains("both wear"));
 }
+
+// ---------------------------------------------------------------------------
+// Outfits (M11c1)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn outfits_can_be_made_edited_and_deleted() {
+    use crate::models::OutfitId;
+    let (app, db, post_id, dir) = setup_with_photos(d(2026, 10, 5)).await;
+
+    let (status, html) = get(&app, "/outfits").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(html.contains("No outfits yet"));
+    let (_, html) = get(&app, "/outfits/new").await;
+    assert!(html.contains("<summary>Bow <span class=\"muted\">(2)</span></summary>"));
+    assert!(
+        html.contains("name=\"pieces\" value=\"3\""),
+        "the Ghost scarf"
+    );
+
+    // A name is needed; the ticked pieces are kept.
+    let reply = submit_multipart(&app, "/outfits", &[("name", ""), ("pieces", "3")], &[]).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("Give the outfit a name."));
+    assert!(reply.html.contains("name=\"pieces\" value=\"3\" checked"));
+
+    // Saved with a photo of the whole look.
+    let fields = [
+        ("name", "Spooky"),
+        ("description", "for the porch"),
+        ("pieces", "1"),
+        ("pieces", "3"),
+    ];
+    let reply = submit_multipart(&app, "/outfits", &fields, &[&JPEG]).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let outfit = db.list_outfits().await.unwrap().pop().unwrap();
+    assert_eq!(outfit.pieces, [AccessoryId(1), AccessoryId(3)]);
+    assert_eq!(reply.location, Some(format!("/outfits/{}", outfit.id.0)));
+    let photos = db.list_photos(PhotoOwner::Outfit(outfit.id)).await.unwrap();
+    assert_eq!(photos.len(), 1);
+
+    // The list explains how far along it is; the pieces link to it.
+    db.set_accessory_status(AccessoryId(1), AccessoryStatus::Ready)
+        .await
+        .unwrap();
+    let (_, html) = get(&app, "/outfits").await;
+    assert!(html.contains("1 of 2 ready"));
+    assert!(html.contains("href=\"/accessories/3\">Ghost scarf</a>"));
+    assert!(html.contains(&format!("/photos/{}/thumb", photos[0].id.0)));
+    let (_, html) = get(&app, "/accessories/3").await;
+    assert!(html.contains(&format!(
+        "Part of <a href=\"/outfits/{}\">Spooky outfit</a>",
+        outfit.id.0
+    )));
+
+    // Editing: the edit page has the photo, the ticks and a delete button.
+    let page = format!("/outfits/{}", outfit.id.0);
+    let (_, html) = get(&app, &page).await;
+    assert!(html.contains("Edit Spooky"));
+    assert!(html.contains("name=\"pieces\" value=\"1\" checked"));
+    assert!(html.contains("Delete outfit"));
+    let reply = submit_multipart(&app, &page, &[("name", "Spooky"), ("pieces", "1")], &[]).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        db.get_outfit(outfit.id).await.unwrap().pieces,
+        [AccessoryId(1)]
+    );
+    let (_, html) = get(&app, "/outfits").await;
+    assert!(html.contains(">Ready</span>"));
+
+    // Deleting takes the photo with it but leaves the pieces and the post.
+    let file = dir.path().join(format!("{}.jpg", photos[0].id.0));
+    assert!(file.exists());
+    let reply = post(&app, &format!("{page}/delete"), "").await;
+    assert_eq!(reply.location.as_deref(), Some("/outfits"));
+    assert!(db.get_outfit(outfit.id).await.is_err());
+    assert!(!file.exists());
+    assert!(db.get_accessory(AccessoryId(1)).await.is_ok());
+    assert!(db.get_post_plan(post_id).await.is_ok());
+    let (status, _) = get(&app, &format!("/outfits/{}", OutfitId(999).0)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}

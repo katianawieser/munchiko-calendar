@@ -24,6 +24,7 @@ mod fabrics;
 pub mod forms;
 pub mod ideas;
 pub mod month;
+mod outfits;
 mod photos;
 mod posts;
 mod series;
@@ -148,6 +149,20 @@ pub fn router(state: AppState) -> Router {
                 .post(accessories::update)
                 .layer(DefaultBodyLimit::max(photos::MAX_UPLOAD_BYTES)),
         )
+        .route(
+            "/outfits",
+            get(outfits::list)
+                .post(outfits::create)
+                .layer(DefaultBodyLimit::max(photos::MAX_UPLOAD_BYTES)),
+        )
+        .route("/outfits/new", get(outfits::new_form))
+        .route(
+            "/outfits/{id}",
+            get(outfits::edit_form)
+                .post(outfits::update)
+                .layer(DefaultBodyLimit::max(photos::MAX_UPLOAD_BYTES)),
+        )
+        .route("/outfits/{id}/delete", post(outfits::delete))
         .route("/accessories/{id}/status", post(accessories::set_status))
         .route("/accessories/{id}/delete", post(accessories::delete))
         .route("/static/pico.min.css", get(pico_css))

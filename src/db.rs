@@ -219,6 +219,14 @@ pub struct NewPostPlan {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NewOutfit {
+    pub name: String,
+    pub description: String,
+    /// In order; each must be an existing accessory.
+    pub pieces: Vec<AccessoryId>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NewSeries {
     pub title: String,
     pub backdrop: String,
@@ -300,7 +308,15 @@ struct PhotoRow {
     fabric_id: Option<i64>,
     accessory_id: Option<i64>,
     post_plan_id: Option<i64>,
+    outfit_id: Option<i64>,
     content_type: String,
+}
+
+#[derive(FromRow)]
+struct OutfitRow {
+    id: i64,
+    name: String,
+    description: String,
 }
 
 impl SeriesRow {
@@ -316,10 +332,16 @@ impl SeriesRow {
 
 impl PhotoRow {
     fn into_model(self) -> Result<Photo> {
-        let owner = match (self.fabric_id, self.accessory_id, self.post_plan_id) {
-            (Some(id), None, None) => PhotoOwner::Fabric(FabricId(id)),
-            (None, Some(id), None) => PhotoOwner::Accessory(AccessoryId(id)),
-            (None, None, Some(id)) => PhotoOwner::PostPlan(PostPlanId(id)),
+        let owner = match (
+            self.fabric_id,
+            self.accessory_id,
+            self.post_plan_id,
+            self.outfit_id,
+        ) {
+            (Some(id), None, None, None) => PhotoOwner::Fabric(FabricId(id)),
+            (None, Some(id), None, None) => PhotoOwner::Accessory(AccessoryId(id)),
+            (None, None, Some(id), None) => PhotoOwner::PostPlan(PostPlanId(id)),
+            (None, None, None, Some(id)) => PhotoOwner::Outfit(OutfitId(id)),
             _ => {
                 return Err(DbError::Corrupt(format!(
                     "photo {} has no single owner",
@@ -1425,21 +1447,129 @@ impl Repository {
         Ok(())
     }
 
+    // -- Outfits -------------------------------------------------------------
+
+    /// Saves the outfit and its pieces together. If any piece doesn't exist,
+    /// nothing is saved (the foreign key refuses it).
+    pub async fn create_outfit(&self, new: &NewOutfit) -> Result<OutfitId> {
+        let mut tx = self.pool.begin().await?;
+        let id: i64 = sqlx::query_scalar(
+            "INSERT INTO outfits (name, description) VALUES (?, ?) RETURNING id",
+        )
+        .bind(&new.name)
+        .bind(&new.description)
+        .fetch_one(&mut *tx)
+        .await?;
+        insert_pieces(&mut tx, id, &new.pieces).await?;
+        tx.commit().await?;
+        Ok(OutfitId(id))
+    }
+
+    pub async fn get_outfit(&self, id: OutfitId) -> Result<Outfit> {
+        exactly_one(self.load_outfits(Some(id)).await?, "outfit", id.0)
+    }
+
+    /// All outfits, sorted by name.
+    pub async fn list_outfits(&self) -> Result<Vec<Outfit>> {
+        self.load_outfits(None).await
+    }
+
+    async fn load_outfits(&self, only: Option<OutfitId>) -> Result<Vec<Outfit>> {
+        let only = only.map(|id| id.0);
+        let mut tx = self.pool.begin().await?;
+        let rows: Vec<OutfitRow> = sqlx::query_as(
+            "SELECT id, name, description FROM outfits
+             WHERE ?1 IS NULL OR id = ?1
+             ORDER BY name, id",
+        )
+        .bind(only)
+        .fetch_all(&mut *tx)
+        .await?;
+        // (outfit, piece) pairs in the order the pieces were added.
+        let pieces: Vec<(i64, i64)> = sqlx::query_as(
+            "SELECT outfit_id, accessory_id FROM outfit_pieces
+             WHERE ?1 IS NULL OR outfit_id = ?1
+             ORDER BY outfit_id, rowid",
+        )
+        .bind(only)
+        .fetch_all(&mut *tx)
+        .await?;
+        tx.commit().await?;
+
+        let mut by_outfit: HashMap<i64, Vec<AccessoryId>> = HashMap::new();
+        for (outfit, piece) in pieces {
+            by_outfit
+                .entry(outfit)
+                .or_default()
+                .push(AccessoryId(piece));
+        }
+        Ok(rows
+            .into_iter()
+            .map(|row| Outfit {
+                id: OutfitId(row.id),
+                pieces: by_outfit.remove(&row.id).unwrap_or_default(),
+                name: row.name,
+                description: row.description,
+            })
+            .collect())
+    }
+
+    /// Save edits to an outfit, replacing its list of pieces.
+    pub async fn update_outfit(&self, id: OutfitId, new: &NewOutfit) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        let result = sqlx::query("UPDATE outfits SET name = ?, description = ? WHERE id = ?")
+            .bind(&new.name)
+            .bind(&new.description)
+            .bind(id.0)
+            .execute(&mut *tx)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(DbError::NotFound {
+                what: "outfit",
+                id: id.0,
+            });
+        }
+        sqlx::query("DELETE FROM outfit_pieces WHERE outfit_id = ?")
+            .bind(id.0)
+            .execute(&mut *tx)
+            .await?;
+        insert_pieces(&mut tx, id.0, &new.pieces).await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Delete an outfit, its piece list and its photo records. The pieces
+    /// themselves, and posts that wore them, are untouched.
+    pub async fn delete_outfit(&self, id: OutfitId) -> Result<()> {
+        let result = sqlx::query("DELETE FROM outfits WHERE id = ?")
+            .bind(id.0)
+            .execute(&self.pool)
+            .await?;
+        if result.rows_affected() == 0 {
+            return Err(DbError::NotFound {
+                what: "outfit",
+                id: id.0,
+            });
+        }
+        Ok(())
+    }
+
     // -- Photos --------------------------------------------------------------
     // Only the records; the files are handled by `crate::photos::PhotoStore`.
 
     /// Record a new photo for `owner` (which must exist) and return it, so
     /// the caller can save the file under the new id.
     pub async fn add_photo(&self, owner: PhotoOwner, image_type: ImageType) -> Result<Photo> {
-        let (fabric, accessory, post_plan) = owner_columns(owner);
+        let (fabric, accessory, post_plan, outfit) = owner_columns(owner);
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO photos (fabric_id, accessory_id, post_plan_id, content_type)
-             VALUES (?, ?, ?, ?)
+            "INSERT INTO photos (fabric_id, accessory_id, post_plan_id, outfit_id, content_type)
+             VALUES (?, ?, ?, ?, ?)
              RETURNING id",
         )
         .bind(fabric)
         .bind(accessory)
         .bind(post_plan)
+        .bind(outfit)
         .bind(image_type.mime())
         .fetch_one(&self.pool)
         .await?;
@@ -1452,7 +1582,7 @@ impl Repository {
 
     pub async fn get_photo(&self, id: PhotoId) -> Result<Photo> {
         let row: Option<PhotoRow> = sqlx::query_as(
-            "SELECT id, fabric_id, accessory_id, post_plan_id, content_type
+            "SELECT id, fabric_id, accessory_id, post_plan_id, outfit_id, content_type
              FROM photos WHERE id = ?",
         )
         .bind(id.0)
@@ -1467,18 +1597,20 @@ impl Repository {
 
     /// One owner's photos, oldest first (the first one is its thumbnail).
     pub async fn list_photos(&self, owner: PhotoOwner) -> Result<Vec<Photo>> {
-        let (fabric, accessory, post_plan) = owner_columns(owner);
-        // `IS` is `=` that also treats NULL = NULL as true, so the two
+        let (fabric, accessory, post_plan, outfit) = owner_columns(owner);
+        // `IS` is `=` that also treats NULL = NULL as true, so the
         // columns that aren't this owner's kind match their NULLs.
         let rows: Vec<PhotoRow> = sqlx::query_as(
-            "SELECT id, fabric_id, accessory_id, post_plan_id, content_type
+            "SELECT id, fabric_id, accessory_id, post_plan_id, outfit_id, content_type
              FROM photos
              WHERE fabric_id IS ? AND accessory_id IS ? AND post_plan_id IS ?
+                   AND outfit_id IS ?
              ORDER BY id",
         )
         .bind(fabric)
         .bind(accessory)
         .bind(post_plan)
+        .bind(outfit)
         .fetch_all(&self.pool)
         .await?;
         rows.into_iter().map(PhotoRow::into_model).collect()
@@ -1487,7 +1619,7 @@ impl Repository {
     /// Every photo, oldest first, for list pages that show thumbnails.
     pub async fn list_all_photos(&self) -> Result<Vec<Photo>> {
         let rows: Vec<PhotoRow> = sqlx::query_as(
-            "SELECT id, fabric_id, accessory_id, post_plan_id, content_type
+            "SELECT id, fabric_id, accessory_id, post_plan_id, outfit_id, content_type
              FROM photos ORDER BY id",
         )
         .fetch_all(&self.pool)
@@ -1510,13 +1642,33 @@ impl Repository {
     }
 }
 
-/// The owner as the three owner columns, exactly one of them filled in.
-fn owner_columns(owner: PhotoOwner) -> (Option<i64>, Option<i64>, Option<i64>) {
+/// The owner as the four owner columns, exactly one of them filled in.
+type OwnerColumns = (Option<i64>, Option<i64>, Option<i64>, Option<i64>);
+
+fn owner_columns(owner: PhotoOwner) -> OwnerColumns {
     match owner {
-        PhotoOwner::Fabric(id) => (Some(id.0), None, None),
-        PhotoOwner::Accessory(id) => (None, Some(id.0), None),
-        PhotoOwner::PostPlan(id) => (None, None, Some(id.0)),
+        PhotoOwner::Fabric(id) => (Some(id.0), None, None, None),
+        PhotoOwner::Accessory(id) => (None, Some(id.0), None, None),
+        PhotoOwner::PostPlan(id) => (None, None, Some(id.0), None),
+        PhotoOwner::Outfit(id) => (None, None, None, Some(id.0)),
     }
+}
+
+/// Insert an outfit's pieces in order, inside the caller's transaction.
+async fn insert_pieces(
+    conn: &mut SqliteConnection,
+    outfit_id: i64,
+    pieces: &[AccessoryId],
+) -> Result<()> {
+    for piece in pieces {
+        // OR IGNORE: the same piece listed twice is saved once.
+        sqlx::query("INSERT OR IGNORE INTO outfit_pieces (outfit_id, accessory_id) VALUES (?, ?)")
+            .bind(outfit_id)
+            .bind(piece.0)
+            .execute(&mut *conn)
+            .await?;
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -1996,6 +2148,135 @@ mod tests {
                 .await
                 .unwrap();
         assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[tokio::test]
+    async fn outfits_keep_their_pieces_in_order() {
+        let db = Repository::in_memory().await.unwrap();
+        let crown = db
+            .create_accessory(&bow("Glinda crown", &[]))
+            .await
+            .unwrap();
+        let dress = db
+            .create_accessory(&bow("Glinda dress", &[]))
+            .await
+            .unwrap();
+        let wand = db.create_accessory(&bow("Star wand", &[])).await.unwrap();
+
+        let glinda = NewOutfit {
+            name: "Glinda".into(),
+            description: "Wicked night".into(),
+            pieces: vec![dress, crown, wand, crown],
+        };
+        let id = db.create_outfit(&glinda).await.unwrap();
+        let saved = db.get_outfit(id).await.unwrap();
+        assert_eq!(
+            saved.pieces,
+            [dress, crown, wand],
+            "in order, repeat dropped"
+        );
+
+        // The same wand in a second outfit.
+        let fairy = db
+            .create_outfit(&NewOutfit {
+                name: "Fairy".into(),
+                description: String::new(),
+                pieces: vec![wand],
+            })
+            .await
+            .unwrap();
+        let names: Vec<String> = db
+            .list_outfits()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|o| o.name)
+            .collect();
+        assert_eq!(names, ["Fairy", "Glinda"]);
+
+        // Editing replaces the pieces; an unknown piece saves nothing.
+        let edited = NewOutfit {
+            pieces: vec![crown, dress],
+            ..glinda.clone()
+        };
+        db.update_outfit(id, &edited).await.unwrap();
+        assert_eq!(db.get_outfit(id).await.unwrap().pieces, [crown, dress]);
+        let bad = NewOutfit {
+            pieces: vec![crown, AccessoryId(99)],
+            ..glinda
+        };
+        assert!(db.update_outfit(id, &bad).await.is_err());
+        assert_eq!(db.get_outfit(id).await.unwrap().pieces, [crown, dress]);
+
+        // Deleting a piece takes it out of its outfits; deleting an outfit
+        // leaves its pieces and takes its photos.
+        db.delete_accessory(wand).await.unwrap();
+        assert!(db.get_outfit(fairy).await.unwrap().pieces.is_empty());
+        let photo = db
+            .add_photo(PhotoOwner::Outfit(id), ImageType::Jpeg)
+            .await
+            .unwrap();
+        assert_eq!(
+            db.list_photos(PhotoOwner::Outfit(id)).await.unwrap(),
+            std::slice::from_ref(&photo)
+        );
+        assert_eq!(
+            db.get_photo(photo.id).await.unwrap().owner,
+            PhotoOwner::Outfit(id)
+        );
+        db.delete_outfit(id).await.unwrap();
+        assert!(db.get_photo(photo.id).await.is_err());
+        assert!(db.get_accessory(crown).await.is_ok());
+        assert!(matches!(
+            db.delete_outfit(id).await,
+            Err(DbError::NotFound { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn migration_0011_keeps_photo_ids_and_never_reuses_them() {
+        let pool = database_at_version(10).await;
+        // Photos 1-3, then 3 deleted: the next new photo must still be 4,
+        // or a browser that cached /photos/3 would show the old picture.
+        sqlx::raw_sql(
+            "INSERT INTO fabrics (id, name) VALUES (1, 'Leaf print');
+             INSERT INTO accessories (id, kind, name, source, status)
+                 VALUES (1, 'bow', 'Leaf bow', 'handmade', 'ready');
+             INSERT INTO photos (fabric_id, accessory_id, content_type) VALUES
+                 (1, NULL, 'image/jpeg'), (NULL, 1, 'image/png'), (1, NULL, 'image/gif');
+             DELETE FROM photos WHERE id = 3;",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let db = Repository::migrate(pool).await.unwrap();
+
+        let owners: Vec<(i64, PhotoOwner)> = db
+            .list_all_photos()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|p| (p.id.0, p.owner))
+            .collect();
+        assert_eq!(
+            owners,
+            [
+                (1, PhotoOwner::Fabric(FabricId(1))),
+                (2, PhotoOwner::Accessory(AccessoryId(1))),
+            ]
+        );
+        let next = db
+            .add_photo(PhotoOwner::Fabric(FabricId(1)), ImageType::Jpeg)
+            .await
+            .unwrap();
+        assert_eq!(next.id, PhotoId(4));
+        // Still exactly one owner per photo.
+        assert!(
+            sqlx::query("INSERT INTO photos (fabric_id, accessory_id, content_type) VALUES (1, 1, 'image/jpeg')")
+                .execute(&db.pool)
+                .await
+                .is_err()
+        );
     }
 
     #[tokio::test]

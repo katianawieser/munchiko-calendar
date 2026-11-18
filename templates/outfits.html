@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Outfits{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h2>Outfits</h2>
+  <a href="/outfits/new" role="button">+ New outfit</a>
+</div>
+<p class="muted">Pieces worn together, like a crown, a dress and a wand. Choosing an outfit for a pet in a post ticks all its pieces. An outfit is ready when every piece is.</p>
+
+{% if rows.is_empty() %}
+<p class="muted">No outfits yet. <a href="/outfits/new">Make one</a> from accessories you already have.</p>
+{% else %}
+<div class="table-scroll">
+<table>
+  <thead><tr><th>Name</th><th>Pieces</th><th>Status</th><th>Colors</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><span class="name-cell">{% if let Some(src) = row.thumb %}<img class="thumb" src="{{ src }}" alt="" loading="lazy">{% endif %}<a href="{{ row.href }}">{{ row.name }}</a></span></td>
+      <td>{% for piece in row.pieces %}{% if !loop.first %}, {% endif %}<a href="{{ piece.href }}">{{ piece.label }}</a>{% endfor %}</td>
+      <td class="nowrap"><span class="badge {{ row.status_class }}">{{ row.status }}</span></td>
+      <td>{% for color in row.colors %}{% include "color_chip.html" %} {% endfor %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endif %}
+{% endblock %}

@@ -2,6 +2,7 @@
 {% block title %}{{ heading }}{% endblock %}
 {% block content %}
 <h2>{{ heading }}</h2>
+{% if !outfits.is_empty() %}<p class="muted">Part of {% for o in outfits %}{% if !loop.first %}, {% endif %}<a href="{{ o.href }}">{{ o.label }} outfit</a>{% endfor %}</p>{% endif %}
 {% include "form_errors.html" %}
 {% include "photos_section.html" %}
 

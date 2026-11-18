@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ heading }}{% endblock %}
+{% block content %}
+<h2>{{ heading }}</h2>
+{% if let Some((text, class)) = status %}<p><span class="badge {{ class }}">{{ text }}</span></p>{% endif %}
+{% include "form_errors.html" %}
+{% include "photos_section.html" %}
+
+<form method="post" action="{{ action }}" enctype="multipart/form-data">
+  {% include "photo_input.html" %}
+  <label>Name
+    <input name="name" value="{{ name }}" required autofocus placeholder="Glinda">
+  </label>
+  <label>Notes
+    <textarea name="description" rows="2">{{ description }}</textarea>
+  </label>
+
+  <fieldset>
+    <legend><strong>Pieces</strong></legend>
+    <small class="muted">A piece can be in several outfits. Changing the pieces later doesn't change posts already planned.</small>
+    {% if groups.is_empty() %}
+    <p class="muted">No accessories yet. <a href="/accessories/new">Add the pieces</a> first.</p>
+    {% endif %}
+    {% for group in groups %}
+    <details class="piece-group" {% if group.open() %}open{% endif %}>
+      <summary>{{ group.label }} <span class="muted">({{ group.choices.len() }})</span></summary>
+      {% for c in group.choices %}
+      <label class="inline-check"><input type="checkbox" name="pieces" value="{{ c.value }}" {% if c.selected %}checked{% endif %}> {{ c.label }}</label>
+      {% endfor %}
+    </details>
+    {% endfor %}
+  </fieldset>
+
+  <div class="form-actions">
+    <button type="submit">Save</button>
+    <a href="{{ cancel_href }}" role="button" class="secondary outline">Cancel</a>
+  </div>
+</form>
+
+{% let thing = "outfit" %}
+{% include "delete_section.html" %}
+{% endblock %}

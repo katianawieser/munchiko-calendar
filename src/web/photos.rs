@@ -33,6 +33,7 @@ pub fn owner_href(owner: PhotoOwner) -> String {
         PhotoOwner::Fabric(id) => format!("/fabrics/{}", id.0),
         PhotoOwner::Accessory(id) => format!("/accessories/{}", id.0),
         PhotoOwner::PostPlan(id) => format!("/posts/{}", id.0),
+        PhotoOwner::Outfit(id) => format!("/outfits/{}", id.0),
     }
 }
 

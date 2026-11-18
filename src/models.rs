@@ -33,6 +33,9 @@ pub struct PhotoId(pub i64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct SeriesId(pub i64);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct OutfitId(pub i64);
+
 // ---------------------------------------------------------------------------
 // The models
 // ---------------------------------------------------------------------------
@@ -407,6 +410,52 @@ pub struct Series {
     pub notes: String,
 }
 
+/// Pieces worn together, like Glinda's crown, dress and wand. Each piece is
+/// still its own accessory; choosing an outfit in a post ticks all of them.
+/// A piece can be in several outfits.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Outfit {
+    pub id: OutfitId,
+    pub name: String,
+    pub description: String,
+    /// In the order they were chosen.
+    pub pieces: Vec<AccessoryId>,
+}
+
+impl Outfit {
+    /// The pieces themselves, skipping any that aren't in `accessories`.
+    pub fn piece_items<'a>(&self, accessories: &'a [Accessory]) -> Vec<&'a Accessory> {
+        self.pieces
+            .iter()
+            .filter_map(|id| accessories.iter().find(|a| a.id == *id))
+            .collect()
+    }
+
+    /// As far along as its least-finished piece: ready only when every piece
+    /// is. An outfit with no pieces yet is just an idea.
+    pub fn status(&self, accessories: &[Accessory]) -> AccessoryStatus {
+        let pieces = self.piece_items(accessories);
+        let has = |status| pieces.iter().any(|a| a.status == status);
+        if pieces.is_empty() || has(AccessoryStatus::Idea) {
+            AccessoryStatus::Idea
+        } else if has(AccessoryStatus::InProgress) {
+            AccessoryStatus::InProgress
+        } else {
+            AccessoryStatus::Ready
+        }
+    }
+
+    /// (ready, total) pieces, for "2 of 3 ready".
+    pub fn ready_count(&self, accessories: &[Accessory]) -> (usize, usize) {
+        let pieces = self.piece_items(accessories);
+        let ready = pieces
+            .iter()
+            .filter(|a| a.status == AccessoryStatus::Ready)
+            .count();
+        (ready, pieces.len())
+    }
+}
+
 /// What a photo is a picture of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PhotoOwner {
@@ -414,6 +463,8 @@ pub enum PhotoOwner {
     Accessory(AccessoryId),
     /// Reference shots, or the finished photo after the shoot.
     PostPlan(PostPlanId),
+    /// The whole look together.
+    Outfit(OutfitId),
 }
 
 /// A photo's record. The image itself is a file; see [`crate::photos`].
@@ -573,6 +624,40 @@ mod tests {
                 .shortages(&stock)
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn an_outfit_is_ready_when_every_piece_is() {
+        let piece = |id, status| Accessory {
+            id: AccessoryId(id),
+            status,
+            ..bow(&[], false)
+        };
+        let outfit = |pieces: &[i64]| Outfit {
+            id: OutfitId(1),
+            name: "Glinda".into(),
+            description: String::new(),
+            pieces: pieces.iter().map(|&id| AccessoryId(id)).collect(),
+        };
+        let stock = [
+            piece(1, AccessoryStatus::Ready),
+            piece(2, AccessoryStatus::InProgress),
+            piece(3, AccessoryStatus::Idea),
+            piece(4, AccessoryStatus::Ready),
+        ];
+        use AccessoryStatus::*;
+        assert_eq!(outfit(&[1, 4]).status(&stock), Ready);
+        assert_eq!(outfit(&[1, 2]).status(&stock), InProgress);
+        assert_eq!(
+            outfit(&[1, 2, 3]).status(&stock),
+            Idea,
+            "least finished wins"
+        );
+        assert_eq!(outfit(&[]).status(&stock), Idea, "nothing in it yet");
+        assert_eq!(outfit(&[1, 2, 4]).ready_count(&stock), (2, 3));
+        // A piece that's gone doesn't count either way.
+        assert_eq!(outfit(&[1, 99]).ready_count(&stock), (1, 1));
+        assert_eq!(outfit(&[1, 99]).status(&stock), Ready);
     }
 
     #[test]

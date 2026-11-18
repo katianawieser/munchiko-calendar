@@ -292,6 +292,25 @@ See README.md for the planning rules, data model and roadmap.
   published posts. Doesn't change readiness/"Ready". Form "How many" (empty = 1);
   ×N in accessory table/grid and post-form checkbox labels. Real-data copy 9→10:
   54 accessories all quantity 1, other columns identical, checks clean.
+- **M11c plan (Katiana's answers, 2026-11-18):** a piece can be in several outfits
+  (join table); picking an outfit in a post COPIES its pieces into the looks (can
+  untick one per post; later outfit edits don't change planned posts; planner
+  unchanged); outfits are full items (name, notes, pieces, photos; status derived:
+  ready when every piece is); not in suggestions yet. Split: M11c1 outfit pages +
+  data, M11c2 post form "add outfit" + grouped looks. Check in after each.
+- **M11c1 done:** migration 0011: `outfits` (name, description) + `outfit_pieces`
+  (PK outfit+accessory, both FKs ON DELETE CASCADE: deleting a piece takes it out of
+  outfits; deleting an outfit never blocks). **Any future rebuild of `accessories`
+  must save/restore outfit_pieces** (like 0009's trap). Photos table rebuilt for a
+  4th owner (`outfit_id`, CHECK exactly one): ids kept, and the AUTOINCREMENT counter
+  saved/restored via `sqlite_sequence` (DROP TABLE drops it). `models::Outfit`
+  (`piece_items`, derived `status` = least-finished piece, empty = Idea,
+  `ready_count`). `Repository::{create,get,list,update,delete}_outfit` (INSERT OR
+  IGNORE drops repeated pieces). `web/outfits.rs`: /outfits list (thumb, piece links,
+  "1 of 2 ready", colors from pieces), form at /outfits/{id} with pieces as checkboxes
+  in `<details>` per kind (open if a piece is ticked, count in summary), photos in
+  the form, delete always allowed. Nav has "Outfits". Accessory page: "Part of X
+  outfit". Real-data copy 9→11: 119 photos identical, counter 123 kept, checks clean.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

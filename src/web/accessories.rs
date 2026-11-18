@@ -10,13 +10,14 @@ use axum::extract::{Path, Query, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Redirect, Response};
 
-use super::blockers::{self, Blockers};
+use super::blockers::{self, Blockers, Link};
 use super::browse::{Browse, Controls, Filter, query_string};
 use super::colors;
 use super::forms::{
     Choice, ColorRow, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, color_rows,
     color_rows_from_form, join_list, label_of, parse_choice, read_colors, split_list,
 };
+use super::outfits;
 use super::photos::{self, ColorIdea, FormWithPhotos, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewAccessory, NewFabric};
@@ -282,6 +283,8 @@ struct AccessoryFormPage {
     quantity: String,
     fabric_selects: Vec<RoleSelect>,
     partner_choices: Vec<Choice>,
+    /// Outfits it's a piece of (edit page only).
+    outfits: Vec<Link>,
     blocked: Blockers,
     photos: PhotoSection,
     /// Main colors of its photos, offered beside the color rows.
@@ -389,6 +392,7 @@ impl AccessoryFormPage {
                 .collect(),
             fabric_selects,
             partner_choices,
+            outfits: Vec::new(),
             blocked: Blockers::default(),
             photos: PhotoSection::unsaved(),
             color_ideas: Vec::new(),
@@ -630,6 +634,7 @@ async fn edit_page(state: &AppState, accessory: &Accessory) -> Result<AccessoryF
     let fabrics = state.db.list_fabrics().await?;
     let mut page = AccessoryFormPage::new(Some(accessory), &usage.accessories, &fabrics);
     page.blocked = blockers::for_accessory(accessory.id, &usage);
+    page.outfits = outfits::outfits_with(accessory.id, &state.db.list_outfits().await?);
     let owner = PhotoOwner::Accessory(accessory.id);
     let photos = state.db.list_photos(owner).await?;
     page.photos = PhotoSection::gallery(owner, &accessory.name, &photos);
