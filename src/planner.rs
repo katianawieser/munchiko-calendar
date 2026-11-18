@@ -527,6 +527,7 @@ mod tests {
             status,
             pair_id: None,
             make_days: None,
+            quantity: 1,
             colors_from_fabrics: false,
             tags: vec![],
         }

@@ -68,6 +68,8 @@ struct AccessoryRow {
     /// The accessory's first photo, if it has one.
     thumb: Option<String>,
     name: String,
+    /// Shown as "×2" after the name when more than 1.
+    quantity: u32,
     kind: &'static str,
     status: &'static str,
     status_class: &'static str,
@@ -137,6 +139,7 @@ pub async fn list(
                 href: format!("/accessories/{}", a.id.0),
                 thumb: thumbnails.get(&PhotoOwner::Accessory(a.id)).cloned(),
                 name: a.name.clone(),
+                quantity: a.quantity,
                 kind: label_of(&KINDS, a.kind),
                 status: label_of(&STATUSES, a.status),
                 status_class: match a.status {
@@ -275,6 +278,8 @@ struct AccessoryFormPage {
     bought: bool,
     brand: String,
     make_days: String,
+    /// "How many", as typed (so a bad value can be shown again).
+    quantity: String,
     fabric_selects: Vec<RoleSelect>,
     partner_choices: Vec<Choice>,
     blocked: Blockers,
@@ -372,6 +377,7 @@ impl AccessoryFormPage {
                 .and_then(|a| a.make_days)
                 .map(|d| d.to_string())
                 .unwrap_or_default(),
+            quantity: editing.map_or(1, |a| a.quantity).to_string(),
             fabric_colors: Vec::new(),
             fabric_chips: fabrics
                 .iter()
@@ -432,6 +438,7 @@ impl AccessoryFormPage {
         self.bought = form.text("source") == "bought";
         self.brand = form.text("brand");
         self.make_days = form.text("make_days");
+        self.quantity = form.text("quantity");
         self.errors = errors;
         self
     }
@@ -476,6 +483,18 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
             _ => {
                 errors.push("Days to make must be a whole number of 1 or more.".to_string());
                 None
+            }
+        },
+    };
+
+    // Empty means 1: one of it, as before quantities existed.
+    let quantity = match form.text("quantity").as_str() {
+        "" => 1,
+        text => match text.parse::<u32>() {
+            Ok(n) if n > 0 => n,
+            _ => {
+                errors.push("How many must be a whole number of 1 or more.".to_string());
+                1
             }
         },
     };
@@ -531,6 +550,7 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
                 source,
                 status,
                 make_days,
+                quantity,
             },
             partner,
             new_fabrics,

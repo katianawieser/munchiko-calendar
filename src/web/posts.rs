@@ -167,6 +167,8 @@ struct PostRow {
     series: Option<String>,
     post_date: String,
     health: Health,
+    /// "Mochi and Momo both wear …, but there's only 1." (upcoming posts only)
+    shortages: Vec<String>,
 }
 
 struct IdeaRow {
@@ -179,6 +181,7 @@ struct IdeaRow {
     /// "Nov 3", or empty if it can't be planned.
     earliest: String,
     ready: bool,
+    shortages: Vec<String>,
 }
 
 #[derive(Template)]
@@ -191,7 +194,14 @@ struct PostsPage {
 
 pub async fn list(State(state): State<AppState>) -> Result<Html<String>, AppError> {
     let today = state.today();
-    let (posts, _accessories) = load_posts(&state).await?;
+    let (posts, accessories) = load_posts(&state).await?;
+    let shortages = |post: &LoadedPost| -> Vec<String> {
+        post.plan
+            .shortages(&accessories)
+            .iter()
+            .map(ToString::to_string)
+            .collect()
+    };
 
     let (mut upcoming, mut past) = (Vec::new(), Vec::new());
     let mut ideas: Vec<(IdeaStatus, IdeaRow)> = Vec::new();
@@ -210,6 +220,7 @@ pub async fn list(State(state): State<AppState>) -> Result<Html<String>, AppErro
                     .map(|d| d.format("%b %-d").to_string())
                     .unwrap_or_default(),
                 ready: status.ready,
+                shortages: shortages(post),
             };
             ideas.push((status, row));
             continue;
@@ -220,6 +231,12 @@ pub async fn list(State(state): State<AppState>) -> Result<Html<String>, AppErro
             series: series_label(post),
             post_date: date_long(post_date),
             health: health(post, today),
+            // Too late to matter once it's published.
+            shortages: if post_date < today {
+                Vec::new()
+            } else {
+                shortages(post)
+            },
         };
         if post_date < today {
             past.push(row);
@@ -346,10 +363,18 @@ struct PostPage {
     idea: Option<IdeaView>,
     health: Health,
     looks: Vec<LookRow>,
+    /// Accessories the looks need more of than there are.
+    shortages: Vec<ShortageRow>,
     backdrop: String,
     notes: String,
     tasks: Vec<TaskRow>,
     photos: PhotoSection,
+}
+
+/// A shortage, linking to the accessory so its "How many" can be changed.
+struct ShortageRow {
+    text: String,
+    href: String,
 }
 
 /// "Pumpkin bow, Ghost scarf" for each pet in the post.
@@ -453,6 +478,18 @@ pub async fn show(
         idea,
         health: health(post, today),
         looks: look_rows(post, &accessories),
+        shortages: if post.plan.post_date.is_some_and(|d| d < today) {
+            Vec::new() // published: too late to matter
+        } else {
+            post.plan
+                .shortages(&accessories)
+                .into_iter()
+                .map(|s| ShortageRow {
+                    text: s.to_string(),
+                    href: format!("/accessories/{}", s.accessory_id.0),
+                })
+                .collect()
+        },
         backdrop,
         notes: post.plan.notes.clone(),
         tasks,
@@ -571,8 +608,14 @@ fn pet_looks(accessories: &[Accessory], looks: &[Look]) -> Vec<PetLooks> {
             choices: accessories
                 .iter()
                 .map(|a| {
+                    // "×2" tells her both pets can wear it at once.
+                    let count = if a.quantity > 1 {
+                        format!(", ×{}", a.quantity)
+                    } else {
+                        String::new()
+                    };
                     let text = format!(
-                        "{} ({}, {})",
+                        "{} ({}, {}{count})",
                         a.name,
                         label_of(&KINDS, a.kind).to_lowercase(),
                         label_of(&STATUSES, a.status).to_lowercase()

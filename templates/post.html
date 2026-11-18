@@ -34,6 +34,9 @@
       {% endfor %}
     </dl>
     {% endif %}
+    {% for short in shortages %}
+    <p class="shortage">⚠ {{ short.text }} Make or buy another and <a href="{{ short.href }}">update how many</a>, or change a look.</p>
+    {% endfor %}
   </article>
   <article>
     <header><strong>Backdrop</strong></header>

@@ -56,6 +56,7 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
             source: Source::Handmade,
             status: AccessoryStatus::Idea,
             make_days: None,
+            quantity: 1,
         })
         .await?;
     let bat = db
@@ -73,6 +74,7 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
             source: Source::Handmade,
             status: AccessoryStatus::Idea,
             make_days: Some(2),
+            quantity: 1,
         })
         .await?;
     db.pair_accessories(pumpkin, bat).await?;
@@ -89,6 +91,7 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
             source: Source::Bought { brand: None },
             status: AccessoryStatus::Idea,
             make_days: None,
+            quantity: 1,
         })
         .await?;
 

@@ -192,6 +192,8 @@ pub struct NewAccessory {
     pub source: Source,
     pub status: AccessoryStatus,
     pub make_days: Option<u32>,
+    /// How many there are (or will be made). At least 1; the table checks.
+    pub quantity: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -251,6 +253,7 @@ struct AccessoryRow {
     status: String,
     pair_id: Option<i64>,
     make_days: Option<u32>,
+    quantity: u32,
 }
 
 #[derive(FromRow)]
@@ -376,6 +379,7 @@ impl AccessoryRow {
             status: AccessoryStatus::from_sql(&self.status)?,
             pair_id: self.pair_id.map(AccessoryId),
             make_days: self.make_days,
+            quantity: self.quantity,
         })
     }
 }
@@ -740,8 +744,8 @@ impl Repository {
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO accessories
                  (kind, name, description, colors, colors_from_fabrics, tags, source, brand,
-                  status, make_days)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                  status, make_days, quantity)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              RETURNING id",
         )
         .bind(new.kind.to_sql())
@@ -754,6 +758,7 @@ impl Repository {
         .bind(brand)
         .bind(new.status.to_sql())
         .bind(new.make_days)
+        .bind(new.quantity)
         .fetch_one(&mut *tx)
         .await?;
         insert_fabric_uses(&mut tx, id, &new.fabrics).await?;
@@ -779,7 +784,7 @@ impl Repository {
 
         let rows: Vec<AccessoryRow> = sqlx::query_as(
             "SELECT id, kind, name, description, colors, colors_from_fabrics, tags, source, brand,
-                    status, pair_id, make_days
+                    status, pair_id, make_days, quantity
              FROM accessories
              WHERE ?1 IS NULL OR id = ?1
              ORDER BY name, id",
@@ -830,7 +835,7 @@ impl Repository {
             "UPDATE accessories
              SET kind = ?, name = ?, description = ?, colors = ?, colors_from_fabrics = ?,
                  tags = ?, source = ?, brand = ?,
-                 status = ?, make_days = ?
+                 status = ?, make_days = ?, quantity = ?
              WHERE id = ?",
         )
         .bind(new.kind.to_sql())
@@ -843,6 +848,7 @@ impl Repository {
         .bind(brand)
         .bind(new.status.to_sql())
         .bind(new.make_days)
+        .bind(new.quantity)
         .bind(id.0)
         .execute(&mut *tx)
         .await?;
@@ -1560,6 +1566,7 @@ mod tests {
             source: Source::Handmade,
             status: AccessoryStatus::Idea,
             make_days: None,
+            quantity: 1,
         }
     }
 
@@ -1989,6 +1996,33 @@ mod tests {
                 .await
                 .unwrap();
         assert!(problems.is_empty(), "{problems:?}");
+    }
+
+    #[tokio::test]
+    async fn quantity_starts_at_one_and_is_saved() {
+        // An accessory from before migration 0010 counts as one.
+        let pool = database_at_version(9).await;
+        sqlx::raw_sql(
+            "INSERT INTO accessories (id, kind, name, source, status)
+                 VALUES (1, 'bow', 'Leaf bow', 'handmade', 'ready');",
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let db = Repository::migrate(pool).await.unwrap();
+        assert_eq!(db.get_accessory(AccessoryId(1)).await.unwrap().quantity, 1);
+
+        let mut twins = bow("Twin bows", &[]);
+        twins.quantity = 2;
+        let id = db.create_accessory(&twins).await.unwrap();
+        assert_eq!(db.get_accessory(id).await.unwrap().quantity, 2);
+        twins.quantity = 3;
+        db.update_accessory(id, &twins).await.unwrap();
+        assert_eq!(db.get_accessory(id).await.unwrap().quantity, 3);
+
+        // The table refuses zero, even if a caller forgets to check.
+        twins.quantity = 0;
+        assert!(db.create_accessory(&twins).await.is_err());
     }
 
     #[tokio::test]

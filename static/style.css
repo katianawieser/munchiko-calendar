@@ -101,6 +101,8 @@ a.entry:hover { filter: brightness(0.95); text-decoration: underline; }
 .badge.warn, .badge.active { background: var(--mc-notable); color: var(--mc-text); }
 .badge.bad, .badge.overdue { background: var(--mc-overdue); color: #fff; }
 .badge.done { opacity: 0.7; }
+/* A post needs more copies of an accessory than there are. */
+.shortage { color: var(--mc-overdue); }
 .overdue a, li.overdue { color: var(--mc-overdue); }
 .notice.bad { color: var(--mc-overdue); font-weight: 600; }
 

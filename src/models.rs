@@ -202,6 +202,8 @@ pub struct Accessory {
     pub pair_id: Option<AccessoryId>,
     /// Override for how long this particular one takes to make.
     pub make_days: Option<u32>,
+    /// How many there are (or will be, once made). At least 1.
+    pub quantity: u32,
 }
 
 impl Accessory {
@@ -295,6 +297,63 @@ impl PostPlan {
             ("", None) => "Untitled post".to_string(),
             (title, _) => title.to_string(),
         }
+    }
+
+    /// Accessories this post needs more of than there are: each pet wearing
+    /// one needs its own copy, so a bow worn by both pets needs 2. In the
+    /// order the looks list them. Accessories missing from `accessories` are
+    /// skipped (the planner already reports those).
+    pub fn shortages(&self, accessories: &[Accessory]) -> Vec<Shortage> {
+        let mut wearers: Vec<(AccessoryId, Vec<Pet>)> = Vec::new();
+        for look in &self.looks {
+            match wearers.iter_mut().find(|(id, _)| *id == look.accessory_id) {
+                Some((_, pets)) if pets.contains(&look.pet) => {}
+                Some((_, pets)) => pets.push(look.pet),
+                None => wearers.push((look.accessory_id, vec![look.pet])),
+            }
+        }
+        wearers
+            .into_iter()
+            .filter_map(|(id, pets)| {
+                let acc = accessories.iter().find(|a| a.id == id)?;
+                (pets.len() > acc.quantity as usize).then(|| Shortage {
+                    accessory_id: id,
+                    name: acc.name.clone(),
+                    pets,
+                    owned: acc.quantity,
+                })
+            })
+            .collect()
+    }
+}
+
+/// A post needs more copies of an accessory than there are.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Shortage {
+    pub accessory_id: AccessoryId,
+    pub name: String,
+    /// Who wears it; one copy each.
+    pub pets: Vec<Pet>,
+    pub owned: u32,
+}
+
+impl Shortage {
+    pub fn needed(&self) -> u32 {
+        self.pets.len() as u32
+    }
+}
+
+impl std::fmt::Display for Shortage {
+    /// "Mochi and Momo both wear Red bow, but there's only 1."
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let who: Vec<String> = self.pets.iter().map(Pet::to_string).collect();
+        write!(
+            f,
+            "{} both wear {}, but there's only {}.",
+            who.join(" and "),
+            self.name,
+            self.owned
+        )
     }
 }
 
@@ -404,6 +463,7 @@ mod tests {
             status: AccessoryStatus::Idea,
             pair_id: None,
             make_days: None,
+            quantity: 1,
         }
     }
 
@@ -450,6 +510,68 @@ mod tests {
         assert_eq!(
             bow.all_tags(&[velvet, satin]),
             vec!["batik", "japanese", "pumpkin", "halloween"]
+        );
+    }
+
+    fn post_with(looks: &[(Pet, i64)]) -> PostPlan {
+        PostPlan {
+            id: PostPlanId(1),
+            title: "Test".into(),
+            event_id: None,
+            post_date: None,
+            series_id: None,
+            looks: looks
+                .iter()
+                .map(|&(pet, id)| Look {
+                    pet,
+                    accessory_id: AccessoryId(id),
+                })
+                .collect(),
+            backdrop: String::new(),
+            notes: String::new(),
+        }
+    }
+
+    #[test]
+    fn both_pets_in_one_bow_need_two() {
+        let one = bow(&[], false);
+        let mut two = bow(&[], false);
+        two.id = AccessoryId(2);
+        two.name = "Twin bow".into();
+        two.quantity = 2;
+        let stock = [one, two];
+
+        // Bow 1 is worn by both but there's only one; bow 2 has a spare.
+        let post = post_with(&[
+            (Pet::Mochi, 1),
+            (Pet::Momo, 1),
+            (Pet::Mochi, 2),
+            (Pet::Momo, 2),
+        ]);
+        let short = post.shortages(&stock);
+        assert_eq!(short.len(), 1);
+        assert_eq!(short[0].accessory_id, AccessoryId(1));
+        assert_eq!(short[0].needed(), 2);
+        assert_eq!(
+            short[0].to_string(),
+            "Mochi and Momo both wear Pumpkin bow, but there's only 1."
+        );
+
+        // One pet each, a repeated look, or an unknown accessory: all fine.
+        assert!(
+            post_with(&[(Pet::Mochi, 1), (Pet::Momo, 2)])
+                .shortages(&stock)
+                .is_empty()
+        );
+        assert!(
+            post_with(&[(Pet::Mochi, 1), (Pet::Mochi, 1)])
+                .shortages(&stock)
+                .is_empty()
+        );
+        assert!(
+            post_with(&[(Pet::Mochi, 9), (Pet::Momo, 9)])
+                .shortages(&stock)
+                .is_empty()
         );
     }
 

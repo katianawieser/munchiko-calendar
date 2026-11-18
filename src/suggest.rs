@@ -343,6 +343,7 @@ fn start_by_for_new_bow(fabric: &Fabric, post_date: NaiveDate, lead: &LeadTimes)
         status: AccessoryStatus::Idea,
         pair_id: None,
         make_days: None,
+        quantity: 1,
     };
     let plan = PostPlan {
         id: PostPlanId(0),
@@ -429,6 +430,7 @@ mod tests {
             status: AccessoryStatus::Idea,
             pair_id: None,
             make_days: None,
+            quantity: 1,
         }
     }
 

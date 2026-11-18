@@ -2102,3 +2102,70 @@ async fn hats_and_props_can_be_added_and_filtered() {
     let (_, html) = get(&app, "/accessories/new").await;
     assert!(html.contains(r#"<option value="prop""#));
 }
+
+// ---------------------------------------------------------------------------
+// Quantity (M11b)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn both_pets_in_one_bow_warns_until_there_are_two() {
+    let (app, db, post_id) = setup(d(2026, 10, 5)).await;
+    let event = halloween(&db).await;
+    let post_page = format!("/posts/{}", post_id.0);
+
+    // Momo wears the Pumpkin bow too. Saving is allowed; it's a warning.
+    let body = format!(
+        "event={}&when=date&post_date=&mochi=1&momo=1&momo=2&backdrop=&notes=",
+        event.0
+    );
+    let reply = post(&app, &post_page, &body).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+
+    let warning = "Mochi and Momo both wear Pumpkin bow, but there&#39;s only 1.";
+    let (_, html) = get(&app, &post_page).await;
+    assert!(html.contains(warning), "{html}");
+    assert!(html.contains("href=\"/accessories/1\">update how many</a>"));
+    let (_, html) = get(&app, "/posts").await;
+    assert!(html.contains(warning), "shown in the posts list too");
+
+    // The edit form starts at 1; a bad number is explained and kept.
+    let (_, html) = get(&app, "/accessories/1").await;
+    assert!(html.contains("name=\"quantity\" type=\"number\" min=\"1\" value=\"1\""));
+    let accessory = |quantity: &str| {
+        format!(
+            "kind=bow&status=ready&name=Pumpkin+bow&color_hex=&color_name=orange&main_fabric=1\
+             &middle_fabric=2&accent_fabric=&source=handmade&brand=&make_days=&partner=\
+             &quantity={quantity}"
+        )
+    };
+    let reply = post(&app, "/accessories/1", &accessory("0")).await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        reply
+            .html
+            .contains("How many must be a whole number of 1 or more.")
+    );
+    assert!(reply.html.contains("value=\"0\""));
+
+    // With two, the warning goes and the lists say ×2.
+    let reply = post(&app, "/accessories/1", &accessory("2")).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert_eq!(db.get_accessory(AccessoryId(1)).await.unwrap().quantity, 2);
+    let (_, html) = get(&app, &post_page).await;
+    assert!(!html.contains("both wear"));
+    let (_, html) = get(&app, "/accessories").await;
+    assert!(html.contains("×2</span>"));
+    let (_, html) = get(&app, &format!("{post_page}/edit")).await;
+    assert!(html.contains("Pumpkin bow (bow, ready, ×2)"));
+
+    // Back to one, but the post is already published: no warning then.
+    post(&app, "/accessories/1", &accessory("1")).await;
+    let body = format!(
+        "event={}&when=date&post_date=2026-10-01&mochi=1&momo=1&backdrop=&notes=",
+        event.0
+    );
+    post(&app, &post_page, &body).await;
+    let (_, html) = get(&app, &post_page).await;
+    assert!(html.contains("Published"));
+    assert!(!html.contains("both wear"));
+}

@@ -182,6 +182,7 @@ mod tests {
             status: AccessoryStatus::Idea,
             pair_id: None,
             make_days: None,
+            quantity: 1,
         }
     }
 

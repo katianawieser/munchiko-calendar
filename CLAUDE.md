@@ -281,6 +281,17 @@ See README.md for the planning rules, data model and roadmap.
   data copy 7→9: every row of accessories / accessory_fabrics / looks / photos
   identical, foreign_key_check + integrity_check clean. "hat"/"prop" are NOT filler
   words in suggest, so "National Hat Day" matches hats by name. Verified in Firefox 159.
+- **M11b done:** migration 0010 `accessories.quantity` (INTEGER ≥ 1 CHECK, default 1;
+  plain ALTER, no rebuild). A plain number, not one row per copy (Katiana's choice);
+  for an unmade item it's how many will be made (prep time unchanged; `make_days`
+  can be raised by hand). Looks already allowed both pets on one accessory (PK is
+  post+pet+accessory). `PostPlan::shortages(accessories)` (pure): one copy per pet
+  wearing it → `Shortage { pets, owned }`, Display "Mochi and Momo both wear X, but
+  there's only 1." Warning only, saving is allowed; shown on the post page (link to
+  `/accessories/{id}`, the edit page) and the Posts list (upcoming + ideas), never for
+  published posts. Doesn't change readiness/"Ready". Form "How many" (empty = 1);
+  ×N in accessory table/grid and post-form checkbox labels. Real-data copy 9→10:
+  54 accessories all quantity 1, other columns identical, checks clean.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
