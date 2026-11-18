@@ -330,6 +330,94 @@ impl PostPlan {
     }
 }
 
+impl PostPlan {
+    /// Pieces added to a chosen outfit since it was chosen, that the pet
+    /// isn't wearing yet: (pet, outfit, piece), in the outfit's order. A
+    /// piece that was in the outfit already but left out of the look on
+    /// purpose is never offered again.
+    pub fn outfit_offers(&self, outfits: &[Outfit]) -> Vec<(Pet, OutfitId, AccessoryId)> {
+        let mut offers = Vec::new();
+        for choice in &self.outfits {
+            let Some(outfit) = outfits.iter().find(|o| o.id == choice.outfit_id) else {
+                continue;
+            };
+            for &piece in &outfit.pieces {
+                let worn = self
+                    .looks
+                    .iter()
+                    .any(|l| l.pet == choice.pet && l.accessory_id == piece);
+                if !worn && !choice.known.contains(&piece) {
+                    offers.push((choice.pet, outfit.id, piece));
+                }
+            }
+        }
+        offers
+    }
+}
+
+/// An outfit chosen for one pet in a post.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OutfitChoice {
+    pub pet: Pet,
+    pub outfit_id: OutfitId,
+    /// The outfit's pieces when it was chosen, plus pieces offered since
+    /// (added or turned down). Anything else in the outfit is new.
+    pub known: Vec<AccessoryId>,
+}
+
+/// Apply the outfits ticked in the post form (`ticked`) to the looks.
+///
+/// An outfit that was already chosen keeps what it knew, so pieces left out
+/// on purpose stay out. A newly ticked one remembers the outfit's pieces
+/// now, and with `add_pieces` they're added to the pet's looks (the form
+/// without JavaScript; with it, the page has ticked them already, and the
+/// person may have unticked one). Outfits no longer ticked are forgotten;
+/// their pieces stay in the looks unless unticked too.
+pub fn choose_outfits(
+    previous: &[OutfitChoice],
+    ticked: &[(Pet, OutfitId)],
+    mut looks: Vec<Look>,
+    outfits: &[Outfit],
+    add_pieces: bool,
+) -> (Vec<Look>, Vec<OutfitChoice>) {
+    let mut chosen: Vec<OutfitChoice> = Vec::new();
+    for &(pet, outfit_id) in ticked {
+        if chosen
+            .iter()
+            .any(|c| c.pet == pet && c.outfit_id == outfit_id)
+        {
+            continue;
+        }
+        if let Some(before) = previous
+            .iter()
+            .find(|c| c.pet == pet && c.outfit_id == outfit_id)
+        {
+            chosen.push(before.clone());
+            continue;
+        }
+        let Some(outfit) = outfits.iter().find(|o| o.id == outfit_id) else {
+            continue;
+        };
+        if add_pieces {
+            for &piece in &outfit.pieces {
+                let look = Look {
+                    pet,
+                    accessory_id: piece,
+                };
+                if !looks.contains(&look) {
+                    looks.push(look);
+                }
+            }
+        }
+        chosen.push(OutfitChoice {
+            pet,
+            outfit_id,
+            known: outfit.pieces.clone(),
+        });
+    }
+    (looks, chosen)
+}
+
 /// A post needs more copies of an accessory than there are.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Shortage {
@@ -393,6 +481,10 @@ pub struct PostPlan {
     /// Part of a series: several posts sharing one setup and photo shoot.
     pub series_id: Option<SeriesId>,
     pub looks: Vec<Look>,
+    /// Outfits chosen for a pet. Their pieces are already in `looks`; this
+    /// remembers the choice, for grouping and for offering pieces added to
+    /// the outfit later.
+    pub outfits: Vec<OutfitChoice>,
     /// Free-text idea for the seasonal backdrop. In a series, the series'
     /// backdrop is used instead.
     pub backdrop: String,
@@ -578,9 +670,73 @@ mod tests {
                     accessory_id: AccessoryId(id),
                 })
                 .collect(),
+            outfits: vec![],
             backdrop: String::new(),
             notes: String::new(),
         }
+    }
+
+    #[test]
+    fn choosing_an_outfit_copies_its_pieces_and_offers_new_ones_later() {
+        let mut glinda = Outfit {
+            id: OutfitId(1),
+            name: "Glinda".into(),
+            description: String::new(),
+            pieces: vec![AccessoryId(1), AccessoryId(2), AccessoryId(3)],
+        };
+        let ticked = [(Pet::Momo, OutfitId(1))];
+
+        // Without JavaScript the server adds the pieces.
+        let (looks, chosen) = choose_outfits(&[], &ticked, vec![], &[glinda.clone()], true);
+        assert_eq!(looks.len(), 3);
+        assert_eq!(chosen[0].known, glinda.pieces);
+
+        // With it the page ticked them, and the wand (3) was left out.
+        let worn = |ids: &[i64]| -> Vec<Look> {
+            ids.iter()
+                .map(|&id| Look {
+                    pet: Pet::Momo,
+                    accessory_id: AccessoryId(id),
+                })
+                .collect()
+        };
+        let (looks, chosen) = choose_outfits(&[], &ticked, worn(&[1, 2]), &[glinda.clone()], false);
+        let mut post = PostPlan {
+            looks,
+            outfits: chosen,
+            ..post_with(&[])
+        };
+        assert!(
+            post.outfit_offers(&[glinda.clone()]).is_empty(),
+            "left out on purpose"
+        );
+
+        // A cape (4) is added to the outfit: offered once, for Momo only.
+        glinda.pieces.push(AccessoryId(4));
+        assert_eq!(
+            post.outfit_offers(&[glinda.clone()]),
+            [(Pet::Momo, OutfitId(1), AccessoryId(4))]
+        );
+        // Saving the form again keeps what the choice knew, so it's still offered.
+        let (looks, chosen) = choose_outfits(
+            &post.outfits,
+            &ticked,
+            post.looks.clone(),
+            &[glinda.clone()],
+            true,
+        );
+        assert_eq!(looks.len(), 2, "the wand isn't put back");
+        post.outfits = chosen;
+        assert_eq!(post.outfit_offers(&[glinda.clone()]).len(), 1);
+        // Turned down: remembered, not offered again.
+        post.outfits[0].known.push(AccessoryId(4));
+        assert!(post.outfit_offers(&[glinda.clone()]).is_empty());
+
+        // Unticking the outfit forgets it but keeps the pieces.
+        let (looks, chosen) =
+            choose_outfits(&post.outfits, &[], post.looks.clone(), &[glinda], true);
+        assert_eq!(looks.len(), 2);
+        assert!(chosen.is_empty());
     }
 
     #[test]

@@ -21,8 +21,8 @@ use super::photos::{self, PhotoSection};
 use super::{AppError, AppState, LoadedPost, load_posts, render};
 use crate::db::NewPostPlan;
 use crate::models::{
-    Accessory, AccessoryId, Event, EventId, Fabric, Look, Pet, PhotoOwner, PostPlan, PostPlanId,
-    Series, SeriesId,
+    Accessory, AccessoryId, Event, EventId, Fabric, Look, Outfit, OutfitId, Pet, PhotoOwner,
+    PostPlan, PostPlanId, Series, SeriesId, choose_outfits,
 };
 use crate::planner::{TaskKind, TaskStatus, Timeline};
 
@@ -365,10 +365,21 @@ struct PostPage {
     looks: Vec<LookRow>,
     /// Accessories the looks need more of than there are.
     shortages: Vec<ShortageRow>,
+    /// Pieces added to a chosen outfit since, to add or turn down.
+    offers: Vec<OfferRow>,
+    offer_action: String,
     backdrop: String,
     notes: String,
     tasks: Vec<TaskRow>,
     photos: PhotoSection,
+}
+
+/// "Glinda now has a Cape. Add it to Momo's look?"
+struct OfferRow {
+    text: String,
+    pet: &'static str,
+    outfit: i64,
+    piece: i64,
 }
 
 /// A shortage, linking to the accessory so its "How many" can be changed.
@@ -377,24 +388,46 @@ struct ShortageRow {
     href: String,
 }
 
-/// "Pumpkin bow, Ghost scarf" for each pet in the post.
-fn look_rows(post: &LoadedPost, accessories: &[Accessory]) -> Vec<LookRow> {
+/// "Glinda outfit (Crown, Dress), Pumpkin bow" for each pet in the post:
+/// pieces of an outfit chosen for the pet are grouped under its name.
+fn look_rows(plan: &PostPlan, accessories: &[Accessory], outfits: &[Outfit]) -> Vec<LookRow> {
+    let name_of = |id: AccessoryId| {
+        accessories
+            .iter()
+            .find(|a| a.id == id)
+            .map(|a| a.name.clone())
+            .unwrap_or_else(|| format!("missing accessory #{}", id.0))
+    };
     [Pet::Mochi, Pet::Momo]
         .into_iter()
         .filter_map(|pet| {
-            let items: Vec<String> = post
-                .plan
+            let mut worn: Vec<AccessoryId> = plan
                 .looks
                 .iter()
                 .filter(|look| look.pet == pet)
-                .map(|look| {
-                    accessories
-                        .iter()
-                        .find(|a| a.id == look.accessory_id)
-                        .map(|a| a.name.clone())
-                        .unwrap_or_else(|| format!("missing accessory #{}", look.accessory_id.0))
-                })
+                .map(|look| look.accessory_id)
                 .collect();
+            let mut items = Vec::new();
+            for choice in plan.outfits.iter().filter(|c| c.pet == pet) {
+                let Some(outfit) = outfits.iter().find(|o| o.id == choice.outfit_id) else {
+                    continue;
+                };
+                // Outfit order; each piece listed once, under the first outfit.
+                let pieces: Vec<AccessoryId> = outfit
+                    .pieces
+                    .iter()
+                    .copied()
+                    .filter(|p| worn.contains(p))
+                    .collect();
+                worn.retain(|w| !pieces.contains(w));
+                let names: Vec<String> = pieces.into_iter().map(name_of).collect();
+                items.push(if names.is_empty() {
+                    format!("{} outfit (no pieces)", outfit.name)
+                } else {
+                    format!("{} outfit ({})", outfit.name, names.join(", "))
+                });
+            }
+            items.extend(worn.into_iter().map(name_of));
             (!items.is_empty()).then(|| LookRow {
                 pet: pet.to_string(),
                 items: items.join(", "),
@@ -413,6 +446,9 @@ pub async fn show(
         .iter()
         .find(|p| p.plan.id.0 == id)
         .ok_or(AppError::NotFound)?;
+    let outfits = state.db.list_outfits().await?;
+    // Once it's up, shortages and new outfit pieces don't matter any more.
+    let published = post.plan.post_date.is_some_and(|d| d < today);
 
     let tasks = match &post.timeline {
         Ok(timeline) => task_rows(timeline, today),
@@ -477,8 +513,14 @@ pub async fn show(
         shoot_date: post.timeline.as_ref().ok().map(|t| date_long(t.shoot_date)),
         idea,
         health: health(post, today),
-        looks: look_rows(post, &accessories),
-        shortages: if post.plan.post_date.is_some_and(|d| d < today) {
+        looks: look_rows(&post.plan, &accessories, &outfits),
+        offers: if published {
+            Vec::new()
+        } else {
+            offer_rows(&post.plan, &accessories, &outfits)
+        },
+        offer_action: format!("/posts/{id}/outfit-piece"),
+        shortages: if published {
             Vec::new() // published: too late to matter
         } else {
             post.plan
@@ -505,7 +547,21 @@ pub async fn show(
 struct PetLooks {
     label: &'static str,
     field: &'static str,
+    /// "mochi_outfit": the outfit checkboxes' name.
+    outfit_field: String,
+    outfits: Vec<OutfitBox>,
     choices: Vec<Choice>,
+}
+
+/// An outfit checkbox: "Glinda (Crown, Dress, Wand)".
+struct OutfitBox {
+    choice: Choice,
+    /// Its pieces' ids, "4,7,9", for outfits.js to tick.
+    pieces: String,
+}
+
+fn outfit_field(field: &str) -> String {
+    format!("{field}_outfit")
 }
 
 #[derive(Template)]
@@ -536,6 +592,7 @@ struct FormOptions {
     accessories: Vec<Accessory>,
     fabrics: Vec<Fabric>,
     series: Vec<Series>,
+    outfits: Vec<Outfit>,
     today: NaiveDate,
 }
 
@@ -543,6 +600,7 @@ impl FormOptions {
     async fn load(state: &AppState) -> Result<Self, AppError> {
         Ok(Self {
             events: state.db.list_events().await?,
+            outfits: state.db.list_outfits().await?,
             accessories: state.db.list_accessories().await?,
             fabrics: state.db.list_fabrics().await?,
             series: state.db.list_series().await?,
@@ -599,12 +657,41 @@ fn series_choices(series: &[Series], selected: Option<SeriesId>) -> Vec<Choice> 
     list
 }
 
-/// "Pumpkin bow (bow, idea)" checkboxes for each pet.
-fn pet_looks(accessories: &[Accessory], looks: &[Look]) -> Vec<PetLooks> {
+/// Outfit checkboxes and "Pumpkin bow (bow, idea)" checkboxes for each pet.
+fn pet_looks(
+    accessories: &[Accessory],
+    outfits: &[Outfit],
+    looks: &[Look],
+    chosen: &[(Pet, OutfitId)],
+) -> Vec<PetLooks> {
     PETS.iter()
         .map(|(pet, field, label)| PetLooks {
             label,
             field,
+            outfit_field: outfit_field(field),
+            outfits: outfits
+                .iter()
+                .map(|o| {
+                    let names: Vec<&str> = o
+                        .piece_items(accessories)
+                        .iter()
+                        .map(|a| a.name.as_str())
+                        .collect();
+                    OutfitBox {
+                        choice: Choice::new(
+                            o.id.0,
+                            format!("{} ({})", o.name, names.join(", ")),
+                            chosen.contains(&(*pet, o.id)),
+                        ),
+                        pieces: o
+                            .pieces
+                            .iter()
+                            .map(|id| id.0.to_string())
+                            .collect::<Vec<_>>()
+                            .join(","),
+                    }
+                })
+                .collect(),
             choices: accessories
                 .iter()
                 .map(|a| {
@@ -669,7 +756,14 @@ impl PostFormPage {
             post_date: post_date
                 .map(|d| d.format("%Y-%m-%d").to_string())
                 .unwrap_or_default(),
-            pets: pet_looks(&options.accessories, editing.map_or(&[], |p| &p.looks)),
+            pets: pet_looks(
+                &options.accessories,
+                &options.outfits,
+                editing.map_or(&[], |p| &p.looks),
+                &editing.map_or(Vec::new(), |p| {
+                    p.outfits.iter().map(|c| (c.pet, c.outfit_id)).collect()
+                }),
+            ),
             backdrop: editing.map(|p| p.backdrop.clone()).unwrap_or_default(),
             notes: editing.map(|p| p.notes.clone()).unwrap_or_default(),
             ideas: None,
@@ -689,6 +783,10 @@ impl PostFormPage {
             let ticked: Vec<&str> = form.all(pet.field).collect();
             for choice in &mut pet.choices {
                 choice.selected = ticked.contains(&choice.value.as_str());
+            }
+            let ticked: Vec<&str> = form.all(&pet.outfit_field).collect();
+            for outfit in &mut pet.outfits {
+                outfit.choice.selected = ticked.contains(&outfit.choice.value.as_str());
             }
         }
         self.title = form.text("title");
@@ -714,7 +812,12 @@ impl PostFormPage {
     }
 }
 
-fn read_form(form: &FormData, options: &FormOptions) -> Result<NewPostPlan, Vec<String>> {
+/// `editing` is the saved plan, if any: its outfit choices are kept.
+fn read_form(
+    form: &FormData,
+    options: &FormOptions,
+    editing: Option<&PostPlan>,
+) -> Result<NewPostPlan, Vec<String>> {
     let mut errors = Vec::new();
 
     let title = form.text("title");
@@ -792,6 +895,29 @@ fn read_form(form: &FormData, options: &FormOptions) -> Result<NewPostPlan, Vec<
         }
     }
 
+    let mut ticked_outfits = Vec::new();
+    for (pet, field, label) in PETS {
+        for value in form.all(&outfit_field(field)) {
+            match value
+                .parse::<i64>()
+                .ok()
+                .filter(|id| options.outfits.iter().any(|o| o.id.0 == *id))
+            {
+                Some(id) => ticked_outfits.push((pet, OutfitId(id))),
+                None => errors.push(format!("One of {label}'s outfits doesn't exist any more.")),
+            }
+        }
+    }
+    // outfits.js sets "outfits_live" after ticking pieces in the page itself;
+    // without it, the server adds a newly ticked outfit's pieces.
+    let (looks, outfits) = choose_outfits(
+        editing.map_or(&[], |p| &p.outfits),
+        &ticked_outfits,
+        looks,
+        &options.outfits,
+        form.text("outfits_live") != "1",
+    );
+
     if !errors.is_empty() {
         return Err(errors);
     }
@@ -801,6 +927,7 @@ fn read_form(form: &FormData, options: &FormOptions) -> Result<NewPostPlan, Vec<
         post_date,
         series_id,
         looks,
+        outfits,
         backdrop: form.text("backdrop"),
         notes: form.text("notes"),
     })
@@ -880,7 +1007,7 @@ pub async fn create(
 ) -> Result<Response, AppError> {
     let form = FormData::new(pairs);
     let options = FormOptions::load(&state).await?;
-    match read_form(&form, &options) {
+    match read_form(&form, &options, None) {
         Ok(new) => {
             let id = state.db.create_post_plan(&new).await?;
             // Straight to the new post's timeline: that's the payoff.
@@ -920,7 +1047,7 @@ pub async fn update(
     let form = FormData::new(pairs);
     let plan = state.db.get_post_plan(PostPlanId(id)).await?;
     let options = FormOptions::load(&state).await?;
-    match read_form(&form, &options) {
+    match read_form(&form, &options, Some(&plan)) {
         Ok(new) => {
             state.db.update_post_plan(plan.id, &new).await?;
             Ok(Redirect::to(&format!("/posts/{id}")).into_response())
@@ -933,6 +1060,83 @@ pub async fn update(
             form_response(StatusCode::UNPROCESSABLE_ENTITY, page)
         }
     }
+}
+
+fn pet_field(pet: Pet) -> &'static str {
+    PETS.iter()
+        .find(|(p, _, _)| *p == pet)
+        .map_or("", |(_, field, _)| field)
+}
+
+fn offer_rows(plan: &PostPlan, accessories: &[Accessory], outfits: &[Outfit]) -> Vec<OfferRow> {
+    plan.outfit_offers(outfits)
+        .into_iter()
+        .filter_map(|(pet, outfit_id, piece)| {
+            let outfit = outfits.iter().find(|o| o.id == outfit_id)?;
+            let accessory = accessories.iter().find(|a| a.id == piece)?;
+            Some(OfferRow {
+                text: format!(
+                    "{} outfit has a new piece: {}. Add it to {pet}'s look?",
+                    outfit.name, accessory.name
+                ),
+                pet: pet_field(pet),
+                outfit: outfit_id.0,
+                piece: piece.0,
+            })
+        })
+        .collect()
+}
+
+/// Answer an offer of a piece added to an outfit since it was chosen:
+/// `answer=add` adds it to the pet's look, anything else turns it down.
+/// Either way the choice now knows the piece, so it isn't offered again.
+pub async fn outfit_piece(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+    Form(pairs): Form<Vec<(String, String)>>,
+) -> Result<Response, AppError> {
+    let form = FormData::new(pairs);
+    let mut plan = state.db.get_post_plan(PostPlanId(id)).await?;
+    let pet = PETS
+        .iter()
+        .find(|(_, field, _)| *field == form.text("pet"))
+        .map(|(pet, _, _)| *pet)
+        .ok_or(AppError::BadRequest)?;
+    let outfit = form
+        .optional_id("outfit")
+        .ok()
+        .flatten()
+        .map(OutfitId)
+        .ok_or(AppError::BadRequest)?;
+    let piece = form
+        .optional_id("piece")
+        .ok()
+        .flatten()
+        .map(AccessoryId)
+        .ok_or(AppError::BadRequest)?;
+    // Only a piece that's really on offer (a stale page could send another).
+    let outfits = state.db.list_outfits().await?;
+    if !plan.outfit_offers(&outfits).contains(&(pet, outfit, piece)) {
+        return Ok(Redirect::to(&format!("/posts/{id}")).into_response());
+    }
+    if let Some(choice) = plan
+        .outfits
+        .iter_mut()
+        .find(|c| c.pet == pet && c.outfit_id == outfit)
+    {
+        choice.known.push(piece);
+    }
+    if form.text("answer") == "add" {
+        plan.looks.push(Look {
+            pet,
+            accessory_id: piece,
+        });
+    }
+    state
+        .db
+        .update_post_plan(PostPlanId(id), &NewPostPlan::from(plan))
+        .await?;
+    Ok(Redirect::to(&format!("/posts/{id}")).into_response())
 }
 
 /// "+ Another post from this shoot": put the post in a series (making one,
@@ -976,15 +1180,13 @@ pub async fn schedule(
         .flatten()
         .ok_or(AppError::BadRequest)?;
     let scheduled = NewPostPlan {
-        title: plan.title,
-        event_id: plan.event_id,
         post_date: Some(date),
-        series_id: plan.series_id,
-        looks: plan.looks,
-        backdrop: plan.backdrop,
-        notes: plan.notes,
+        ..NewPostPlan::from(plan)
     };
-    state.db.update_post_plan(plan.id, &scheduled).await?;
+    state
+        .db
+        .update_post_plan(PostPlanId(id), &scheduled)
+        .await?;
     Ok(Redirect::to(&format!("/posts/{id}")).into_response())
 }
 

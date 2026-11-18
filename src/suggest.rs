@@ -355,6 +355,7 @@ fn start_by_for_new_bow(fabric: &Fabric, post_date: NaiveDate, lead: &LeadTimes)
             pet: Pet::Mochi,
             accessory_id: bow.id,
         }],
+        outfits: vec![],
         backdrop: String::new(),
         notes: String::new(),
     };

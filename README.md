@@ -270,10 +270,10 @@ Settings (all optional environment variables):
 - [x] **M10**: Organizing the stash
   - [x] **M10a**: grid view with photos; filter by warm / cool / neutral tone; sort by color
   - [x] **M10b**: accessory tags (like "batik"), used by filters and suggestions
-- [ ] **M11**: More kinds of accessory
+- [x] **M11**: More kinds of accessory
   - [x] **M11a**: hats and props
   - [x] **M11b**: how many of each you own; both pets can wear the same design
-  - [ ] **M11c**: outfits: pieces that go together (Glinda's crown, dress and wand)
+  - [x] **M11c**: outfits: pieces that go together (Glinda's crown, dress and wand)
 
 Ideas for later: photos in the suggestion box; a calendar nudge for upcoming
 events with no post planned yet.

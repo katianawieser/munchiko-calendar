@@ -329,3 +329,10 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
 .card-colors { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .card-body form, .card-body .card-actions { margin-top: auto; }
 .card-body button.small { margin-left: 0; }
+
+/* Post form: the "Outfits" and "Pieces" headings inside a pet's fieldset. */
+.outfit-heading { margin: 0.5rem 0 0.25rem; }
+/* Post page: "The Glinda outfit has a new piece..." with its two buttons. */
+.outfit-offer { margin: 0.75rem 0 0; }
+.outfit-offer p { margin-bottom: 0.4rem; }
+.outfit-offer button { width: auto; margin: 0 0.4rem 0 0; }

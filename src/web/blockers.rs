@@ -213,6 +213,7 @@ mod tests {
                     accessory_id: AccessoryId(a),
                 })
                 .collect(),
+            outfits: vec![],
             backdrop: String::new(),
             notes: String::new(),
         }

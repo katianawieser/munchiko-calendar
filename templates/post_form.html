@@ -36,10 +36,22 @@
 
   {% include "ideas.html" %}
 
+  <input type="hidden" name="outfits_live" value="">
+
   <div class="grid">
     {% for pet in pets %}
     <fieldset>
       <legend><strong>{{ pet.label }} wears</strong></legend>
+      {% if !pet.outfits.is_empty() %}
+      <p class="outfit-heading"><strong>Outfits</strong><br><small class="muted">Ticking one ticks its pieces below; untick any this post won't use.</small></p>
+      {% for o in pet.outfits %}
+      <label>
+        <input type="checkbox" class="outfit-choice" name="{{ pet.outfit_field }}" value="{{ o.choice.value }}" data-field="{{ pet.field }}" data-pieces="{{ o.pieces }}" {% if o.choice.selected %}checked{% endif %}>
+        {{ o.choice.label }}
+      </label>
+      {% endfor %}
+      <p class="outfit-heading"><strong>Pieces</strong></p>
+      {% endif %}
       {% if pet.choices.is_empty() %}
       <p class="muted">No accessories yet. <a href="/accessories/new">Add one</a>.</p>
       {% endif %}
@@ -66,4 +78,5 @@
     <a href="{{ cancel_href }}" role="button" class="secondary outline">Cancel</a>
   </div>
 </form>
+<script src="/static/outfits.js" defer></script>
 {% endblock %}

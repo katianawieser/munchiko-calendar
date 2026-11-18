@@ -311,6 +311,23 @@ See README.md for the planning rules, data model and roadmap.
   in `<details>` per kind (open if a piece is ticked, count in summary), photos in
   the form, delete always allowed. Nav has "Outfits". Accessory page: "Part of X
   outfit". Real-data copy 9→11: 119 photos identical, counter 123 kept, checks clean.
+- **M11c2 done (M11 complete):** Katiana's addition: outfit edits don't change
+  posts, but a piece ADDED to an outfit is offered on the post. Migration 0012
+  `post_outfits` (post, pet, outfit; cascades from post and outfit) +
+  `post_outfit_known` (pieces the choice knew; 3-column FK to post_outfits, cascade;
+  accessory cascade). Future rebuilds of post_plans/accessories must save these too.
+  `PostPlan.outfits: Vec<OutfitChoice { pet, outfit_id, known }>` (also on
+  NewPostPlan; `impl From<PostPlan> for NewPostPlan`). Pure `models::choose_outfits`
+  (already-chosen keep `known`; newly ticked remember the outfit's pieces and, with
+  `add_pieces`, add them; unticked are forgotten, pieces stay) and
+  `PostPlan::outfit_offers` (in outfit, not known, not worn by that pet). Post form:
+  per-pet `{pet}_outfit` checkboxes above "Pieces"; `static/outfits.js` ticks pieces
+  live and sets hidden `outfits_live=1` so the server doesn't re-add unticked ones
+  (without JS the server adds them). Post page: looks grouped "X outfit (a, b)";
+  offers with "Add it" / "Not for this post" → POST /posts/{id}/outfit-piece (only
+  pieces really on offer; both record it as known); none for published posts.
+  JS verified in headless Chrome (Firefox had a staged update: not launched).
+  Real-data copy migrated to 12, checks clean.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

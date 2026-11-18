@@ -115,6 +115,7 @@ pub async fn seed_halloween(db: &Repository, year: i32) -> Result<PostPlanId, Bo
                     accessory_id: bat,
                 },
             ],
+            outfits: vec![],
             backdrop: "hay bales and mini pumpkins".into(),
             notes: String::new(),
         })

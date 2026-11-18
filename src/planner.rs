@@ -381,6 +381,7 @@ pub fn combined_plan(series: &Series, posts: &[&PostPlan]) -> PostPlan {
         post_date: posts.iter().filter_map(|p| p.post_date).min(),
         series_id: Some(series.id),
         looks,
+        outfits: vec![],
         backdrop: series.backdrop.clone(),
         notes: String::new(),
     }
@@ -547,6 +548,7 @@ mod tests {
                     accessory_id: AccessoryId(a),
                 })
                 .collect(),
+            outfits: vec![],
             backdrop: "pumpkin patch".into(),
             notes: String::new(),
         }

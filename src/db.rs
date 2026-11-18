@@ -214,8 +214,27 @@ pub struct NewPostPlan {
     pub post_date: Option<NaiveDate>,
     pub series_id: Option<SeriesId>,
     pub looks: Vec<Look>,
+    /// Outfits chosen per pet (their pieces are already in `looks`).
+    pub outfits: Vec<OutfitChoice>,
     pub backdrop: String,
     pub notes: String,
+}
+
+impl From<PostPlan> for NewPostPlan {
+    /// A saved plan as the fields to save it again with, for small changes
+    /// like scheduling an idea.
+    fn from(plan: PostPlan) -> Self {
+        NewPostPlan {
+            title: plan.title,
+            event_id: plan.event_id,
+            post_date: plan.post_date,
+            series_id: plan.series_id,
+            looks: plan.looks,
+            outfits: plan.outfits,
+            backdrop: plan.backdrop,
+            notes: plan.notes,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -422,7 +441,7 @@ impl EventRow {
 }
 
 impl PostPlanRow {
-    fn into_model(self, looks: Vec<Look>) -> PostPlan {
+    fn into_model(self, looks: Vec<Look>, outfits: Vec<OutfitChoice>) -> PostPlan {
         PostPlan {
             id: PostPlanId(self.id),
             title: self.title,
@@ -430,6 +449,7 @@ impl PostPlanRow {
             post_date: self.post_date,
             series_id: self.series_id.map(SeriesId),
             looks,
+            outfits,
             backdrop: self.backdrop,
             notes: self.notes,
         }
@@ -461,6 +481,38 @@ async fn insert_fabric_uses(
         .bind(fabric_use.role.to_sql())
         .execute(&mut *conn)
         .await?;
+    }
+    Ok(())
+}
+
+/// Insert a post plan's outfit choices and what each knew, inside the
+/// caller's transaction.
+async fn insert_outfit_choices(
+    conn: &mut SqliteConnection,
+    post_plan_id: i64,
+    choices: &[OutfitChoice],
+) -> Result<()> {
+    for choice in choices {
+        sqlx::query(
+            "INSERT OR IGNORE INTO post_outfits (post_plan_id, pet, outfit_id) VALUES (?, ?, ?)",
+        )
+        .bind(post_plan_id)
+        .bind(choice.pet.to_sql())
+        .bind(choice.outfit_id.0)
+        .execute(&mut *conn)
+        .await?;
+        for piece in &choice.known {
+            sqlx::query(
+                "INSERT OR IGNORE INTO post_outfit_known (post_plan_id, pet, outfit_id, accessory_id)
+                 VALUES (?, ?, ?, ?)",
+            )
+            .bind(post_plan_id)
+            .bind(choice.pet.to_sql())
+            .bind(choice.outfit_id.0)
+            .bind(piece.0)
+            .execute(&mut *conn)
+            .await?;
+        }
     }
     Ok(())
 }
@@ -1231,6 +1283,7 @@ impl Repository {
         .await?;
 
         insert_looks(&mut tx, id, &new.looks).await?;
+        insert_outfit_choices(&mut tx, id, &new.outfits).await?;
 
         tx.commit().await?;
         Ok(PostPlanId(id))
@@ -1268,7 +1321,45 @@ impl Repository {
         .bind(only)
         .fetch_all(&mut *tx)
         .await?;
+        // Each chosen outfit, with what it knew (NULL if it knew nothing:
+        // a LEFT JOIN keeps choices with no rows in post_outfit_known).
+        let choice_rows: Vec<(i64, String, i64, Option<i64>)> = sqlx::query_as(
+            "SELECT c.post_plan_id, c.pet, c.outfit_id, k.accessory_id
+             FROM post_outfits c
+             LEFT JOIN post_outfit_known k
+                 ON k.post_plan_id = c.post_plan_id AND k.pet = c.pet
+                AND k.outfit_id = c.outfit_id
+             WHERE ?1 IS NULL OR c.post_plan_id = ?1
+             ORDER BY c.post_plan_id, c.rowid, k.rowid",
+        )
+        .bind(only)
+        .fetch_all(&mut *tx)
+        .await?;
         tx.commit().await?;
+
+        let mut outfits_by_plan: HashMap<i64, Vec<OutfitChoice>> = HashMap::new();
+        for (plan, pet, outfit, piece) in choice_rows {
+            let pet = Pet::from_sql(&pet)?;
+            let outfit_id = OutfitId(outfit);
+            let choices = outfits_by_plan.entry(plan).or_default();
+            let index = match choices
+                .iter()
+                .position(|c| c.pet == pet && c.outfit_id == outfit_id)
+            {
+                Some(i) => i,
+                None => {
+                    choices.push(OutfitChoice {
+                        pet,
+                        outfit_id,
+                        known: Vec::new(),
+                    });
+                    choices.len() - 1
+                }
+            };
+            if let Some(piece) = piece {
+                choices[index].known.push(AccessoryId(piece));
+            }
+        }
 
         let mut looks_by_plan: HashMap<i64, Vec<Look>> = HashMap::new();
         for look in looks {
@@ -1285,7 +1376,8 @@ impl Repository {
             .into_iter()
             .map(|row| {
                 let looks = looks_by_plan.remove(&row.id).unwrap_or_default();
-                row.into_model(looks)
+                let outfits = outfits_by_plan.remove(&row.id).unwrap_or_default();
+                row.into_model(looks, outfits)
             })
             .collect())
     }
@@ -1319,6 +1411,12 @@ impl Repository {
             .execute(&mut *tx)
             .await?;
         insert_looks(&mut tx, id.0, &new.looks).await?;
+        // Deleting the choices also deletes what they knew (cascade).
+        sqlx::query("DELETE FROM post_outfits WHERE post_plan_id = ?")
+            .bind(id.0)
+            .execute(&mut *tx)
+            .await?;
+        insert_outfit_choices(&mut tx, id.0, &new.outfits).await?;
 
         tx.commit().await?;
         Ok(())
@@ -1974,6 +2072,7 @@ mod tests {
                 pet: Pet::Momo,
                 accessory_id: fossil,
             }],
+            outfits: vec![],
             backdrop: "museum props".into(),
             notes: String::new(),
         };
@@ -2023,6 +2122,7 @@ mod tests {
                 post_date: Some(d(2027, 4, 20)),
                 series_id: None,
                 looks: vec![],
+                outfits: vec![],
                 backdrop: "moss and ferns".into(),
                 notes: String::new(),
             })
@@ -2234,6 +2334,76 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn outfit_choices_are_saved_with_the_post() {
+        let db = Repository::in_memory().await.unwrap();
+        let crown = db.create_accessory(&bow("Crown", &[])).await.unwrap();
+        let glinda = db
+            .create_outfit(&NewOutfit {
+                name: "Glinda".into(),
+                description: String::new(),
+                pieces: vec![crown],
+            })
+            .await
+            .unwrap();
+        let empty = db
+            .create_outfit(&NewOutfit {
+                name: "Not started".into(),
+                description: String::new(),
+                pieces: vec![],
+            })
+            .await
+            .unwrap();
+        let choices = vec![
+            OutfitChoice {
+                pet: Pet::Momo,
+                outfit_id: glinda,
+                known: vec![crown],
+            },
+            // An outfit with no pieces yet is still remembered.
+            OutfitChoice {
+                pet: Pet::Mochi,
+                outfit_id: empty,
+                known: vec![],
+            },
+        ];
+        let id = db
+            .create_post_plan(&NewPostPlan {
+                title: "Wicked".into(),
+                event_id: None,
+                post_date: None,
+                series_id: None,
+                looks: vec![Look {
+                    pet: Pet::Momo,
+                    accessory_id: crown,
+                }],
+                outfits: choices.clone(),
+                backdrop: String::new(),
+                notes: String::new(),
+            })
+            .await
+            .unwrap();
+        assert_eq!(db.get_post_plan(id).await.unwrap().outfits, choices);
+
+        // Deleting a piece removes it from what a choice knew.
+        let plan = db.get_post_plan(id).await.unwrap();
+        db.update_post_plan(
+            id,
+            &NewPostPlan {
+                looks: vec![],
+                ..NewPostPlan::from(plan)
+            },
+        )
+        .await
+        .unwrap();
+        db.delete_accessory(crown).await.unwrap();
+        assert!(
+            db.get_post_plan(id).await.unwrap().outfits[0]
+                .known
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
     async fn migration_0011_keeps_photo_ids_and_never_reuses_them() {
         let pool = database_at_version(10).await;
         // Photos 1-3, then 3 deleted: the next new photo must still be 4,
@@ -2379,6 +2549,7 @@ mod tests {
                     accessory_id: bat,
                 },
             ],
+            outfits: vec![],
             backdrop: "hay bales".into(),
             notes: String::new(),
         };
@@ -2430,6 +2601,7 @@ mod tests {
                     pet: Pet::Mochi,
                     accessory_id: pumpkin,
                 }],
+                outfits: vec![],
                 backdrop: "hay bales".into(),
                 notes: String::new(),
             })
@@ -2558,6 +2730,7 @@ mod tests {
             post_date: Some(d(2026, 11, 26)),
             series_id: None,
             looks: vec![],
+            outfits: vec![],
             backdrop: String::new(),
             notes: String::new(),
         })
@@ -2841,6 +3014,7 @@ mod tests {
                     pet: Pet::Mochi,
                     accessory_id: pumpkin,
                 }],
+                outfits: vec![],
                 backdrop: String::new(),
                 notes: String::new(),
             })
@@ -2856,6 +3030,7 @@ mod tests {
                 pet: Pet::Momo,
                 accessory_id: bat,
             }],
+            outfits: vec![],
             backdrop: "black velvet".into(),
             notes: "Momo solo".into(),
         };

@@ -166,6 +166,7 @@ async fn static_files_are_served_with_their_types() {
         ("/static/pico.min.css", "text/css; charset=utf-8"),
         ("/static/style.css", "text/css; charset=utf-8"),
         ("/static/colors.js", "text/javascript; charset=utf-8"),
+        ("/static/outfits.js", "text/javascript; charset=utf-8"),
         ("/static/photos.js", "text/javascript; charset=utf-8"),
     ] {
         let response = app
@@ -2250,4 +2251,202 @@ async fn outfits_can_be_made_edited_and_deleted() {
     assert!(db.get_post_plan(post_id).await.is_ok());
     let (status, _) = get(&app, &format!("/outfits/{}", OutfitId(999).0)).await;
     assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+// ---------------------------------------------------------------------------
+// Outfits in posts (M11c2)
+// ---------------------------------------------------------------------------
+
+/// The demo post with a "Spooky" outfit (Bat bow + Ghost scarf) in the stash.
+async fn with_spooky_outfit(db: &Repository) -> crate::models::OutfitId {
+    db.create_outfit(&crate::db::NewOutfit {
+        name: "Spooky".into(),
+        description: String::new(),
+        pieces: vec![AccessoryId(2), AccessoryId(3)],
+    })
+    .await
+    .unwrap()
+}
+
+#[tokio::test]
+async fn choosing_an_outfit_without_javascript_adds_its_pieces() {
+    use crate::models::Pet;
+    let (app, db, post_id) = setup(d(2026, 10, 5)).await;
+    let spooky = with_spooky_outfit(&db).await;
+    let event = halloween(&db).await;
+    let page = format!("/posts/{}", post_id.0);
+
+    let (_, html) = get(&app, &format!("{page}/edit")).await;
+    assert!(html.contains(&format!(
+        "name=\"momo_outfit\" value=\"{}\" data-field=\"momo\" data-pieces=\"2,3\"",
+        spooky.0
+    )));
+    assert!(html.contains("Spooky (Bat bow, Ghost scarf)"));
+
+    // Momo had only the Bat bow; ticking the outfit adds the Ghost scarf.
+    let body = format!(
+        "event={}&when=date&post_date=&mochi=1&momo=2&momo_outfit={}&outfits_live=&backdrop=&notes=",
+        event.0, spooky.0
+    );
+    let reply = post(&app, &page, &body).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let plan = db.get_post_plan(post_id).await.unwrap();
+    let momo: Vec<i64> = plan
+        .looks
+        .iter()
+        .filter(|l| l.pet == Pet::Momo)
+        .map(|l| l.accessory_id.0)
+        .collect();
+    assert_eq!(momo, [2, 3]);
+    assert_eq!(plan.outfits.len(), 1);
+    assert_eq!(plan.outfits[0].known, [AccessoryId(2), AccessoryId(3)]);
+
+    // The post page groups them; the edit form shows the outfit ticked.
+    let (_, html) = get(&app, &page).await;
+    assert!(
+        html.contains("<dt>Momo</dt><dd>Spooky outfit (Bat bow, Ghost scarf)</dd>"),
+        "{html}"
+    );
+    let (_, html) = get(&app, &format!("{page}/edit")).await;
+    assert!(html.contains(&format!(
+        "value=\"{}\" data-field=\"momo\" data-pieces=\"2,3\" checked",
+        spooky.0
+    )));
+}
+
+#[tokio::test]
+async fn a_piece_left_out_stays_out_and_new_pieces_are_offered_once() {
+    let (app, db, post_id) = setup(d(2026, 10, 5)).await;
+    let spooky = with_spooky_outfit(&db).await;
+    let event = halloween(&db).await;
+    let page = format!("/posts/{}", post_id.0);
+
+    // In the browser, the outfit's pieces were ticked and the scarf unticked.
+    let body = format!(
+        "event={}&when=date&post_date=&mochi=1&momo=2&momo_outfit={}&outfits_live=1&backdrop=&notes=",
+        event.0, spooky.0
+    );
+    post(&app, &page, &body).await;
+    let plan = db.get_post_plan(post_id).await.unwrap();
+    assert_eq!(plan.looks.len(), 2, "Mochi's bow and Momo's bat bow only");
+    let (_, html) = get(&app, &page).await;
+    assert!(html.contains("Spooky outfit (Bat bow)"));
+    assert!(!html.contains("new piece"), "left out on purpose");
+
+    // A Pumpkin bow is added to the outfit: offered for Momo.
+    db.update_outfit(
+        spooky,
+        &crate::db::NewOutfit {
+            name: "Spooky".into(),
+            description: String::new(),
+            pieces: vec![AccessoryId(2), AccessoryId(3), AccessoryId(1)],
+        },
+    )
+    .await
+    .unwrap();
+    let (_, html) = get(&app, &page).await;
+    assert!(
+        html.contains("Spooky outfit has a new piece: Pumpkin bow. Add it to Momo&#39;s look?"),
+        "{html}"
+    );
+
+    // Saving the form again doesn't add it or forget the offer.
+    post(&app, &page, &body).await;
+    assert_eq!(db.get_post_plan(post_id).await.unwrap().looks.len(), 2);
+    let (_, html) = get(&app, &page).await;
+    assert!(html.contains("has a new piece: Pumpkin bow"));
+
+    // "Add it": Momo wears it too (and there's only one, so a shortage).
+    let answer = format!("pet=momo&outfit={}&piece=1&answer=add", spooky.0);
+    let reply = post(&app, &format!("{page}/outfit-piece"), &answer).await;
+    assert_eq!(reply.location.as_deref(), Some(page.as_str()));
+    let (_, html) = get(&app, &page).await;
+    assert!(!html.contains("new piece"));
+    assert!(html.contains("Spooky outfit (Bat bow, Pumpkin bow)"));
+    assert!(html.contains("both wear Pumpkin bow"));
+
+    // Answering again (a stale page) changes nothing.
+    post(&app, &format!("{page}/outfit-piece"), &answer).await;
+    assert_eq!(db.get_post_plan(post_id).await.unwrap().looks.len(), 3);
+
+    // "Not for this post": remembered, not added.
+    db.update_outfit(
+        spooky,
+        &crate::db::NewOutfit {
+            name: "Spooky".into(),
+            description: String::new(),
+            pieces: vec![
+                AccessoryId(2),
+                AccessoryId(3),
+                AccessoryId(1),
+                AccessoryId(4),
+            ],
+        },
+    )
+    .await
+    .unwrap_err(); // accessory 4 doesn't exist in the demo: nothing saved
+    let reply = post(
+        &app,
+        &format!("{page}/outfit-piece"),
+        &format!("pet=momo&outfit={}&piece=3&answer=skip", spooky.0),
+    )
+    .await;
+    assert_eq!(
+        reply.status,
+        StatusCode::SEE_OTHER,
+        "the scarf isn't on offer: ignored"
+    );
+    assert_eq!(db.get_post_plan(post_id).await.unwrap().looks.len(), 3);
+
+    // Deleting the outfit forgets the choice and keeps the looks.
+    db.delete_outfit(spooky).await.unwrap();
+    let plan = db.get_post_plan(post_id).await.unwrap();
+    assert!(plan.outfits.is_empty());
+    assert_eq!(plan.looks.len(), 3);
+}
+
+#[tokio::test]
+async fn turning_down_a_new_piece_and_published_posts() {
+    let (app, db, post_id) = setup(d(2026, 10, 5)).await;
+    let spooky = with_spooky_outfit(&db).await;
+    let event = halloween(&db).await;
+    let page = format!("/posts/{}", post_id.0);
+    let body = format!(
+        "event={}&when=date&post_date=&mochi=1&momo_outfit={}&backdrop=&notes=",
+        event.0, spooky.0
+    );
+    post(&app, &page, &body).await;
+    let grow = |pieces: Vec<i64>| crate::db::NewOutfit {
+        name: "Spooky".into(),
+        description: String::new(),
+        pieces: pieces.into_iter().map(AccessoryId).collect(),
+    };
+    db.update_outfit(spooky, &grow(vec![2, 3, 1]))
+        .await
+        .unwrap();
+
+    let skip = format!("pet=momo&outfit={}&piece=1&answer=skip", spooky.0);
+    post(&app, &format!("{page}/outfit-piece"), &skip).await;
+    let plan = db.get_post_plan(post_id).await.unwrap();
+    assert_eq!(plan.looks.len(), 3, "Mochi's bow + the outfit's two");
+    assert!(plan.outfits[0].known.contains(&AccessoryId(1)));
+    let (_, html) = get(&app, &page).await;
+    assert!(!html.contains("new piece"));
+
+    // Forget the answer so the Pumpkin bow is on offer again...
+    let mut plan = db.get_post_plan(post_id).await.unwrap();
+    plan.outfits[0].known.retain(|&p| p != AccessoryId(1));
+    db.update_post_plan(post_id, &crate::db::NewPostPlan::from(plan.clone()))
+        .await
+        .unwrap();
+    let (_, html) = get(&app, &page).await;
+    assert!(html.contains("has a new piece: Pumpkin bow"));
+    // ...but once the post is published, it isn't offered.
+    plan.post_date = Some(d(2026, 10, 1));
+    db.update_post_plan(post_id, &crate::db::NewPostPlan::from(plan))
+        .await
+        .unwrap();
+    let (_, html) = get(&app, &page).await;
+    assert!(html.contains("Published"));
+    assert!(!html.contains("new piece"));
 }

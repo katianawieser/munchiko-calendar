@@ -163,12 +163,14 @@ pub fn router(state: AppState) -> Router {
                 .layer(DefaultBodyLimit::max(photos::MAX_UPLOAD_BYTES)),
         )
         .route("/outfits/{id}/delete", post(outfits::delete))
+        .route("/posts/{id}/outfit-piece", post(posts::outfit_piece))
         .route("/accessories/{id}/status", post(accessories::set_status))
         .route("/accessories/{id}/delete", post(accessories::delete))
         .route("/static/pico.min.css", get(pico_css))
         .route("/static/style.css", get(style_css))
         .route("/static/colors.js", get(colors_js))
         .route("/static/photos.js", get(photos_js))
+        .route("/static/outfits.js", get(outfits_js))
         .fallback(not_found)
         .layer(middleware::from_fn(reject_cross_site))
         .with_state(state)
@@ -344,6 +346,7 @@ const PICO_CSS: &str = include_str!("../../static/pico.min.css");
 const STYLE_CSS: &str = include_str!("../../static/style.css");
 const COLORS_JS: &str = include_str!("../../static/colors.js");
 const PHOTOS_JS: &str = include_str!("../../static/photos.js");
+const OUTFITS_JS: &str = include_str!("../../static/outfits.js");
 
 async fn pico_css() -> impl IntoResponse {
     (
@@ -364,6 +367,14 @@ async fn photos_js() -> impl IntoResponse {
     (
         [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
         PHOTOS_JS,
+    )
+}
+
+/// Ticks an outfit's pieces as soon as it's ticked; the form works without it.
+async fn outfits_js() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/javascript; charset=utf-8")],
+        OUTFITS_JS,
     )
 }
 

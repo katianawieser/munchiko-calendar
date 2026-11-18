@@ -34,6 +34,16 @@
       {% endfor %}
     </dl>
     {% endif %}
+    {% for offer in offers %}
+    <form method="post" action="{{ offer_action }}" class="outfit-offer">
+      <p>✨ {{ offer.text }}</p>
+      <input type="hidden" name="pet" value="{{ offer.pet }}">
+      <input type="hidden" name="outfit" value="{{ offer.outfit }}">
+      <input type="hidden" name="piece" value="{{ offer.piece }}">
+      <button type="submit" name="answer" value="add" class="small">Add it</button>
+      <button type="submit" name="answer" value="skip" class="outline secondary small">Not for this post</button>
+    </form>
+    {% endfor %}
     {% for short in shortages %}
     <p class="shortage">⚠ {{ short.text }} Make or buy another and <a href="{{ short.href }}">update how many</a>, or change a look.</p>
     {% endfor %}
