@@ -328,6 +328,22 @@ See README.md for the planning rules, data model and roadmap.
   pieces really on offer; both record it as known); none for published posts.
   JS verified in headless Chrome (Firefox had a staged update: not launched).
   Real-data copy migrated to 12, checks clean.
+- **Real-use notes #2 (2026-11-18), planned with Katiana:** M12 quicker use → M13
+  colors → M14 long lists; check in after each part. Her answers: "Done" buttons on
+  BOTH calendar tasks and post timelines (make → accessory Ready, buy fabric → in
+  stock, order → Ready; backdrop/shoot/publish get none); "+ New fabric…" from a bow
+  page asks "I have it / need to buy it" (default have it) and copies the bow's
+  colors; shades: BOTH looser grouping in Your shades AND a merge page; WebP probably
+  fine already, AVIF needed (sips can read it). "Used up" → Shopping list is by
+  design (means "buy again"). Plan: M12a Done buttons, M12b new-fabric choice +
+  colors, M12c back-to-top + grid card size + AVIF; M13a name suggestion always
+  shown as a clickable hint (never overwrite typed names; chips fill empty rows
+  first, don't silently replace a set swatch; clearer Your shades label), M13b photo
+  colors before saving (server endpoint, palette stays in Rust), M13c looser
+  grouping + /shades merge page; M14a type-to-search fabric/partner pickers, M14b
+  fabric thumbnails in accessory list, M14c partner suggestions via fabric
+  pairings. Deferred: naming consistency (her names follow colors + line + style +
+  size, e.g. "Red & Orange Celebration Japanese Large/Small").
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
