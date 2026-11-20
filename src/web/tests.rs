@@ -2890,3 +2890,35 @@ async fn shades_can_be_renamed_to_split_them_off_or_merged_under_a_new_name() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Photo colors reuse your shades (M13e)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn photo_colors_reuse_a_shade_you_already_have() {
+    let (app, db, _, _dir) = setup_with_photos(d(2026, 10, 5)).await;
+    // The sample photo is solid rgb(200, 100, 50); the stash has that shade,
+    // under a name of its own.
+    db.create_fabric(&crate::db::NewFabric {
+        name: "Rust velvet".into(),
+        description: String::new(),
+        colors: vec![Color::with_hex("rust", "#c86432")],
+        keywords: vec![],
+        in_stock: true,
+    })
+    .await
+    .unwrap();
+    let reply = submit_multipart(&app, "/colors/from-photos", &[], &[&JPEG]).await;
+    assert!(
+        reply
+            .html
+            .contains("data-name=\"rust\" data-hex=\"#c86432\""),
+        "{}",
+        reply.html
+    );
+    assert!(reply.html.contains("<small class=\"muted\">yours</small>"));
+    // Not offered again as a new shade under the built-in name.
+    let builtin = crate::palette::nearest_name([200, 100, 50]);
+    assert!(!reply.html.contains(&format!("data-name=\"{builtin}\"")) || builtin == "rust");
+}

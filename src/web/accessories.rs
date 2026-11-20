@@ -18,7 +18,7 @@ use super::forms::{
     color_rows_from_form, join_list, label_of, local_back, parse_choice, read_colors, split_list,
 };
 use super::outfits;
-use super::photos::{self, ColorIdea, FormWithPhotos, PhotoSection};
+use super::photos::{self, ColorIdea, FormWithPhotos, IdeaGroup, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewAccessory, NewFabric};
 use crate::models::{
@@ -312,7 +312,7 @@ struct AccessoryFormPage {
     blocked: Blockers,
     photos: PhotoSection,
     /// Main colors of its photos, offered beside the color rows.
-    color_ideas: Vec<ColorIdea>,
+    color_ideas: Vec<IdeaGroup>,
     /// Shades already picked elsewhere in the stash, to reuse.
     your_shades: Vec<ColorIdea>,
     errors: Vec<String>,

@@ -1,2 +1,4 @@
-{#- One color idea as a chip button (colors.js adds it as a color row). Expects `idea`. -#}
-<button type="button" class="chip color-idea" data-name="{{ idea.name }}" data-hex="{{ idea.hex }}" title="Add {{ idea.name }} ({{ idea.hex }})"><span class="swatch" style="background: {{ idea.hex }}"></span>{{ idea.name }}</button>
+{#- One color idea from photos as a chip button (colors.js adds it as a color
+    row). Expects `idea`. "yours" = a shade already in the stash; "or new:" =
+    a new shade offered next to a close one of yours. -#}
+{% if idea.is_or_new() %}<small class="muted idea-or">or new:</small>{% endif %}<button type="button" class="chip color-idea{% if idea.is_yours() %} yours{% endif %}" data-name="{{ idea.name }}" data-hex="{{ idea.hex }}" title="{% if idea.is_yours() %}Your {{ idea.name }} ({{ idea.hex }}), already used in your stash{% else %}A new shade: {{ idea.name }} ({{ idea.hex }}){% endif %}"><span class="swatch" style="background: {{ idea.hex }}"></span>{{ idea.name }}{% if idea.is_yours() %} <small class="muted">yours</small>{% endif %}</button>

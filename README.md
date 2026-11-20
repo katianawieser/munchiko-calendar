@@ -26,7 +26,7 @@ take the photos, and it suggests what to wear from what's already in the stash.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
 templates · Pico CSS · a few small optional scripts · the `image` crate.
-226 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+229 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -178,10 +178,12 @@ preview shows every color that will change. Merging first saves a copy of the da
 switches every ticked color to the kept shade and its name.
 
 **"From your photos"** offers the main colors of an item's photos (including
-photos just chosen in the form, before saving), each with
-its exact shade and the nearest name from a built-in list ("teal", "baby
-pink"). One click adds it; click into one of your own colors first and the
-chip gives that color its shade instead, keeping your name.
+photos just chosen in the form, before saving). Each reuses one of your
+shades when it matches ("yours"); when yours is close but not the same, both
+are offered ("red · or new: burgundy"); otherwise it's a new shade with the
+nearest name from a built-in list. One click adds it; click into one of your
+own colors first and the chip gives that color its shade instead, keeping
+your name.
 
 ## How suggestions work
 
@@ -308,18 +310,20 @@ Settings (all optional environment variables):
   - [x] **M12a**: "Done" buttons on the calendar's to-do box and on post timelines ("✓ Made it", "✓ It arrived", "✓ Bought it")
   - [x] **M12b**: a fabric made from a bow's page asks "in the stash or need to buy it", and starts with the bow's colors
   - [x] **M12c**: AVIF photos; small / medium / large grid cards; "↑ Top" button
-- [ ] **M13**: Colors that behave
+- [x] **M13**: Colors that behave
   - [x] **M13a**: the suggested name for a picked shade is always offered (one click to use it), typed names are never overwritten, and color chips fill an empty row instead of replacing a shade you set
   - [x] **M13b**: a photo's colors offered as soon as it's chosen, before saving
   - [x] **M13c**: fewer near-duplicate shades: looser grouping in "Your shades", plus a page to merge look-alike shades everywhere they're used
   - [x] **M13d**: split or rename shades within a color, with name suggestions from your own names
-  - [ ] **M13e**: colors from photos reuse your existing shades when they match (and ask when they're close)
+  - [x] **M13e**: colors from photos reuse your existing shades when they match (and ask when they're close)
 - [ ] **M14**: Finding things in long lists
   - [ ] **M14a**: type-to-search when choosing fabrics and a matching partner
   - [ ] **M14b**: fabric photos instead of long fabric names in the accessory list
   - [ ] **M14c**: suggest a matching partner from fabric pairings
 
-Ideas for later: consistent naming (a suggested name from the main fabric,
+Ideas for later: a palette-first color model (a short list of your own
+named shades that items choose from, with a guided pass to map existing
+colors onto it); consistent naming (a suggested name from the main fabric,
 kind and size); outfits in suggestions; photos in the suggestion box; a
 calendar nudge for upcoming events with no post planned yet.
 

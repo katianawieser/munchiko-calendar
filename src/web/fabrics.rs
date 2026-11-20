@@ -20,7 +20,7 @@ use super::forms::{
     Choice, ColorRow, FormData, color_rows, color_rows_from_form, join_list, local_back,
     read_colors, split_list,
 };
-use super::photos::{self, ColorIdea, FormWithPhotos, PhotoSection};
+use super::photos::{self, ColorIdea, FormWithPhotos, IdeaGroup, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewFabric};
 use crate::models::{Accessory, Color, Fabric, FabricId, PhotoOwner};
@@ -188,7 +188,7 @@ struct FabricFormPage {
     blocked: Blockers,
     photos: PhotoSection,
     /// Main colors of its photos, offered beside the color rows.
-    color_ideas: Vec<ColorIdea>,
+    color_ideas: Vec<IdeaGroup>,
     /// Shades already picked elsewhere in the stash, to reuse.
     your_shades: Vec<ColorIdea>,
     errors: Vec<String>,

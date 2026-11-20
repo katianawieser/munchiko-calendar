@@ -445,9 +445,16 @@ See README.md for the planning rules, data model and roadmap.
   (`input.toggle-all[data-boxes=from]`, no name so never sent; generic code in
   `static/page.js`: ticks/unticks the named boxes in its form, indeterminate when
   mixed, hidden without JS). Verified in Chrome via the proxy harness.
-- **M13e planned (her note):** photo color ideas should use an existing shade if
-  practically identical (ΔE<5), offer both "your X" and a new one if close
-  (5–10), else a new shade with a suggested name.
+- **M13e done (M13 complete):** `shades::match_shade(rgb, stash)` → `Same` (ΔE<5),
+  `Close` (<10), `New`. `web/photos.rs`: `ColorIdea { name, hex, kind: IdeaKind::{Yours,
+  New, OrNew} }`; pure `ideas_from_swatches(swatches, stash, existing)` (Same → your
+  shade under your name; Close → yours + an OrNew alternative named with the nearest
+  built-in name that ISN'T yours, so no second "red"; each hex once; names the item
+  already has a swatch for skipped; a lone OrNew becomes New); `group_ideas` →
+  `Vec<IdeaGroup>` (yours + its or-new stay together); `stash_shades(state)` loads
+  the stash (DB error → no reuse). Used by saved-photo ideas and /colors/from-photos.
+  Chips: "yours" marker (blue border), "or new:" prefix, pairs framed (`.idea-choice`).
+  Real data: 113 items with photos → 154 yours, 94 yours-or-new choices, 104 new.
 - **Open idea, to revisit (2026-11-20):** Katiana finds the Shades merge process
   clunky with very long lists and asked whether to clear all color data and redo it.
   Advice given: don't wipe (~330 colors drive suggestions/tone/sort; free picking
@@ -456,8 +463,7 @@ See README.md for the planning rules, data model and roadmap.
   palette entries (data model change from embedded JSON hex); one guided bulk pass
   that auto-matches every existing color to its nearest palette color (Rust) with a
   review list for corrections, optionally checked against photos. M13e's matching
-  logic carries over. Waiting on her choice: A) M13e then M14, B) plan palette now,
-  C) go to M14.
+  logic carries over. She chose A: M13e (done), then M14; palette later.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

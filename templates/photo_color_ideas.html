@@ -3,7 +3,7 @@
 {%- if ideas.is_empty() -%}
 <small class="muted">No new colors found in the chosen photos.</small>
 {%- else -%}
-<small class="muted">From the photos you chose (not saved yet): click one to add it.</small>
-{% for idea in ideas %}{% include "color_idea_chip.html" %}
+<small class="muted">From the photos you chose (not saved yet): click one to add it ("yours" = a shade you already use).</small>
+{% for group in ideas %}<span class="idea-group{% if group.len() > 1 %} idea-choice{% endif %}">{% for idea in group %}{% include "color_idea_chip.html" %}{% endfor %}</span>
 {% endfor %}
 {%- endif %}

@@ -12,7 +12,7 @@ use axum::http::header;
 use axum::response::{IntoResponse, Response};
 
 use super::forms::read_colors;
-use super::photos::{self, ColorIdea, FormWithPhotos};
+use super::photos::{self, ColorIdea, FormWithPhotos, IdeaGroup, IdeaKind};
 use super::{AppError, AppState, render};
 use crate::models::{Accessory, Fabric};
 use crate::palette;
@@ -49,7 +49,7 @@ pub async fn name_for_hex(
 #[derive(Template)]
 #[template(path = "photo_color_ideas.html")]
 struct ChosenPhotoIdeas {
-    ideas: Vec<ColorIdea>,
+    ideas: Vec<IdeaGroup>,
 }
 
 /// `POST /colors/from-photos`: the main colors of the photos just chosen in a
@@ -79,6 +79,7 @@ pub fn your_shades(fabrics: &[Fabric], accessories: &[Accessory]) -> Vec<ColorId
         .map(|group| ColorIdea {
             name: group.leader().name().to_string(),
             hex: group.leader().hex.clone(),
+            kind: IdeaKind::Yours,
         })
         .collect()
 }

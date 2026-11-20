@@ -31,10 +31,9 @@
   </template>
   {% if !color_ideas.is_empty() %}
   <p class="color-ideas" hidden>
-    <small class="muted">From your photos: click one to add it. To give a color that has no shade yet this one, click into its name first.</small>
-    {% for idea in color_ideas %}
-    {% include "color_idea_chip.html" %}
-    {% endfor %}
+    <small class="muted">From your photos: click one to add it ("yours" = a shade you already use). To give a color that has no shade yet this one, click into its name first.</small>
+{% for group in color_ideas %}<span class="idea-group{% if group.len() > 1 %} idea-choice{% endif %}">{% for idea in group %}{% include "color_idea_chip.html" %}{% endfor %}</span>
+{% endfor %}
   </p>
   {% endif %}
   <p class="color-ideas chosen-photo-ideas" hidden aria-live="polite"></p>

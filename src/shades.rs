@@ -253,6 +253,31 @@ pub fn families(shades: &[Shade], closeness: Closeness) -> Vec<Family> {
     families
 }
 
+/// How a newly found color (from a photo) compares with the stash's shades.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ShadeMatch<'a> {
+    /// Practically identical (under [`Closeness::Tight`]): use the stash's.
+    Same(&'a Shade),
+    /// Close (under [`Closeness::Medium`]) but visibly different: offer both.
+    Close(&'a Shade),
+    /// Nothing like it yet: a new shade.
+    New,
+}
+
+/// The stash shade most like `rgb`, and how close it is. Reusing a shade
+/// that's already there keeps the stash from filling up with near-copies.
+pub fn match_shade(rgb: [u8; 3], stash: &[Shade]) -> ShadeMatch<'_> {
+    let nearest = stash
+        .iter()
+        .map(|s| (palette::difference(s.rgb, rgb), s))
+        .min_by(|a, b| a.0.total_cmp(&b.0));
+    match nearest {
+        Some((d, shade)) if d < Closeness::Tight.limit() => ShadeMatch::Same(shade),
+        Some((d, shade)) if d < Closeness::Medium.limit() => ShadeMatch::Close(shade),
+        _ => ShadeMatch::New,
+    }
+}
+
 /// Names to offer for (part of) a family, so names stay consistent: first
 /// the names it already uses, then names used anywhere in the stash (`all`)
 /// on a shade that looks like one of its shades (within `Closeness::Medium`),
@@ -523,6 +548,25 @@ mod tests {
             merge.apply(&[c("sage", "#c0cc97")]).unwrap(),
             [c("light sage", "#c0cc97")]
         );
+    }
+
+    #[test]
+    fn found_colors_reuse_a_matching_shade() {
+        let stash = collect(&[fabric(1, vec![c("sage", "#a3a264")])], &[]);
+        let sage = &stash[0];
+        // Practically the same: reuse it.
+        assert_eq!(
+            match_shade([0xa4, 0xa3, 0x65], &stash),
+            ShadeMatch::Same(sage)
+        );
+        // Visibly different but close: both are offered.
+        assert_eq!(
+            match_shade([0xb0, 0xaa, 0x60], &stash),
+            ShadeMatch::Close(sage)
+        );
+        // Nothing like it.
+        assert_eq!(match_shade([0, 0, 200], &stash), ShadeMatch::New);
+        assert_eq!(match_shade([0, 0, 200], &[]), ShadeMatch::New);
     }
 
     #[test]
