@@ -224,6 +224,12 @@ pub fn nearest_names(rgb: [u8; 3], count: usize) -> Vec<&'static str> {
     names
 }
 
+/// How different two shades look: ΔE76 in CIE Lab. About 2 is the smallest
+/// difference people notice; 5 is "barely"; 15 is clearly different.
+pub fn difference(a: [u8; 3], b: [u8; 3]) -> f32 {
+    distance(to_lab(a), to_lab(b))
+}
+
 /// Two shades too close to tell apart side by side (a Lab difference under 5;
 /// around 2 is the smallest difference people notice at all).
 pub fn look_alike(a: [u8; 3], b: [u8; 3]) -> bool {

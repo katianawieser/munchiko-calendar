@@ -5,3 +5,6 @@
 
 # Uploaded photos (they belong with the database, not in git)
 /photos/
+
+# Database copies saved before a shade merge
+/backups/

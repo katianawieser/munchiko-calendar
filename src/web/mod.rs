@@ -29,8 +29,10 @@ mod outfits;
 mod photos;
 mod posts;
 mod series;
+mod shades;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 
 use askama::Template;
 use axum::Router;
@@ -61,6 +63,9 @@ pub struct AppState {
     /// the system's (so tests behave the same on every computer).
     pub converter: PhotoConverter,
     pub lead_times: LeadTimes,
+    /// Where a copy of the database is saved before a shade merge. `None`
+    /// (as in `new`) refuses merges; `main` sets the `backups/` folder.
+    pub backups: Option<PathBuf>,
     /// Pretend today is this date. Tests use it so their output doesn't
     /// depend on when they run; the real app leaves it `None`.
     pub today_override: Option<NaiveDate>,
@@ -73,6 +78,7 @@ impl AppState {
             photos,
             converter: PhotoConverter::Unavailable,
             lead_times: LeadTimes::default(),
+            backups: None,
             today_override: None,
         }
     }
@@ -98,6 +104,8 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(uploads)
         .route("/colors/name", get(colors::name_for_hex))
+        .route("/shades", get(shades::list))
+        .route("/shades/merge", get(shades::preview).post(shades::apply))
         .route(
             "/colors/from-photos",
             post(colors::from_photos).layer(DefaultBodyLimit::max(photos::MAX_UPLOAD_BYTES)),

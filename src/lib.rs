@@ -7,11 +7,12 @@
 //! - [`suggest`]: "for Earth Day, consider the leaf bow", with reasons.
 //! - [`photos`]: recognises image files and keeps them in a folder on disk.
 //! - [`palette`]: finds the main colors in a photo and names them.
+//! - [`shades`]: groups near-duplicate picked shades and plans merging them.
 //! - [`db`]: SQLite storage that loads and saves the model types.
 //! - [`web`]: the Axum web app that shows it all in the browser.
 //! - [`demo`]: the example Halloween post.
 //!
-//! `models`, `planner`, `holidays`, `suggest` and `palette` know nothing about databases or web servers; the
+//! `models`, `planner`, `holidays`, `suggest`, `palette` and `shades` know nothing about databases or web servers; the
 //! outer layers only *use* their types. That keeps the core logic easy to test.
 
 pub mod db;
@@ -21,5 +22,6 @@ pub mod models;
 pub mod palette;
 pub mod photos;
 pub mod planner;
+pub mod shades;
 pub mod suggest;
 pub mod web;

@@ -14,8 +14,9 @@ use axum::response::{IntoResponse, Response};
 use super::forms::read_colors;
 use super::photos::{self, ColorIdea, FormWithPhotos};
 use super::{AppError, AppState, render};
-use crate::models::{Accessory, Color, Fabric};
+use crate::models::{Accessory, Fabric};
 use crate::palette;
+use crate::shades::{self, Closeness};
 
 /// Most names to offer for one shade.
 const MAX_NAMES: usize = 5;
@@ -66,44 +67,26 @@ pub async fn from_photos(
     Ok(render(ChosenPhotoIdeas { ideas })?.into_response())
 }
 
-/// Every named shade in the stash (fabrics' colors and accessories' own),
-/// once each, in rainbow order. Colors without a swatch are left out: there's
-/// no shade to reuse. Shades with the same name that look identical count
-/// once; same-named shades that really differ are kept apart.
+/// The stash's shades to reuse with one click: one per group of look-alikes
+/// (at the Shades page's default closeness), shown as that group's most used
+/// shade under its most used name, in rainbow order. Colors without a swatch
+/// have no shade to reuse. Merging look-alikes on the Shades page makes the
+/// stash itself match.
 pub fn your_shades(fabrics: &[Fabric], accessories: &[Accessory]) -> Vec<ColorIdea> {
-    let all = fabrics
+    let all = shades::collect(fabrics, accessories);
+    shades::look_alike_groups(&all, Closeness::Medium)
         .iter()
-        .flat_map(|f| &f.colors)
-        .chain(accessories.iter().flat_map(|a| &a.colors));
-    let mut shades: Vec<(ColorIdea, [u8; 3])> = Vec::new();
-    for Color { name, hex } in all {
-        let Some(hex) = hex else { continue };
-        let Some(rgb) = palette::rgb_from_hex(hex) else {
-            continue;
-        };
-        let idea = ColorIdea {
-            name: name.clone(),
-            hex: hex.clone(),
-        };
-        let repeat = shades
-            .iter()
-            .any(|(seen, seen_rgb)| seen.name == idea.name && palette::look_alike(*seen_rgb, rgb));
-        if !repeat {
-            shades.push((idea, rgb));
-        }
-    }
-    shades.sort_by(|(a, rgb_a), (b, rgb_b)| {
-        palette::rainbow_order(*rgb_a)
-            .cmp(&palette::rainbow_order(*rgb_b))
-            .then(a.name.cmp(&b.name))
-    });
-    shades.into_iter().map(|(idea, _)| idea).collect()
+        .map(|group| ColorIdea {
+            name: group.leader().name().to_string(),
+            hex: group.leader().hex.clone(),
+        })
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::FabricId;
+    use crate::models::{Color, FabricId};
 
     fn fabric(colors: Vec<Color>) -> Fabric {
         Fabric {
@@ -118,7 +101,7 @@ mod tests {
     }
 
     #[test]
-    fn your_shades_are_each_picked_shade_once_in_rainbow_order() {
+    fn your_shades_are_one_per_look_alike_group_in_rainbow_order() {
         let fabrics = [
             fabric(vec![
                 Color::with_hex("baby blue", "#afd2f0"),
@@ -130,6 +113,9 @@ mod tests {
                 Color::with_hex("orange", "#f6831f"), // one you couldn't tell apart
                 Color::with_hex("orange", "#e06010"), // same name, another shade
                 Color::with_hex("cream", "#f5eed7"),
+                // Looks like the orange, another name: joins its group,
+                // shown under the more used name.
+                Color::with_hex("pumpkin", "#f4801c"),
             ]),
         ];
         let shades: Vec<(String, String)> = your_shades(&fabrics, &[])

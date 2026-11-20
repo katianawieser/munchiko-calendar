@@ -2645,3 +2645,191 @@ async fn chosen_photos_offer_their_colors_before_saving() {
     assert!(db.list_all_photos().await.unwrap().is_empty());
     assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
 }
+
+// ---------------------------------------------------------------------------
+// Shades: look-alikes, same names, merging (M13c)
+// ---------------------------------------------------------------------------
+
+/// The app on a real database file (backups need one) with a backups folder,
+/// and four fabrics: three near-blacks under two names, and a red.
+async fn setup_shades() -> (Router, Repository, TempDir) {
+    let dir = tempfile::tempdir().unwrap();
+    let url = format!("sqlite://{}", dir.path().join("live.db").display());
+    let db = Repository::connect(&url).await.unwrap();
+    let fabric = |name: &str, colors: Vec<Color>| crate::db::NewFabric {
+        name: name.into(),
+        description: String::new(),
+        colors,
+        keywords: vec![],
+        in_stock: true,
+    };
+    for new in [
+        fabric("Velvet", vec![Color::with_hex("black", "#101010")]),
+        fabric("Satin", vec![Color::with_hex("black", "#101010")]),
+        fabric(
+            "Tweed",
+            vec![
+                Color::with_hex("charcoal", "#121212"),
+                Color::with_hex("red", "#cc0000"),
+            ],
+        ),
+        fabric("Felt", vec![Color::with_hex("black", "#141414")]),
+    ] {
+        db.create_fabric(&new).await.unwrap();
+    }
+    let mut state = AppState::new(db.clone(), PhotoStore::new(dir.path().join("photos")));
+    state.backups = Some(dir.path().join("backups"));
+    state.today_override = Some(d(2026, 11, 20));
+    (router(state), db, dir)
+}
+
+#[tokio::test]
+async fn shades_are_grouped_two_ways() {
+    let (app, _, _dir) = setup_shades().await;
+    let (status, html) = get(&app, "/shades").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        html.contains("4 shades make 2 groups of look-alikes; 1 of them have more than one shade"),
+        "{html}"
+    );
+    // The look-alike group: all three near-blacks, the most used one ticked.
+    assert!(html.contains("name=\"keep\" value=\"#101010\" checked"));
+    assert!(html.contains("name=\"from\" value=\"#121212\" checked"));
+    assert!(html.contains("<a href=\"/fabrics/3\">Tweed</a>"));
+
+    // Same name: only the blacks; "charcoal" isn't a black.
+    let (_, html) = get(&app, "/shades?view=name").await;
+    assert!(html.contains("<strong>black</strong>: 2 shades"));
+    assert!(!html.contains("value=\"#121212\""));
+    assert!(html.contains("<input type=\"hidden\" name=\"name\" value=\"black\">"));
+}
+
+#[tokio::test]
+async fn merging_look_alikes_previews_backs_up_and_applies() {
+    let (app, db, dir) = setup_shades().await;
+    let fields =
+        "view=alike&closeness=medium&from=%23101010&from=%23121212&from=%23141414&keep=%23101010";
+
+    // The preview changes nothing yet.
+    let (status, html) = get(&app, &format!("/shades/merge?{fields}")).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(
+        html.contains("This changes <strong>2 colors on 2 items</strong>"),
+        "{html}"
+    );
+    assert!(html.contains(">Tweed</a>") && html.contains(">Felt</a>"));
+    assert!(!html.contains(">Velvet</a>"), "already that shade");
+    assert_eq!(
+        db.get_fabric(FabricId(3)).await.unwrap().colors[0].name,
+        "charcoal"
+    );
+
+    // Merge: a backup first, then every look-alike becomes the kept black.
+    let reply = post(&app, "/shades/merge", fields).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let location = reply.location.unwrap();
+    assert!(location.starts_with("/shades?view=alike&closeness=medium&merged=2+colors+on+2+items&backup=munchiko-before-merge-"), "{location}");
+    let backups: Vec<_> = std::fs::read_dir(dir.path().join("backups"))
+        .unwrap()
+        .collect();
+    assert_eq!(backups.len(), 1);
+    assert_eq!(
+        db.get_fabric(FabricId(3)).await.unwrap().colors,
+        [
+            Color::with_hex("black", "#101010"),
+            Color::with_hex("red", "#cc0000")
+        ],
+        "renamed to the kept shade's name"
+    );
+    assert_eq!(
+        db.get_fabric(FabricId(4)).await.unwrap().colors,
+        [Color::with_hex("black", "#101010")]
+    );
+    let (_, html) = get(&app, &location).await;
+    assert!(html.contains("Merged: 2 colors on 2 items changed"));
+    assert!(html.contains("Nothing to merge here"));
+
+    // Again: nothing to change, so no second backup.
+    post(&app, "/shades/merge", fields).await;
+    assert_eq!(
+        std::fs::read_dir(dir.path().join("backups"))
+            .unwrap()
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn unticked_shades_stay_as_they_are() {
+    let (app, db, _dir) = setup_shades().await;
+    // Merge only Felt's black into the kept one; Tweed's charcoal stays.
+    let fields = "view=alike&closeness=medium&from=%23101010&from=%23141414&keep=%23101010";
+    let reply = post(&app, "/shades/merge", fields).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        db.get_fabric(FabricId(4)).await.unwrap().colors[0]
+            .hex
+            .as_deref(),
+        Some("#101010")
+    );
+    assert_eq!(
+        db.get_fabric(FabricId(3)).await.unwrap().colors[0],
+        Color::with_hex("charcoal", "#121212")
+    );
+}
+
+#[tokio::test]
+async fn merge_requests_are_checked() {
+    let (app, _, _dir) = setup_shades().await;
+    // The kept shade must be a real one in the stash...
+    let (status, _) = get(&app, "/shades/merge?from=%23121212&keep=%23abcdef").await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    // ...but it counts as ticked even if its box wasn't.
+    let (status, html) = get(&app, "/shades/merge?from=%23121212&keep=%23101010").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(html.contains("1 color on 1 item"), "{html}");
+    let (status, _) = get(&app, "/shades/merge?from=red&keep=red").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Without a backups folder (the in-memory test app), merging is refused
+    // and nothing changes.
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    db.create_fabric(&crate::db::NewFabric {
+        name: "Felt".into(),
+        description: String::new(),
+        colors: vec![Color::with_hex("black", "#141414")],
+        keywords: vec![],
+        in_stock: true,
+    })
+    .await
+    .unwrap();
+    let felt = db
+        .list_fabrics()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|f| f.name == "Felt")
+        .unwrap();
+    db.create_fabric(&crate::db::NewFabric {
+        name: "Velvet".into(),
+        description: String::new(),
+        colors: vec![Color::with_hex("black", "#101010")],
+        keywords: vec![],
+        in_stock: true,
+    })
+    .await
+    .unwrap();
+    let reply = post(
+        &app,
+        "/shades/merge",
+        "from=%23101010&from=%23141414&keep=%23101010",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(
+        db.get_fabric(felt.id).await.unwrap().colors[0]
+            .hex
+            .as_deref(),
+        Some("#141414")
+    );
+}

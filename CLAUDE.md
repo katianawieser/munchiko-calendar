@@ -403,6 +403,25 @@ See README.md for the planning rules, data model and roadmap.
   a counter drops stale replies. Browser check: a same-origin Python proxy in the
   scratchpad (`proxy/proxy.py HARNESS PORT APP_PORT`, serves /__harness, forwards
   the rest and rewrites Origin) so the CSRF guard is exercised for real.
+- **M13c done (M13 complete):** her answers: closeness adjustable Tight/Medium/Loose
+  (ΔE 5/10/15, default Medium); merged colors take the KEPT shade's name; both
+  "Look-alikes" and "Same name" views; preview + automatic backup. `src/shades.rs`
+  (pure): `collect` (distinct hex, uses as (Owner, name), most used first),
+  `look_alike_groups` (greedy from most used; join nearest leader within limit),
+  `name_groups` (names with >1 shade, only that name's uses), `MergePlan { from,
+  only_name, to }.apply/changes` (drops a repeat name left by the merge, first
+  wins). `palette::difference` (public ΔE). `your_shades` = one chip per Medium group
+  (leader hex + most used name): 266 → 147 on real data. `web/shades.rs`: /shades
+  (view=alike|name, closeness), per-shade Merge checkbox (ticked) + Keep radio (kept
+  shade always counts), GET /shades/merge preview (changed chips outlined), POST
+  applies: `Repository::backup_to` (VACUUM INTO, then checks the file exists:
+  in-memory DBs "succeed" without writing!) into `AppState.backups`
+  (main: BACKUPS_DIR or `backups/`, gitignored; None refuses merges with 500),
+  then `Repository::set_colors` in one transaction; redirect with
+  `merged=…&backup=file`. Web tests use `setup_shades()` (file DB in a tempdir).
+  `sqlite:` + absolute path isn't absolute for sqlx; use `sqlite://`. Real data:
+  302 shades → Tight 251 / Medium 147 / Loose 92 groups; 49 names with >1 shade.
+  Links: "🎨 Shades" on Fabrics/Accessories heads and in "Pick from your shades".
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

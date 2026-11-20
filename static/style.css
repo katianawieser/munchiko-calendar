@@ -105,6 +105,15 @@ a.entry:hover { filter: brightness(0.95); text-decoration: underline; }
 .shortage { color: var(--mc-overdue); }
 .overdue a, li.overdue { color: var(--mc-overdue); }
 .notice.bad { color: var(--mc-overdue); font-weight: 600; }
+.notice.good { font-weight: 600; }
+/* Shades page: one radio per shade in a group. */
+.shade-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; }
+.shade-choice input[type="radio"], .shade-choice input[type="checkbox"] { margin: 0; }
+.shade-head { display: flex; gap: 0.4rem; margin-bottom: 0.2rem; }
+.shade-head small { width: 1.25rem; text-align: center; font-size: 0.65rem; }
+.shade-group header { margin-bottom: 0.75rem; }
+/* Merge preview: the colors that change. */
+.merged-chip .chip { outline: 2px solid var(--pico-primary); font-weight: 600; }
 
 table.timeline tr.done td { opacity: 0.6; }
 

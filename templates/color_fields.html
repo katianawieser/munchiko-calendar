@@ -41,7 +41,7 @@
   {% if !your_shades.is_empty() %}
   <details class="your-shades" hidden>
     <summary>🎨 Pick from your shades ({{ your_shades.len() }})</summary>
-    <small class="muted">Shades you've picked before, on any fabric or accessory. Click one to add it as a color here (or click into a color without a shade first to give it that one).</small><br>
+    <small class="muted">Shades you've picked before, on any fabric or accessory. Click one to add it as a color here (or click into a color without a shade first to give it that one). Look-alike shades show once; <a href="/shades">merge them on the Shades page</a>.</small><br>
     {% for idea in your_shades %}
     <button type="button" class="chip color-idea" data-name="{{ idea.name }}" data-hex="{{ idea.hex }}" title="Use {{ idea.name }} ({{ idea.hex }})"><span class="swatch" style="background: {{ idea.hex }}"></span>{{ idea.name }}</button>
     {% endfor %}

@@ -674,6 +674,56 @@ impl Repository {
             .collect())
     }
 
+    /// Save new color lists for several fabrics and accessories at once (a
+    /// shade merge), in one transaction: all of them change, or none.
+    pub async fn set_colors(&self, changes: &[(crate::shades::Owner, Vec<Color>)]) -> Result<()> {
+        use crate::shades::Owner;
+        let mut tx = self.pool.begin().await?;
+        for (owner, colors) in changes {
+            let (sql, what, id) = match owner {
+                Owner::Fabric(id) => ("UPDATE fabrics SET colors = ? WHERE id = ?", "fabric", id.0),
+                Owner::Accessory(id) => (
+                    "UPDATE accessories SET colors = ? WHERE id = ?",
+                    "accessory",
+                    id.0,
+                ),
+            };
+            let result = sqlx::query(sql)
+                .bind(Json(colors))
+                .bind(id)
+                .execute(&mut *tx)
+                .await?;
+            if result.rows_affected() == 0 {
+                return Err(DbError::NotFound { what, id });
+            }
+        }
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Write a complete copy of the database to `path` (which must not exist
+    /// yet). `VACUUM INTO` copies a consistent snapshot even while the app is
+    /// running, and the copy is an ordinary SQLite file that can be opened in
+    /// place of munchiko.db to go back.
+    pub async fn backup_to(&self, path: &std::path::Path) -> Result<()> {
+        let path = path
+            .to_str()
+            .ok_or_else(|| DbError::Corrupt("backup path isn't valid text".into()))?;
+        sqlx::query("VACUUM INTO ?")
+            .bind(path)
+            .execute(&self.pool)
+            .await?;
+        // An in-memory database (the tests') "succeeds" without writing a
+        // file, so never trust the OK alone: a backup that isn't on disk
+        // must not let a merge go ahead.
+        if !std::path::Path::new(path).exists() {
+            return Err(DbError::Corrupt(format!(
+                "the backup {path} wasn't written"
+            )));
+        }
+        Ok(())
+    }
+
     /// Mark fabric as bought (or used up).
     pub async fn set_fabric_in_stock(&self, id: FabricId, in_stock: bool) -> Result<()> {
         let result = sqlx::query("UPDATE fabrics SET in_stock = ? WHERE id = ?")
@@ -2447,6 +2497,71 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn colors_are_set_all_or_nothing_and_backups_are_real_copies() {
+        use crate::shades::Owner;
+        // A real file: an in-memory database can't be copied to disk (and
+        // `backup_to` says so rather than pretending).
+        let dir = tempfile::tempdir().unwrap();
+        let db = Repository::connect(&format!(
+            "sqlite://{}",
+            dir.path().join("live.db").display()
+        ))
+        .await
+        .unwrap();
+        assert!(
+            Repository::in_memory()
+                .await
+                .unwrap()
+                .backup_to(&dir.path().join("nothing.db"))
+                .await
+                .is_err()
+        );
+        let velvet = db
+            .create_fabric(&NewFabric {
+                name: "Velvet".into(),
+                description: String::new(),
+                colors: vec![Color::with_hex("black", "#141414")],
+                keywords: vec![],
+                in_stock: true,
+            })
+            .await
+            .unwrap();
+        let black = vec![Color::with_hex("black", "#101010")];
+
+        // One unknown item: nothing is saved.
+        let bad = [
+            (Owner::Fabric(velvet), black.clone()),
+            (Owner::Accessory(AccessoryId(99)), black.clone()),
+        ];
+        assert!(db.set_colors(&bad).await.is_err());
+        assert_eq!(
+            db.get_fabric(velvet).await.unwrap().colors[0]
+                .hex
+                .as_deref(),
+            Some("#141414")
+        );
+
+        // A backup taken now still has the old shade after the change.
+        let copy = dir.path().join("before.db");
+        db.backup_to(&copy).await.unwrap();
+        db.set_colors(&[(Owner::Fabric(velvet), black.clone())])
+            .await
+            .unwrap();
+        assert_eq!(db.get_fabric(velvet).await.unwrap().colors, black);
+        let old = Repository::connect(&format!("sqlite://{}", copy.display()))
+            .await
+            .unwrap();
+        assert_eq!(
+            old.get_fabric(velvet).await.unwrap().colors[0]
+                .hex
+                .as_deref(),
+            Some("#141414")
+        );
+        // It won't overwrite an existing file.
+        assert!(db.backup_to(&copy).await.is_err());
     }
 
     #[tokio::test]

@@ -69,6 +69,8 @@ async fn run() -> Result<(), Box<dyn Error>> {
     let photos_dir = std::env::var("PHOTOS_DIR").unwrap_or_else(|_| DEFAULT_PHOTOS_DIR.into());
     let mut state = AppState::new(db, PhotoStore::new(photos_dir));
     state.converter = PhotoConverter::system();
+    let backups = std::env::var("BACKUPS_DIR").unwrap_or_else(|_| "backups".into());
+    state.backups = Some(backups.into());
     println!("HEIC and AVIF photos: {}", state.converter.describe());
 
     axum::serve(listener, router(state))

@@ -26,7 +26,7 @@ take the photos, and it suggests what to wear from what's already in the stash.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
 templates · Pico CSS · a few small optional scripts · the `image` crate.
-212 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+224 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -114,6 +114,7 @@ Example: Halloween (post Oct 31, default lead times):
 | **Accessories** | Bows, scarves, costumes, hats, props: table or photo grid (small / medium / large cards), tags (plus their fabrics' tags), filter by kind, status, tag and warm/cool tone, sort by color, one-click status, how many you have (×2), fabrics by role (or "+ New fabric…" to add one right there, in the stash or on the shopping list), matching sets, photos |
 | **Outfits** | Pieces worn together (Glinda's crown, dress and wand), with notes and photos; ready once every piece is |
 | **Fabrics** | Stash and shopping list as a table or photo grid, tags, tag and warm/cool filters, sort by color, pairings, what each fabric is used by, photos |
+| **Shades** | Every picked shade, grouped as look-alikes (tight / medium / loose) or by name; merge a group into one shade, with a preview and an automatic database backup first |
 
 **Post ideas** are posts with no date yet, like an outing you want to post
 about "sometime". You can plan who wears what and the backdrop. The Posts
@@ -163,6 +164,14 @@ the pick. **"Pick from your shades"** (a fold-out under the colors) lists
 every shade picked anywhere in the stash, in rainbow order, to reuse with one
 click instead of picking it again. Color chips never replace a shade that's
 already set; they fill a color without one, or add a new color.
+
+**Shades** (linked from the Fabrics and Accessories pages) gathers every
+picked shade. A color picker rarely lands on the same value twice, so one
+"black" can become fifteen slightly different blacks. Look-alike shades (or
+all the shades used under one name) are grouped; untick any that should stay
+apart, choose the one to keep, and the preview shows every color that will
+change. Merging first saves a copy of the database in `backups/`, then
+switches every ticked color to the kept shade and its name.
 
 **"From your photos"** offers the main colors of an item's photos (including
 photos just chosen in the form, before saving), each with
@@ -295,10 +304,10 @@ Settings (all optional environment variables):
   - [x] **M12a**: "Done" buttons on the calendar's to-do box and on post timelines ("✓ Made it", "✓ It arrived", "✓ Bought it")
   - [x] **M12b**: a fabric made from a bow's page asks "in the stash or need to buy it", and starts with the bow's colors
   - [x] **M12c**: AVIF photos; small / medium / large grid cards; "↑ Top" button
-- [ ] **M13**: Colors that behave
+- [x] **M13**: Colors that behave
   - [x] **M13a**: the suggested name for a picked shade is always offered (one click to use it), typed names are never overwritten, and color chips fill an empty row instead of replacing a shade you set
   - [x] **M13b**: a photo's colors offered as soon as it's chosen, before saving
-  - [ ] **M13c**: fewer near-duplicate shades: looser grouping in "Your shades", plus a page to merge look-alike shades everywhere they're used
+  - [x] **M13c**: fewer near-duplicate shades: looser grouping in "Your shades", plus a page to merge look-alike shades everywhere they're used
 - [ ] **M14**: Finding things in long lists
   - [ ] **M14a**: type-to-search when choosing fabrics and a matching partner
   - [ ] **M14b**: fabric photos instead of long fabric names in the accessory list
@@ -323,6 +332,7 @@ src/
   planner.rs  the scheduling engine + its tests
   suggest.rs  scores accessories and fabrics for an event, with reasons + tests
   palette.rs  finds a photo's main colors and names them (CIE Lab) + tests
+  shades.rs   groups near-duplicate shades and plans merges + tests
   holidays.rs reads holidays.toml and calculates dates (Easter, nth weekday...) + tests
   photos/     uploaded photos + tests
     mod.rs      recognises files by their first bytes, saves them on disk
@@ -342,6 +352,7 @@ src/
     photos.rs   photo upload, serving and deleting; color ideas from photos
     series.rs   series pages (shared setup, posts, shared timeline)
     outfits.rs  outfit pages + tests
+    shades.rs   Shades page: look-alike groups, merge preview, backup + merge
     calendar.rs, posts.rs, events.rs, fabrics.rs, accessories.rs   page handlers
     tests.rs    request-level tests against an in-memory app
   main.rs     starts the server

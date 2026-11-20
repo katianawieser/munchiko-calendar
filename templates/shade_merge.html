@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Merge shades{% endblock %}
+{% block content %}
+<h2>Merge into {% let color = keep %}{% include "color_chip.html" %}</h2>
+{% if rows.is_empty() %}
+<p>Nothing would change: every color in this group already uses that shade.</p>
+<p><a href="{{ back }}" role="button" class="secondary outline">Back to shades</a></p>
+{% else %}
+<p>This changes <strong>{{ summary }}</strong> (outlined below). Before anything changes, a copy of the database is saved in the <code>backups</code> folder (to go back, stop the app and put that copy in place of <code>munchiko.db</code>).</p>
+<table>
+  <thead><tr><th>Item</th><th>Colors now</th><th>After the merge</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><a href="{{ row.link.href }}">{{ row.link.label }}</a></td>
+      <td>{% for color in row.before %}{% include "color_chip.html" %} {% endfor %}</td>
+      <td>{% for (color, new) in row.after %}<span class="{% if new %}merged-chip{% endif %}">{% include "color_chip.html" %}</span> {% endfor %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+<form method="post" action="/shades/merge" class="form-actions">
+  {% for (name, value) in fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+  <button type="submit">Merge: change {{ summary }}</button>
+  <a href="{{ back }}" role="button" class="secondary outline">Cancel</a>
+</form>
+{% endif %}
+{% endblock %}
