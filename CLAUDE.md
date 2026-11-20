@@ -448,6 +448,16 @@ See README.md for the planning rules, data model and roadmap.
 - **M13e planned (her note):** photo color ideas should use an existing shade if
   practically identical (ΔE<5), offer both "your X" and a new one if close
   (5–10), else a new shade with a suggested name.
+- **Open idea, to revisit (2026-11-20):** Katiana finds the Shades merge process
+  clunky with very long lists and asked whether to clear all color data and redo it.
+  Advice given: don't wipe (~330 colors drive suggestions/tone/sort; free picking
+  would drift again). Instead plan a **palette-first** milestone: her own short list
+  of named shades (seeded from what's left after merging); item colors reference
+  palette entries (data model change from embedded JSON hex); one guided bulk pass
+  that auto-matches every existing color to its nearest palette color (Rust) with a
+  review list for corrections, optionally checked against photos. M13e's matching
+  logic carries over. Waiting on her choice: A) M13e then M14, B) plan palette now,
+  C) go to M14.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
