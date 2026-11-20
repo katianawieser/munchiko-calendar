@@ -26,7 +26,7 @@ take the photos, and it suggests what to wear from what's already in the stash.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
 templates · Pico CSS · a few small optional scripts · the `image` crate.
-223 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+226 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -169,9 +169,12 @@ already set; they fill a color without one, or add a new color.
 picked shade. A color picker rarely lands on the same value twice, so one
 "black" can become fifteen slightly different blacks. Each color gets one
 card with all its shades (every shade appears once), plus lone shades of other
-names that look like it (how alike: tight / medium / loose), unticked. Untick
-any that should stay apart, choose the one to keep, and the preview shows
-every color that will change. Merging first saves a copy of the database in `backups/`, then
+names that look like it (how alike: tight / medium / loose), unticked. Tick
+the shades you mean, then either **merge** them into the kept shade (under
+its name or a new one), or **rename** them, keeping their own shades, to
+split them off into a color of their own ("light sage" out of "sage"). Name
+suggestions put the names you already use on similar shades first. The
+preview shows every color that will change. Merging first saves a copy of the database in `backups/`, then
 switches every ticked color to the kept shade and its name.
 
 **"From your photos"** offers the main colors of an item's photos (including
@@ -305,10 +308,12 @@ Settings (all optional environment variables):
   - [x] **M12a**: "Done" buttons on the calendar's to-do box and on post timelines ("✓ Made it", "✓ It arrived", "✓ Bought it")
   - [x] **M12b**: a fabric made from a bow's page asks "in the stash or need to buy it", and starts with the bow's colors
   - [x] **M12c**: AVIF photos; small / medium / large grid cards; "↑ Top" button
-- [x] **M13**: Colors that behave
+- [ ] **M13**: Colors that behave
   - [x] **M13a**: the suggested name for a picked shade is always offered (one click to use it), typed names are never overwritten, and color chips fill an empty row instead of replacing a shade you set
   - [x] **M13b**: a photo's colors offered as soon as it's chosen, before saving
   - [x] **M13c**: fewer near-duplicate shades: looser grouping in "Your shades", plus a page to merge look-alike shades everywhere they're used
+  - [x] **M13d**: split or rename shades within a color, with name suggestions from your own names
+  - [ ] **M13e**: colors from photos reuse your existing shades when they match (and ask when they're close)
 - [ ] **M14**: Finding things in long lists
   - [ ] **M14a**: type-to-search when choosing fabrics and a matching partner
   - [ ] **M14b**: fabric photos instead of long fabric names in the accessory list

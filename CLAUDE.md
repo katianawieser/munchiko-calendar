@@ -432,6 +432,19 @@ See README.md for the planning rules, data model and roadmap.
   now only controls "similar". `name_groups` and `MergePlan.only_name` removed;
   merged colors take the kept shade's name. `templates/shade_choice.html` partial;
   rows are a CSS grid (Merge | Keep | chip | details).
+- **M13d done (split/rename, Katiana's request):** `MergePlan { from, name, shade:
+  Option }` (None = rename only, each keeps its shade; from now INCLUDES the kept
+  shade so a new name renames its colors too). Card form: Name box (`new_name`,
+  lowercased; empty = kept shade's name for merges, required for renames) with a
+  `<datalist>` from `shades::name_ideas(family, stash)` (names the family uses, then
+  names used anywhere on a shade within Medium of one of its shades, then 2 nearest
+  built-in names each), and buttons `action=merge|rename`. Preview page explains a
+  missing name (`read_plan` → `Result<Result<MergePlan, String>, AppError>`);
+  apply ignores such a form. Notice now "Done: …". Real data (she'd merged some
+  herself): 243 shades, 41 color cards.
+- **M13e planned (her note):** photo color ideas should use an existing shade if
+  practically identical (ΔE<5), offer both "your X" and a new one if close
+  (5–10), else a new shade with a suggested name.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

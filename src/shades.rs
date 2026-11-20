@@ -253,35 +253,78 @@ pub fn families(shades: &[Shade], closeness: Closeness) -> Vec<Family> {
     families
 }
 
-/// A merge: every color using one of `from` becomes `to`: the kept shade,
-/// under the family's name.
+/// Names to offer for (part of) a family, so names stay consistent: first
+/// the names it already uses, then names used anywhere in the stash (`all`)
+/// on a shade that looks like one of its shades (within `Closeness::Medium`),
+/// then the built-in names closest to its shades. Each once.
+pub fn name_ideas(family: &[&Shade], all: &[Shade]) -> Vec<String> {
+    let mut ideas: Vec<String> = Vec::new();
+    let mut add = |name: &str| {
+        if !ideas.iter().any(|n| n == name) {
+            ideas.push(name.to_string());
+        }
+    };
+    for shade in family {
+        for name in &shade.names {
+            add(name);
+        }
+    }
+    for other in all {
+        let near = family
+            .iter()
+            .any(|s| palette::difference(s.rgb, other.rgb) < Closeness::Medium.limit());
+        if near {
+            for name in &other.names {
+                add(name);
+            }
+        }
+    }
+    for shade in family {
+        for name in palette::nearest_names(shade.rgb, 2) {
+            add(name);
+        }
+    }
+    ideas
+}
+
+/// A change to some shades: every color using one of `from` takes `name`,
+/// and, for a merge, the one `shade` (the kept one). Without a `shade` it's
+/// a rename that keeps each color's own shade: that's how a subgroup is
+/// split off ("light sage" out of "sage").
 #[derive(Debug, Clone, PartialEq)]
 pub struct MergePlan {
+    /// The shades to change, including the kept one for a merge.
     pub from: Vec<String>,
-    pub to: Color,
+    pub name: String,
+    /// `Some` merges into this shade; `None` only renames.
+    pub shade: Option<String>,
 }
 
 impl MergePlan {
-    /// `colors` after the merge, or `None` if nothing in it changes. If the
-    /// merge leaves two colors with the same name, the first one stays.
+    /// `colors` after the change, or `None` if nothing in it changes. If it
+    /// leaves two colors with the same name, the first one stays.
     pub fn apply(&self, colors: &[Color]) -> Option<Vec<Color>> {
         let mut changed = false;
-        let mut merged: Vec<Color> = Vec::new();
+        let mut result: Vec<Color> = Vec::new();
         for color in colors {
             let hit = color.hex.as_ref().is_some_and(|h| self.from.contains(h));
             let color = if hit {
-                changed |= *color != self.to;
-                self.to.clone()
+                let new = Color {
+                    name: self.name.clone(),
+                    hex: self.shade.clone().or_else(|| color.hex.clone()),
+                };
+                changed |= new != *color;
+                new
             } else {
                 color.clone()
             };
-            if merged.iter().any(|c| c.name == color.name) {
-                changed = true; // a repeat left by the merge
+            if result.iter().any(|c| c.name == color.name) {
+                changed = true; // a repeat left by the change
             } else {
-                merged.push(color);
+                result.push(color);
             }
         }
-        changed.then_some(merged)
+        changed.then_some(result)
     }
 
     /// Every fabric and accessory whose colors change, with their new colors.
@@ -415,8 +458,9 @@ mod tests {
     #[test]
     fn a_merge_renames_and_reshades_and_drops_repeats() {
         let plan = MergePlan {
-            from: vec!["#121212".into(), "#141414".into()],
-            to: c("black", "#101010"),
+            from: vec!["#101010".into(), "#121212".into(), "#141414".into()],
+            name: "black".into(),
+            shade: Some("#101010".into()),
         };
         let changes = plan.changes(&stash(), &[]);
         let owners: Vec<Owner> = changes.iter().map(|(o, _)| *o).collect();
@@ -442,5 +486,63 @@ mod tests {
         );
         // Nothing to do: None.
         assert_eq!(plan.apply(&[c("red", "#cc0000")]), None);
+    }
+
+    #[test]
+    fn a_rename_splits_shades_off_and_keeps_them() {
+        // Two pale sages become "light sage"; the dark one stays "sage".
+        let fabrics = vec![
+            fabric(1, vec![c("sage", "#c0cc97"), c("red", "#cc0000")]),
+            fabric(2, vec![c("sage", "#bebd78")]),
+            fabric(3, vec![c("sage", "#629370")]),
+        ];
+        let plan = MergePlan {
+            from: vec!["#c0cc97".into(), "#bebd78".into()],
+            name: "light sage".into(),
+            shade: None,
+        };
+        let changes = plan.changes(&fabrics, &[]);
+        assert_eq!(changes.len(), 2);
+        assert_eq!(
+            changes[0].1,
+            [c("light sage", "#c0cc97"), c("red", "#cc0000")],
+            "own shade kept"
+        );
+        assert_eq!(changes[1].1, [c("light sage", "#bebd78")]);
+
+        // Merging under a new name renames the kept shade's colors too.
+        let merge = MergePlan {
+            shade: Some("#c0cc97".into()),
+            ..plan
+        };
+        assert_eq!(
+            merge.changes(&fabrics, &[])[1].1,
+            [c("light sage", "#c0cc97")]
+        );
+        assert_eq!(
+            merge.apply(&[c("sage", "#c0cc97")]).unwrap(),
+            [c("light sage", "#c0cc97")]
+        );
+    }
+
+    #[test]
+    fn name_ideas_put_your_own_names_first() {
+        let stash = collect(
+            &[
+                fabric(1, vec![c("sage", "#a3a264"), c("sage", "#c0cc97")]),
+                // Looks like the pale sage, called something else elsewhere.
+                fabric(2, vec![c("light sage", "#c2cd99")]),
+                fabric(3, vec![c("navy", "#1f2531")]),
+            ],
+            &[],
+        );
+        let sages: Vec<&Shade> = stash.iter().filter(|s| s.name() == "sage").collect();
+        let ideas = name_ideas(&sages, &stash);
+        assert_eq!(&ideas[..2], ["sage", "light sage"], "{ideas:?}");
+        assert!(
+            !ideas.contains(&"navy".to_string()),
+            "not near: not offered"
+        );
+        assert!(ideas.len() > 2, "built-in names come after");
     }
 }

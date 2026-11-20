@@ -1,9 +1,14 @@
 {% extends "base.html" %}
 {% block title %}Merge shades{% endblock %}
 {% block content %}
-<h2>Merge into {% let color = keep %}{% include "color_chip.html" %}</h2>
+{% if let Some(problem) = problem %}
+<h2>Shades</h2>
+<p class="notice bad">{{ problem }}</p>
+<p><a href="{{ back }}" role="button" class="secondary outline">Back to shades</a></p>
+{% else %}
+<h2>{% if rename %}Rename to “{{ result.name }}” <small class="muted">(each keeps its own shade)</small>{% else %}Merge into {% let color = result %}{% include "color_chip.html" %}{% endif %}</h2>
 {% if rows.is_empty() %}
-<p>Nothing would change: every color in this group already uses that shade.</p>
+<p>Nothing would change: the ticked colors already look like that.</p>
 <p><a href="{{ back }}" role="button" class="secondary outline">Back to shades</a></p>
 {% else %}
 <p>This changes <strong>{{ summary }}</strong> (outlined below). Before anything changes, a copy of the database is saved in the <code>backups</code> folder (to go back, stop the app and put that copy in place of <code>munchiko.db</code>).</p>
@@ -21,8 +26,9 @@
 </table>
 <form method="post" action="/shades/merge" class="form-actions">
   {% for (name, value) in fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-  <button type="submit">Merge: change {{ summary }}</button>
+  <button type="submit">{% if rename %}Rename{% else %}Merge{% endif %}: change {{ summary }}</button>
   <a href="{{ back }}" role="button" class="secondary outline">Cancel</a>
 </form>
+{% endif %}
 {% endif %}
 {% endblock %}

@@ -93,9 +93,13 @@ struct ShadeView {
 }
 
 struct FamilyView {
+    /// Numbers the card's name suggestions (`<datalist id="names-3">`).
+    index: usize,
     name: String,
     shades: Vec<ShadeView>,
     similar: Vec<ShadeView>,
+    /// Names to suggest in the card's Name box.
+    name_ideas: Vec<String>,
 }
 
 /// A Tight / Medium / Loose link.
@@ -140,8 +144,17 @@ fn shade_view(
     }
 }
 
-fn family_view(family: &Family, fabrics: &[Fabric], accessories: &[Accessory]) -> FamilyView {
+fn family_view(
+    index: usize,
+    family: &Family,
+    stash: &[Shade],
+    fabrics: &[Fabric],
+    accessories: &[Accessory],
+) -> FamilyView {
+    let members: Vec<&Shade> = family.shades.iter().chain(&family.similar).collect();
     FamilyView {
+        index,
+        name_ideas: shades::name_ideas(&members, stash),
         name: family.name.clone(),
         shades: family
             .shades
@@ -170,7 +183,7 @@ pub async fn list(
 
     let notice = (!form.text("merged").is_empty()).then(|| {
         format!(
-            "Merged: {} changed. A copy of the database from before was saved as backups/{}.",
+            "Done: {} changed. A copy of the database from before was saved as backups/{}.",
             form.text("merged"),
             form.text("backup")
         )
@@ -188,7 +201,8 @@ pub async fn list(
         total_shades: all.len(),
         families: families
             .iter()
-            .map(|f| family_view(f, &fabrics, &accessories))
+            .enumerate()
+            .map(|(i, f)| family_view(i, f, &all, &fabrics, &accessories))
             .collect(),
         closeness_tabs,
         notice,
@@ -200,20 +214,49 @@ pub async fn list(
 // The merge: preview, then apply
 // ---------------------------------------------------------------------------
 
-/// The merge the form asks for: the ticked shades (`from`) and the one to
-/// keep (`keep`), which counts as ticked. Merged colors take the kept
-/// shade's name, read from the current data, not the page.
-fn read_plan(form: &FormData, all: &[Shade]) -> Result<MergePlan, AppError> {
+/// The change the form asks for. `action=merge` (the default): the ticked
+/// shades (`from`) and the kept one (`keep`, which counts as ticked) become
+/// the kept shade, under `new_name` or else the kept shade's own name (read
+/// from the current data, not the page). `action=rename`: the ticked shades
+/// keep their shades and take `new_name`, which is then required.
+///
+/// `Ok(Err(message))` is a mistake to explain on the page; `Err` is a
+/// request no page of the app would send.
+fn read_plan(form: &FormData, all: &[Shade]) -> Result<Result<MergePlan, String>, AppError> {
+    let mut from: Vec<String> = form.all("from").filter_map(Color::parse_hex).collect();
+    // Names are lowercase everywhere, like the color forms make them.
+    let typed = form.text("new_name").trim().to_lowercase();
+    if form.text("action") == "rename" {
+        if from.is_empty() {
+            return Ok(Err("Tick the shades to rename.".into()));
+        }
+        if typed.is_empty() {
+            return Ok(Err("Type the new name for the ticked shades.".into()));
+        }
+        return Ok(Ok(MergePlan {
+            from,
+            name: typed,
+            shade: None,
+        }));
+    }
     let keep = Color::parse_hex(&form.text("keep")).ok_or(AppError::BadRequest)?;
-    let from: Vec<String> = form.all("from").filter_map(Color::parse_hex).collect();
     let kept = all
         .iter()
         .find(|s| s.hex == keep)
         .ok_or(AppError::NotFound)?;
-    Ok(MergePlan {
-        from: from.into_iter().filter(|h| *h != keep).collect(),
-        to: Color::with_hex(kept.name(), keep),
-    })
+    if !from.contains(&keep) {
+        from.push(keep.clone());
+    }
+    let name = if typed.is_empty() {
+        kept.name().to_string()
+    } else {
+        typed
+    };
+    Ok(Ok(MergePlan {
+        from,
+        name,
+        shade: Some(keep),
+    }))
 }
 
 /// One item a merge changes, before and after.
@@ -227,7 +270,11 @@ struct ChangeRow {
 #[derive(Template)]
 #[template(path = "shade_merge.html")]
 struct MergePage {
-    keep: Color,
+    /// The result: the kept shade and name, or (a rename) just the name.
+    result: Color,
+    rename: bool,
+    /// A mistake in the form, shown instead of the changes.
+    problem: Option<String>,
     rows: Vec<ChangeRow>,
     /// "2 colors on 2 items".
     summary: String,
@@ -308,10 +355,30 @@ pub async fn preview(
     let fabrics = state.db.list_fabrics().await?;
     let accessories = state.db.list_accessories().await?;
     let all = shades::collect(&fabrics, &accessories);
-    let plan = read_plan(&form, &all)?;
+    let back = list_href(read_closeness(&form));
+    let plan = match read_plan(&form, &all)? {
+        Ok(plan) => plan,
+        Err(problem) => {
+            return Ok(render(MergePage {
+                result: Color::from(""),
+                rename: false,
+                problem: Some(problem),
+                rows: Vec::new(),
+                summary: String::new(),
+                fields: Vec::new(),
+                back,
+            })?
+            .into_response());
+        }
+    };
     let rows = change_rows(&plan, &fabrics, &accessories);
     Ok(render(MergePage {
-        keep: plan.to.clone(),
+        result: Color {
+            name: plan.name.clone(),
+            hex: plan.shade.clone(),
+        },
+        rename: plan.shade.is_none(),
+        problem: None,
         summary: format!(
             "{} on {}",
             plural(colors_changed(&rows), "color"),
@@ -319,7 +386,7 @@ pub async fn preview(
         ),
         rows,
         fields: query,
-        back: list_href(read_closeness(&form)),
+        back,
     })?
     .into_response())
 }
@@ -333,7 +400,10 @@ pub async fn apply(
     let fabrics = state.db.list_fabrics().await?;
     let accessories = state.db.list_accessories().await?;
     let all = shades::collect(&fabrics, &accessories);
-    let plan = read_plan(&form, &all)?;
+    // The preview already explained any mistake; a form sent anyway does nothing.
+    let Ok(plan) = read_plan(&form, &all)? else {
+        return Ok(Redirect::to(&back).into_response());
+    };
     let changes = plan.changes(&fabrics, &accessories);
     if changes.is_empty() {
         return Ok(Redirect::to(&back).into_response());

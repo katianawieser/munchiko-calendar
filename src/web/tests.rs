@@ -2755,7 +2755,7 @@ async fn merging_look_alikes_previews_backs_up_and_applies() {
         [Color::with_hex("black", "#101010")]
     );
     let (_, html) = get(&app, &location).await;
-    assert!(html.contains("Merged: 2 colors on 2 items changed"));
+    assert!(html.contains("Done: 2 colors on 2 items changed"));
     assert!(html.contains("Nothing to merge."));
 
     // Again: nothing to change, so no second backup.
@@ -2841,4 +2841,49 @@ async fn merge_requests_are_checked() {
             .as_deref(),
         Some("#141414")
     );
+}
+
+#[tokio::test]
+async fn shades_can_be_renamed_to_split_them_off_or_merged_under_a_new_name() {
+    let (app, db, _dir) = setup_shades().await;
+    // The card has a Name box with suggestions and both buttons.
+    let (_, html) = get(&app, "/shades").await;
+    assert!(html.contains("name=\"new_name\" list=\"names-0\" placeholder=\"black\""));
+    assert!(
+        html.contains("<datalist id=\"names-0\"><option value=\"black\">"),
+        "{html}"
+    );
+    assert!(html.contains("name=\"action\" value=\"rename\""));
+
+    // Rename without a name: explained, nothing changes.
+    let (status, html) = get(&app, "/shades/merge?action=rename&from=%23141414&new_name=").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(html.contains("Type the new name for the ticked shades."));
+
+    // Rename Felt's black to "soft black": its own shade stays.
+    let rename = "closeness=medium&action=rename&from=%23141414&keep=%23101010&new_name=Soft+Black";
+    let (_, html) = get(&app, &format!("/shades/merge?{rename}")).await;
+    assert!(html.contains("Rename to “soft black”"), "{html}");
+    assert!(html.contains("1 color on 1 item"));
+    let reply = post(&app, "/shades/merge", rename).await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        db.get_fabric(FabricId(4)).await.unwrap().colors,
+        [Color::with_hex("soft black", "#141414")]
+    );
+    assert_eq!(
+        db.get_fabric(FabricId(1)).await.unwrap().colors[0].name,
+        "black",
+        "unticked: untouched"
+    );
+
+    // Merge under a new name: the kept shade's own colors are renamed too.
+    let merge = "closeness=medium&action=merge&from=%23101010&keep=%23101010&new_name=jet";
+    post(&app, "/shades/merge", merge).await;
+    for id in [1, 2] {
+        assert_eq!(
+            db.get_fabric(FabricId(id)).await.unwrap().colors[0],
+            Color::with_hex("jet", "#101010")
+        );
+    }
 }

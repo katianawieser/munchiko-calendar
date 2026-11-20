@@ -3,7 +3,7 @@
 {% block content %}
 <h2>Shades</h2>
 {% if let Some(text) = notice %}<p class="notice good">✓ {{ text }}</p>{% endif %}
-<p class="muted">Every shade picked on a fabric or accessory. A color picker rarely lands on exactly the same shade twice, so one color turns into many. Each color below has all its shades together (every shade appears once), plus lone shades of other names that look like it. Untick any shade that should stay as it is, choose the one to keep, and every ticked color switches to it and takes its name. You'll see exactly what changes before anything does, and a copy of the database is saved first.</p>
+<p class="muted">Every shade picked on a fabric or accessory. A color picker rarely lands on exactly the same shade twice, so one color turns into many. Each color below has all its shades together (every shade appears once), plus lone shades of other names that look like it. Merge ticked shades into one, or give some of them a new name to split them off into a color of their own. You'll see exactly what changes before anything does, and a copy of the database is saved first.</p>
 
 <div class="browse-bar">
   <span class="muted">Offer similar shades of other names when they're</span>
@@ -30,7 +30,15 @@
     <p class="similar-label"><small class="muted">Similar, with another name (tick to include):</small></p>
     {% for shade in family.similar %}{% include "shade_choice.html" %}{% endfor %}
     {% endif %}
-    <button type="submit" class="outline small">Keep the chosen shade: preview the merge</button>
+    <div class="shade-actions">
+      <label>Name
+        <input name="new_name" list="names-{{ family.index }}" placeholder="{{ family.name }}" autocomplete="off">
+      </label>
+      <datalist id="names-{{ family.index }}">{% for idea in family.name_ideas %}<option value="{{ idea }}">{% endfor %}</datalist>
+      <button type="submit" name="action" value="merge" class="small">Merge ticked into the kept shade</button>
+      <button type="submit" name="action" value="rename" class="outline small">Rename ticked (keep their shades)</button>
+    </div>
+    <small class="muted">Merge: ticked colors become the kept shade, under the name (empty: the kept shade's name). Rename: ticked shades stay as they are but take the new name; that splits them into a color of their own (say “light sage” out of “sage”). Both show a preview first.</small>
   </form>
 </article>
 {% endfor %}
