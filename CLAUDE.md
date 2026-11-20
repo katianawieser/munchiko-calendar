@@ -441,7 +441,10 @@ See README.md for the planning rules, data model and roadmap.
   built-in names each), and buttons `action=merge|rename`. Preview page explains a
   missing name (`read_plan` → `Result<Result<MergePlan, String>, AppError>`);
   apply ignores such a form. Notice now "Done: …". Real data (she'd merged some
-  herself): 243 shades, 41 color cards.
+  herself): 243 shades, 41 color cards. Then a "tick all" box per card
+  (`input.toggle-all[data-boxes=from]`, no name so never sent; generic code in
+  `static/page.js`: ticks/unticks the named boxes in its form, indeterminate when
+  mixed, hidden without JS). Verified in Chrome via the proxy harness.
 - **M13e planned (her note):** photo color ideas should use an existing shade if
   practically identical (ΔE<5), offer both "your X" and a new one if close
   (5–10), else a new shade with a suggested name.

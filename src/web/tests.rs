@@ -2854,6 +2854,9 @@ async fn shades_can_be_renamed_to_split_them_off_or_merged_under_a_new_name() {
         "{html}"
     );
     assert!(html.contains("name=\"action\" value=\"rename\""));
+    // A "tick all" box per card (shown by page.js); it has no name, so it's
+    // never sent with the form.
+    assert!(html.contains("class=\"toggle-all\" data-boxes=\"from\" checked hidden"));
 
     // Rename without a name: explained, nothing changes.
     let (status, html) = get(&app, "/shades/merge?action=rename&from=%23141414&new_name=").await;

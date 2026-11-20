@@ -24,7 +24,10 @@
       <strong>{{ family.name }}</strong>: {{ family.shades.len() }} {% if family.shades.len() == 1 %}shade{% else %}shades{% endif %}{% if !family.similar.is_empty() %}, {{ family.similar.len() }} similar{% endif %}
     </header>
     <input type="hidden" name="closeness" value="{{ closeness }}">
-    <div class="shade-head muted"><small>Merge</small><small>Keep</small></div>
+    <div class="shade-head muted">
+      <small><input type="checkbox" class="toggle-all" data-boxes="from" checked hidden aria-label="Tick or untick every shade in {{ family.name }}" title="Tick or untick all"><br>Merge</small>
+      <small><br>Keep</small>
+    </div>
     {% for shade in family.shades %}{% include "shade_choice.html" %}{% endfor %}
     {% if !family.similar.is_empty() %}
     <p class="similar-label"><small class="muted">Similar, with another name (tick to include):</small></p>

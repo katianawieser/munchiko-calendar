@@ -118,6 +118,7 @@ a.entry:hover { filter: brightness(0.95); text-decoration: underline; }
 .shade-choice input[type="radio"], .shade-choice input[type="checkbox"] { margin: 0 auto; }
 .shade-head { margin-bottom: 0.2rem; }
 .shade-head small { text-align: center; font-size: 0.7rem; }
+.shade-head input.toggle-all { margin: 0 auto 0.15rem; }
 .shade-group header { margin-bottom: 0.75rem; }
 .shade-group .similar-label { margin: 0.6rem 0 0.2rem; }
 .shade-actions { display: flex; flex-wrap: wrap; align-items: end; gap: 0.5rem; margin-top: 0.75rem; }
