@@ -107,11 +107,19 @@ a.entry:hover { filter: brightness(0.95); text-decoration: underline; }
 .notice.bad { color: var(--mc-overdue); font-weight: 600; }
 .notice.good { font-weight: 600; }
 /* Shades page: one radio per shade in a group. */
-.shade-choice { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.4rem; }
-.shade-choice input[type="radio"], .shade-choice input[type="checkbox"] { margin: 0; }
-.shade-head { display: flex; gap: 0.4rem; margin-bottom: 0.2rem; }
-.shade-head small { width: 1.25rem; text-align: center; font-size: 0.65rem; }
+/* Columns: merge box, keep radio, chip, details (which may wrap). */
+.shade-choice, .shade-head {
+  display: grid;
+  grid-template-columns: 3rem 3rem auto 1fr;
+  align-items: center;
+  column-gap: 0.4rem;
+}
+.shade-choice { margin-bottom: 0.4rem; }
+.shade-choice input[type="radio"], .shade-choice input[type="checkbox"] { margin: 0 auto; }
+.shade-head { margin-bottom: 0.2rem; }
+.shade-head small { text-align: center; font-size: 0.7rem; }
 .shade-group header { margin-bottom: 0.75rem; }
+.shade-group .similar-label { margin: 0.6rem 0 0.2rem; }
 /* Merge preview: the colors that change. */
 .merged-chip .chip { outline: 2px solid var(--pico-primary); font-weight: 600; }
 

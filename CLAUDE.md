@@ -422,6 +422,16 @@ See README.md for the planning rules, data model and roadmap.
   `sqlite:` + absolute path isn't absolute for sqlx; use `sqlite://`. Real data:
   302 shades → Tight 251 / Medium 147 / Loose 92 groups; 49 names with >1 shade.
   Links: "🎨 Shades" on Fabrics/Accessories heads and in "Pick from your shades".
+- **Shades fix (after M13c, Katiana's feedback):** look-alike groups repeated names
+  (leader-based grouping split a family: at Medium 31 names in >1 card, orange in
+  6). Replaced the Look-alikes / Same name views with ONE view:
+  `shades::families(shades, closeness)`: one card per most-used name (its shades
+  ticked), lone single-shade names join the nearest family within closeness as
+  `similar` (unticked), lone look-alikes with no family form their own; each shade
+  appears exactly once (verified on real data at all 3 closeness levels). Closeness
+  now only controls "similar". `name_groups` and `MergePlan.only_name` removed;
+  merged colors take the kept shade's name. `templates/shade_choice.html` partial;
+  rows are a CSS grid (Merge | Keep | chip | details).
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

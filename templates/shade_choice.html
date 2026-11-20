@@ -1,0 +1,9 @@
+{#- One shade on the Shades page: merge checkbox, keep radio, chip, uses.
+    Expects `shade` (a ShadeView). -#}
+<div class="shade-choice">
+  <input type="checkbox" name="from" value="{{ shade.hex }}" {% if shade.merge %}checked{% endif %} aria-label="Merge {{ shade.name }} {{ shade.hex }}">
+  <input type="radio" name="keep" value="{{ shade.hex }}" {% if shade.keep %}checked{% endif %} aria-label="Keep {{ shade.name }} {{ shade.hex }}">
+  <span class="chip"><span class="swatch" style="background: {{ shade.hex }}"></span><span class="chip-name">{{ shade.name }}</span></span>
+  <small class="muted">{{ shade.hex }} · {{ shade.uses }}×{% if !shade.other_names.is_empty() %} · also called {{ shade.other_names }}{% endif %} ·
+    {% for user in shade.users %}{% if !loop.first %}, {% endif %}<a href="{{ user.href }}">{{ user.label }}</a>{% endfor %}</small>
+</div>

@@ -2,9 +2,9 @@
 //! (M13c). The grouping and the merge itself are worked out in
 //! [`crate::shades`]; this module shows them and saves the result.
 //!
-//! - `GET /shades`: groups with more than one shade. `view=alike` (look-alikes,
-//!   with `closeness=tight|medium|loose`) or `view=name` (one name, several
-//!   shades).
+//! - `GET /shades`: one card per color family ([`shades::families`]), so each
+//!   shade appears once; `closeness=tight|medium|loose` says how alike a lone
+//!   shade of another name must be to be offered as "similar".
 //! - `GET /shades/merge`: what a merge would change, item by item.
 //! - `POST /shades/merge`: save a copy of the database, then apply it.
 //!
@@ -21,7 +21,7 @@ use super::blockers::Link;
 use super::forms::FormData;
 use super::{AppError, AppState, render};
 use crate::models::{Accessory, Color, Fabric};
-use crate::shades::{self, Closeness, MergePlan, Owner, Shade, ShadeGroup};
+use crate::shades::{self, Closeness, Family, MergePlan, Owner, Shade};
 
 const CLOSENESS: [(Closeness, &str, &str); 3] = [
     (Closeness::Tight, "tight", "Tight"),
@@ -29,40 +29,25 @@ const CLOSENESS: [(Closeness, &str, &str); 3] = [
     (Closeness::Loose, "loose", "Loose"),
 ];
 
-/// Which list the page shows, from the address.
-#[derive(Debug, Clone, Copy, PartialEq)]
-struct Choice {
-    by_name: bool,
-    closeness: Closeness,
+/// How alike "similar" shades must be, from the address (Medium if unset).
+fn read_closeness(form: &FormData) -> Closeness {
+    CLOSENESS
+        .iter()
+        .find(|(_, value, _)| *value == form.text("closeness"))
+        .map_or(Closeness::Medium, |(c, _, _)| *c)
 }
 
-impl Choice {
-    fn read(form: &FormData) -> Self {
-        Self {
-            by_name: form.text("view") == "name",
-            closeness: CLOSENESS
-                .iter()
-                .find(|(_, value, _)| *value == form.text("closeness"))
-                .map_or(Closeness::Medium, |(c, _, _)| *c),
-        }
-    }
+fn closeness_value(closeness: Closeness) -> &'static str {
+    CLOSENESS
+        .iter()
+        .find(|(c, _, _)| *c == closeness)
+        .unwrap()
+        .1
+}
 
-    fn closeness_value(self) -> &'static str {
-        CLOSENESS
-            .iter()
-            .find(|(c, _, _)| *c == self.closeness)
-            .unwrap()
-            .1
-    }
-
-    /// The address of the list with these choices.
-    fn href(self) -> String {
-        if self.by_name {
-            "/shades?view=name".into()
-        } else {
-            format!("/shades?view=alike&closeness={}", self.closeness_value())
-        }
-    }
+/// The list's address with this closeness.
+fn list_href(closeness: Closeness) -> String {
+    format!("/shades?closeness={}", closeness_value(closeness))
 }
 
 /// Links to the fabrics and accessories that use a shade.
@@ -97,22 +82,23 @@ fn user_links(
 struct ShadeView {
     hex: String,
     name: String,
-    /// Other names it's used under ("also: charcoal").
+    /// Other names it's used under ("also called charcoal").
     other_names: String,
     uses: usize,
     users: Vec<Link>,
-    /// The radio starts on the most used shade.
+    /// Ticked for merging: the family's own shades, not the similar ones.
+    merge: bool,
+    /// The "keep" radio starts on the family's most used shade.
     keep: bool,
 }
 
-struct GroupView {
-    /// "black" for a same-name group; empty for look-alikes.
+struct FamilyView {
     name: String,
-    uses: usize,
     shades: Vec<ShadeView>,
+    similar: Vec<ShadeView>,
 }
 
-/// A view switch link (Look-alikes / Same name, Tight / Medium / Loose).
+/// A Tight / Medium / Loose link.
 struct Tab {
     label: &'static str,
     href: String,
@@ -122,40 +108,51 @@ struct Tab {
 #[derive(Template)]
 #[template(path = "shades.html")]
 struct ShadesPage {
-    by_name: bool,
-    view: &'static str,
     closeness: &'static str,
     total_shades: usize,
-    total_groups: usize,
-    groups: Vec<GroupView>,
-    view_tabs: Vec<Tab>,
+    families: Vec<FamilyView>,
     closeness_tabs: Vec<Tab>,
-    /// After a merge: "Merged: 9 colors on 7 items. Backup: ...".
+    /// After a merge: "Merged: 9 colors on 7 items changed. ...".
     notice: Option<String>,
 }
 
-fn group_view(group: &ShadeGroup, fabrics: &[Fabric], accessories: &[Accessory]) -> GroupView {
-    GroupView {
-        name: group.name.clone().unwrap_or_default(),
-        uses: group.use_count(),
-        shades: group
+fn shade_view(
+    shade: &Shade,
+    merge: bool,
+    keep: bool,
+    fabrics: &[Fabric],
+    accessories: &[Accessory],
+) -> ShadeView {
+    ShadeView {
+        hex: shade.hex.clone(),
+        name: shade.name().to_string(),
+        other_names: shade
+            .names
+            .iter()
+            .skip(1)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", "),
+        uses: shade.uses.len(),
+        users: user_links(&shade.uses, fabrics, accessories),
+        merge,
+        keep,
+    }
+}
+
+fn family_view(family: &Family, fabrics: &[Fabric], accessories: &[Accessory]) -> FamilyView {
+    FamilyView {
+        name: family.name.clone(),
+        shades: family
             .shades
             .iter()
             .enumerate()
-            .map(|(i, shade)| ShadeView {
-                hex: shade.hex.clone(),
-                name: shade.name().to_string(),
-                other_names: shade
-                    .names
-                    .iter()
-                    .skip(1)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .join(", "),
-                uses: shade.uses.len(),
-                users: user_links(&shade.uses, fabrics, accessories),
-                keep: i == 0,
-            })
+            .map(|(i, s)| shade_view(s, true, i == 0, fabrics, accessories))
+            .collect(),
+        similar: family
+            .similar
+            .iter()
+            .map(|s| shade_view(s, false, false, fabrics, accessories))
             .collect(),
     }
 }
@@ -165,19 +162,11 @@ pub async fn list(
     Query(query): Query<Vec<(String, String)>>,
 ) -> Result<Response, AppError> {
     let form = FormData::new(query);
-    let choice = Choice::read(&form);
+    let closeness = read_closeness(&form);
     let fabrics = state.db.list_fabrics().await?;
     let accessories = state.db.list_accessories().await?;
     let all = shades::collect(&fabrics, &accessories);
-    let groups = if choice.by_name {
-        shades::name_groups(&all)
-    } else {
-        shades::look_alike_groups(&all, choice.closeness)
-    };
-    let total_groups = groups.len();
-    // Only groups with something to merge; the biggest first.
-    let mut groups: Vec<&ShadeGroup> = groups.iter().filter(|g| g.shades.len() > 1).collect();
-    groups.sort_by_key(|g| std::cmp::Reverse(g.shades.len()));
+    let families = shades::families(&all, closeness);
 
     let notice = (!form.text("merged").is_empty()).then(|| {
         format!(
@@ -186,30 +175,21 @@ pub async fn list(
             form.text("backup")
         )
     });
-    let tab = |label, by_name, closeness, current| Tab {
-        label,
-        href: Choice { by_name, closeness }.href(),
-        current,
-    };
-    let view_tabs = vec![
-        tab("Look-alikes", false, choice.closeness, !choice.by_name),
-        tab("Same name", true, choice.closeness, choice.by_name),
-    ];
     let closeness_tabs = CLOSENESS
         .iter()
-        .map(|(c, _, label)| tab(label, false, *c, *c == choice.closeness))
+        .map(|(c, _, label)| Tab {
+            label,
+            href: list_href(*c),
+            current: *c == closeness,
+        })
         .collect();
     Ok(render(ShadesPage {
-        by_name: choice.by_name,
-        view: if choice.by_name { "name" } else { "alike" },
-        closeness: choice.closeness_value(),
+        closeness: closeness_value(closeness),
         total_shades: all.len(),
-        total_groups,
-        groups: groups
+        families: families
             .iter()
-            .map(|g| group_view(g, &fabrics, &accessories))
+            .map(|f| family_view(f, &fabrics, &accessories))
             .collect(),
-        view_tabs,
         closeness_tabs,
         notice,
     })?
@@ -220,23 +200,19 @@ pub async fn list(
 // The merge: preview, then apply
 // ---------------------------------------------------------------------------
 
-/// The merge the form asks for: the ticked shades (`from`), the one to keep
-/// (`keep`) and, for a same-name group, the name (`name`). The kept shade's
-/// name comes from the current data, not the page.
+/// The merge the form asks for: the ticked shades (`from`) and the one to
+/// keep (`keep`), which counts as ticked. Merged colors take the kept
+/// shade's name, read from the current data, not the page.
 fn read_plan(form: &FormData, all: &[Shade]) -> Result<MergePlan, AppError> {
     let keep = Color::parse_hex(&form.text("keep")).ok_or(AppError::BadRequest)?;
-    // The kept shade is part of the merge even if its box was unticked.
     let from: Vec<String> = form.all("from").filter_map(Color::parse_hex).collect();
-    let only_name = Some(form.text("name")).filter(|n| !n.is_empty());
     let kept = all
         .iter()
         .find(|s| s.hex == keep)
         .ok_or(AppError::NotFound)?;
-    let name = only_name.clone().unwrap_or_else(|| kept.name().to_string());
     Ok(MergePlan {
         from: from.into_iter().filter(|h| *h != keep).collect(),
-        only_name,
-        to: Color::with_hex(name, keep),
+        to: Color::with_hex(kept.name(), keep),
     })
 }
 
@@ -343,7 +319,7 @@ pub async fn preview(
         ),
         rows,
         fields: query,
-        back: Choice::read(&form).href(),
+        back: list_href(read_closeness(&form)),
     })?
     .into_response())
 }
@@ -353,7 +329,7 @@ pub async fn apply(
     Form(pairs): Form<Vec<(String, String)>>,
 ) -> Result<Response, AppError> {
     let form = FormData::new(pairs);
-    let back = Choice::read(&form).href();
+    let back = list_href(read_closeness(&form));
     let fabrics = state.db.list_fabrics().await?;
     let accessories = state.db.list_accessories().await?;
     let all = shades::collect(&fabrics, &accessories);

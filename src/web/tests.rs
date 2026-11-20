@@ -2684,31 +2684,35 @@ async fn setup_shades() -> (Router, Repository, TempDir) {
 }
 
 #[tokio::test]
-async fn shades_are_grouped_two_ways() {
+async fn each_shade_is_shown_once_in_its_color_family() {
     let (app, _, _dir) = setup_shades().await;
     let (status, html) = get(&app, "/shades").await;
     assert_eq!(status, StatusCode::OK);
     assert!(
-        html.contains("4 shades make 2 groups of look-alikes; 1 of them have more than one shade"),
+        html.contains("4 shades; 1 color has shades to merge"),
         "{html}"
     );
-    // The look-alike group: all three near-blacks, the most used one ticked.
+    // The blacks, ticked; the most used one kept.
+    assert!(html.contains("<strong>black</strong>: 2 shades, 1 similar"));
+    assert!(html.contains("name=\"from\" value=\"#101010\" checked"));
     assert!(html.contains("name=\"keep\" value=\"#101010\" checked"));
-    assert!(html.contains("name=\"from\" value=\"#121212\" checked"));
+    assert!(html.contains("name=\"from\" value=\"#141414\" checked"));
+    // The lone near-black "charcoal" is offered but not ticked.
+    assert!(
+        html.contains("name=\"from\" value=\"#121212\"  aria-label"),
+        "{html}"
+    );
     assert!(html.contains("<a href=\"/fabrics/3\">Tweed</a>"));
-
-    // Same name: only the blacks; "charcoal" isn't a black.
-    let (_, html) = get(&app, "/shades?view=name").await;
-    assert!(html.contains("<strong>black</strong>: 2 shades"));
-    assert!(!html.contains("value=\"#121212\""));
-    assert!(html.contains("<input type=\"hidden\" name=\"name\" value=\"black\">"));
+    // Each shade once.
+    assert_eq!(html.matches("name=\"from\" value=\"#101010\"").count(), 1);
+    // The red is alone and looks like nothing: no card.
+    assert!(!html.contains("value=\"#cc0000\""));
 }
 
 #[tokio::test]
 async fn merging_look_alikes_previews_backs_up_and_applies() {
     let (app, db, dir) = setup_shades().await;
-    let fields =
-        "view=alike&closeness=medium&from=%23101010&from=%23121212&from=%23141414&keep=%23101010";
+    let fields = "closeness=medium&from=%23101010&from=%23121212&from=%23141414&keep=%23101010";
 
     // The preview changes nothing yet.
     let (status, html) = get(&app, &format!("/shades/merge?{fields}")).await;
@@ -2728,7 +2732,12 @@ async fn merging_look_alikes_previews_backs_up_and_applies() {
     let reply = post(&app, "/shades/merge", fields).await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER);
     let location = reply.location.unwrap();
-    assert!(location.starts_with("/shades?view=alike&closeness=medium&merged=2+colors+on+2+items&backup=munchiko-before-merge-"), "{location}");
+    assert!(
+        location.starts_with(
+            "/shades?closeness=medium&merged=2+colors+on+2+items&backup=munchiko-before-merge-"
+        ),
+        "{location}"
+    );
     let backups: Vec<_> = std::fs::read_dir(dir.path().join("backups"))
         .unwrap()
         .collect();
@@ -2747,7 +2756,7 @@ async fn merging_look_alikes_previews_backs_up_and_applies() {
     );
     let (_, html) = get(&app, &location).await;
     assert!(html.contains("Merged: 2 colors on 2 items changed"));
-    assert!(html.contains("Nothing to merge here"));
+    assert!(html.contains("Nothing to merge."));
 
     // Again: nothing to change, so no second backup.
     post(&app, "/shades/merge", fields).await;
@@ -2763,7 +2772,7 @@ async fn merging_look_alikes_previews_backs_up_and_applies() {
 async fn unticked_shades_stay_as_they_are() {
     let (app, db, _dir) = setup_shades().await;
     // Merge only Felt's black into the kept one; Tweed's charcoal stays.
-    let fields = "view=alike&closeness=medium&from=%23101010&from=%23141414&keep=%23101010";
+    let fields = "closeness=medium&from=%23101010&from=%23141414&keep=%23101010";
     let reply = post(&app, "/shades/merge", fields).await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER);
     assert_eq!(
