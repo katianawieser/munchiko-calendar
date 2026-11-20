@@ -18,15 +18,15 @@ take the photos, and it suggests what to wear from what's already in the stash.
   Sunflower bow: autumn, orange · matching set · ready to wear".
 - **~45 holidays from an editable file**, with date rules for "4th Thursday of
   November", Easter-relative days and multi-day events.
-- **Photos and real colors:** upload photos (HEIC converted on a Mac), give
+- **Photos and real colors:** upload photos (HEIC and AVIF converted on a Mac), give
   each color an exact swatch with the picker's eyedropper, or take the main
   colors straight from a photo.
 - **Guided errors:** instead of "can't delete", the chain of what's in the way
   and where to start.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
-templates · Pico CSS · one small optional script · the `image` crate.
-146 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+templates · Pico CSS · a few small optional scripts · the `image` crate.
+212 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -108,10 +108,11 @@ Example: Halloween (post Oct 31, default lead times):
 
 | Page | What you can do |
 |---|---|
-| **Calendar** | Month view of holidays, outings and every post's prep tasks; "to do today" box; overdue work outlined in red |
-| **Posts** | Plan a post for an event (with the same ideas shown above the choices), choose who wears what, see its prep timeline and slack, add reference photos; save **ideas** with no date yet |
+| **Calendar** | Month view of holidays, outings and every post's prep tasks; "to do today" box with **Done** buttons ("✓ Made it", "✓ Bought it"); overdue work outlined in red |
+| **Posts** | Plan a post for an event (with the same ideas shown above the choices), choose who wears what (single pieces or whole **outfits**), see its prep timeline and slack with **Done** buttons, add reference photos; save **ideas** with no date yet |
 | **Events** | Upcoming / past holidays and outings; "Plan a post" from any event; **ideas** for what to wear (or which fabric to make something from, and the date to start by); add and edit your own outings (holidays are edited in `data/holidays.toml`) |
-| **Accessories** | Bows, scarves, costumes, hats, props: table or photo grid, tags (plus their fabrics' tags), filter by kind, status, tag and warm/cool tone, sort by color, one-click status, fabrics by role (or "+ New fabric…" to add one right there), matching sets, photos |
+| **Accessories** | Bows, scarves, costumes, hats, props: table or photo grid (small / medium / large cards), tags (plus their fabrics' tags), filter by kind, status, tag and warm/cool tone, sort by color, one-click status, how many you have (×2), fabrics by role (or "+ New fabric…" to add one right there, in the stash or on the shopping list), matching sets, photos |
+| **Outfits** | Pieces worn together (Glinda's crown, dress and wand), with notes and photos; ready once every piece is |
 | **Fabrics** | Stash and shopping list as a table or photo grid, tags, tag and warm/cool filters, sort by color, pairings, what each fabric is used by, photos |
 
 **Post ideas** are posts with no date yet, like an outing you want to post
@@ -128,6 +129,17 @@ post with **+ Another post from this shoot**, or with **+ New series** on the
 Posts page. A series can be all ideas too; its posts' photos come from the
 one shoot, so once it's planned, the rest just need dates.
 
+**Outfits** group pieces that are worn together. A piece can be in several
+outfits (one wand for Glinda and a fairy). Ticking an outfit for a pet in a
+post ticks all its pieces, and any can be unticked for that post. Posts keep
+their own copy, so editing an outfit never changes a planned post, but when a
+piece is *added* to an outfit, the post offers it once: **Add it** or **Not
+for this post**.
+
+**How many:** an accessory can be ×2, so both pets can wear it in the same
+post. A post that needs more than you have shows a warning (saving still
+works).
+
 **Colors** have a name ("baby pink") and, optionally, the exact shade from a
 color picker, shown as a dot next to the name. Suggestions only look at the
 names; the shade is for people. The browser's picker has an eyedropper, and
@@ -138,8 +150,8 @@ plans. On fabric and accessory forms they're part of the form: chosen photos
 show straight away (so the eyedropper can sample them) and are saved with
 everything else by Save, on new items too. On a post's page, choosing photos
 uploads them at once. JPEG, PNG, WebP and GIF are stored as they are; BMP and TIFF are
-converted to PNG, and iPhone HEIC photos to JPEG (on a Mac, using the built-in
-`sips` tool; elsewhere the page explains how to export a JPEG). Every photo
+converted to PNG, and iPhone HEIC and AVIF photos to JPEG (on a Mac, using the built-in
+`sips` tool; elsewhere the page explains how to save a JPEG). Every photo
 gets a small JPEG thumbnail, turned the right way up; the first one is the
 thumbnail in the lists.
 
@@ -163,7 +175,7 @@ singular, so "Fall Leaves" finds a leaf-print bow and a "reds" color matches
 
 | Match | Points |
 |---|---|
-| A word in the accessory's name or its fabrics' keywords | 3 |
+| A word in the accessory's name, its tags or its fabrics' tags | 3 |
 | One of its colors (or its fabrics' colors, if it uses them) | 2 |
 | Bonus, once something matched: half of a Mochi & Momo set | +1 |
 | Bonus, once something matched: ready to wear | +1 |
@@ -178,11 +190,12 @@ out by the planner itself.
 | Model | Key fields |
 |---|---|
 | **Fabric** | name, description, colors (name + optional `#rrggbb` swatch), keywords, pairings, in stock |
-| **Accessory** (bow / scarf / costume / hat / prop) | name, description, tags, colors, fabrics (main/middle/accent), handmade or bought (brand), status (idea → in progress → ready), matching pair |
+| **Accessory** (bow / scarf / costume / hat / prop) | name, description, tags, colors, fabrics (main/middle/accent), handmade or bought (brand), status (idea → in progress → ready), how many, matching pair |
+| **Outfit** | name, notes, pieces (accessories; a piece can be in several outfits); status worked out from its pieces |
 | **Event** | name, description, type, start/end date, keywords |
-| **Post plan** | title, event (optional), post date (none = an idea), series (optional), who wears what, backdrop idea |
+| **Post plan** | title, event (optional), post date (none = an idea), series (optional), who wears what, outfits chosen per pet (and which pieces they had then), backdrop idea |
 | **Series** | title, shared backdrop, notes; its posts share one setup and shoot |
-| **Photo** | belongs to one fabric, accessory or post plan; image type |
+| **Photo** | belongs to one fabric, accessory, outfit or post plan; image type |
 
 Bows are separate items that can be linked as a matching Mochi & Momo set.
 
@@ -273,10 +286,23 @@ Settings (all optional environment variables):
 - [x] **M11**: More kinds of accessory
   - [x] **M11a**: hats and props
   - [x] **M11b**: how many of each you own; both pets can wear the same design
-  - [x] **M11c**: outfits: pieces that go together (Glinda's crown, dress and wand)
+  - [x] **M11c**: outfits: pieces that go together (Glinda's crown, dress and wand); pieces added to an outfit later are offered to posts
+- [x] **M12**: Quicker everyday use (from the second round of real-use notes)
+  - [x] **M12a**: "Done" buttons on the calendar's to-do box and on post timelines ("✓ Made it", "✓ It arrived", "✓ Bought it")
+  - [x] **M12b**: a fabric made from a bow's page asks "in the stash or need to buy it", and starts with the bow's colors
+  - [x] **M12c**: AVIF photos; small / medium / large grid cards; "↑ Top" button
+- [ ] **M13**: Colors that behave
+  - [ ] **M13a**: the suggested name for a picked shade is always offered (one click to use it), typed names are never overwritten, and color chips fill an empty row instead of replacing a shade you set
+  - [ ] **M13b**: a photo's colors offered as soon as it's chosen, before saving
+  - [ ] **M13c**: fewer near-duplicate shades: looser grouping in "Your shades", plus a page to merge look-alike shades everywhere they're used
+- [ ] **M14**: Finding things in long lists
+  - [ ] **M14a**: type-to-search when choosing fabrics and a matching partner
+  - [ ] **M14b**: fabric photos instead of long fabric names in the accessory list
+  - [ ] **M14c**: suggest a matching partner from fabric pairings
 
-Ideas for later: photos in the suggestion box; a calendar nudge for upcoming
-events with no post planned yet.
+Ideas for later: consistent naming (a suggested name from the main fabric,
+kind and size); outfits in suggestions; photos in the suggestion box; a
+calendar nudge for upcoming events with no post planned yet.
 
 ## Project layout
 
@@ -289,7 +315,7 @@ docs/
 migrations/   numbered SQL scripts that build the schema
 src/
   lib.rs      crate root
-  models.rs   fabric, accessories, events, post plans, photos, colors
+  models.rs   fabric, accessories, outfits, events, post plans, photos, colors
   planner.rs  the scheduling engine + its tests
   suggest.rs  scores accessories and fabrics for an event, with reasons + tests
   palette.rs  finds a photo's main colors and names them (CIE Lab) + tests
@@ -306,13 +332,19 @@ src/
     forms.rs    reading form submissions + choices for selects
     ideas.rs    picks which suggestions to show ("Ideas for Halloween") + tests
     blockers.rs explains what's blocking a delete + tests
+    browse.rs   table/grid, card size, tone and tag filters, sort by color + tests
+    colors.rs   suggested names for picked shades, "Your shades"
+    done.rs     "Done" buttons for prep tasks + tests
     photos.rs   photo upload, serving and deleting; color ideas from photos
     series.rs   series pages (shared setup, posts, shared timeline)
+    outfits.rs  outfit pages + tests
     calendar.rs, posts.rs, events.rs, fabrics.rs, accessories.rs   page handlers
     tests.rs    request-level tests against an in-memory app
   main.rs     starts the server
 templates/    Askama HTML templates
-static/       Pico CSS (v2.1.1, MIT), the app's stylesheet, and colors.js (swatch pickers
-              and color chips; the only script, and forms still work without it)
+static/       Pico CSS (v2.1.1, MIT), the app's stylesheet, and small scripts that
+              every page works without: colors.js (swatch pickers, color chips),
+              photos.js (photo previews), outfits.js (ticks an outfit's pieces),
+              page.js (the "↑ Top" button)
 build.rs      rebuilds when a migration changes
 ```
