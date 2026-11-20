@@ -158,50 +158,91 @@ document.querySelectorAll(".color-list").forEach((list) => {
   //   3. an empty row, then 4. a new row; these take the chip's name too.
   // To change a shade that's set, use the row's own picker (or "No swatch"
   // first, then a chip).
-  const chipBoxes = list.querySelectorAll(".color-ideas, .your-shades");
-  if (chipBoxes.length > 0) {
-    chipBoxes.forEach((box) => (box.hidden = false));
+  const chipBoxes = list.querySelectorAll(".color-ideas:not(.chosen-photo-ideas), .your-shades");
+  chipBoxes.forEach((box) => (box.hidden = false));
 
-    // Remember the row being worked on. Clicking a chip moves focus to the
-    // chip, so only focus moving anywhere *else* forgets the row.
-    let chosenRow = null;
-    document.addEventListener("focusin", (event) => {
-      if (event.target.matches('.color-row input[name="color_name"]')) {
-        chosenRow = rows.contains(event.target) ? event.target.closest(".color-row") : null;
-      } else if (!event.target.closest(".color-ideas, .your-shades")) {
-        chosenRow = null;
+  // Remember the row being worked on. Clicking a chip moves focus to the
+  // chip, so only focus moving anywhere *else* forgets the row.
+  let chosenRow = null;
+  document.addEventListener("focusin", (event) => {
+    if (event.target.matches('.color-row input[name="color_name"]')) {
+      chosenRow = rows.contains(event.target) ? event.target.closest(".color-row") : null;
+    } else if (!event.target.closest(".color-ideas, .your-shades")) {
+      chosenRow = null;
+    }
+  });
+
+  const nameBox = (row) => row.querySelector('input[name="color_name"]');
+  const nameOf = (row) => nameBox(row).value.trim().toLowerCase();
+  const hexOf = (row) => row.querySelector('input[name="color_hex"]').value;
+
+  function wireChip(button) {
+    button.addEventListener("click", () => {
+      const { name, hex } = button.dataset;
+      const all = [...rows.querySelectorAll(".color-row")];
+      const open = (r) => r && rows.contains(r) && hexOf(r) === "";
+      let row = open(chosenRow) ? chosenRow : null;
+      chosenRow = null; // one chip per click into a row
+      row =
+        row ||
+        all.find((r) => nameOf(r) === name && hexOf(r) === "") ||
+        all.find((r) => nameOf(r) === "" && hexOf(r) === "") ||
+        addRow();
+      if (nameOf(row) === "" || nameBox(row).dataset.suggested === "yes") {
+        nameBox(row).value = name;
+        delete nameBox(row).dataset.suggested;
+        nameBox(row).classList.remove("suggested");
       }
+      const picker = row.querySelector(".swatch-picker");
+      picker.value = hex;
+      // Let the row's own handler copy the shade into the hidden field.
+      picker.dispatchEvent(new Event("input"));
+      confirmShade(row, "✓ shade set");
+      button.disabled = true;
+      button.title = `Added ${name}`;
     });
+  }
+  list.querySelectorAll(".color-idea").forEach(wireChip);
 
-    const nameBox = (row) => row.querySelector('input[name="color_name"]');
-    const nameOf = (row) => nameBox(row).value.trim().toLowerCase();
-    const hexOf = (row) => row.querySelector('input[name="color_hex"]').value;
-
-    list.querySelectorAll(".color-idea").forEach((button) => {
-      button.addEventListener("click", () => {
-        const { name, hex } = button.dataset;
-        const all = [...rows.querySelectorAll(".color-row")];
-        const open = (r) => r && rows.contains(r) && hexOf(r) === "";
-        let row = open(chosenRow) ? chosenRow : null;
-        chosenRow = null; // one chip per click into a row
-        row =
-          row ||
-          all.find((r) => nameOf(r) === name && hexOf(r) === "") ||
-          all.find((r) => nameOf(r) === "" && hexOf(r) === "") ||
-          addRow();
-        if (nameOf(row) === "" || nameBox(row).dataset.suggested === "yes") {
-          nameBox(row).value = name;
-          delete nameBox(row).dataset.suggested;
-          nameBox(row).classList.remove("suggested");
-        }
-        const picker = row.querySelector(".swatch-picker");
-        picker.value = hex;
-        // Let the row's own handler copy the shade into the hidden field.
-        picker.dispatchEvent(new Event("input"));
-        confirmShade(row, "✓ shade set");
-        button.disabled = true;
-        button.title = `Added ${name}`;
+  // Photos chosen in this form but not saved yet: send them (and the colors
+  // already in the form) to the server, which finds their main colors with
+  // the same Rust code as for saved photos and replies with ready-made chips.
+  const form = list.closest("form");
+  const photoInput = form && form.querySelector("input.photo-input");
+  const chosenBox = list.querySelector(".chosen-photo-ideas");
+  if (photoInput && chosenBox) {
+    let latest = 0; // only the newest choice's answer is shown
+    const say = (text) => {
+      const note = document.createElement("small");
+      note.className = "muted";
+      note.textContent = text;
+      chosenBox.replaceChildren(note);
+    };
+    photoInput.addEventListener("change", async () => {
+      const ask = ++latest;
+      if (photoInput.files.length === 0) {
+        chosenBox.hidden = true;
+        chosenBox.replaceChildren();
+        return;
+      }
+      chosenBox.hidden = false;
+      say("Finding the photos' colors…");
+      const data = new FormData();
+      for (const file of photoInput.files) data.append("photo", file);
+      rows.querySelectorAll(".color-row").forEach((row) => {
+        data.append("color_name", nameBox(row).value);
+        data.append("color_hex", hexOf(row));
       });
+      try {
+        const reply = await fetch("/colors/from-photos", { method: "POST", body: data });
+        if (ask !== latest) return;
+        if (!reply.ok) throw new Error(String(reply.status));
+        // Server-rendered (and escaped) by an Askama template.
+        chosenBox.innerHTML = await reply.text();
+        chosenBox.querySelectorAll(".color-idea").forEach(wireChip);
+      } catch {
+        if (ask === latest) say("Couldn't read the photos' colors; the photos will still be saved.");
+      }
     });
   }
 });

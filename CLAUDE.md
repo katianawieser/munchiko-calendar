@@ -388,6 +388,21 @@ See README.md for the planning rules, data model and roadmap.
   line. Verified in headless Chrome (A–D scenarios) via a file harness with
   `<base href>` to the test server + `--disable-web-security`. Katiana has 266
   shades on the copy (M13c).
+- **Katiana's rule (2026-11-20):** JS is fine for presentation, but keep the logic in
+  Rust (server endpoints / rendered HTML + Rust tests); JS calls them and updates
+  the page.
+- **M13b done:** `POST /colors/from-photos` (`web/colors.rs::from_photos`, 60 MB
+  body limit): `FormWithPhotos` → `photos::ideas_for_uploads` (each file through
+  `prepare`, so HEIC/AVIF/BMP/TIFF work; unusable files skipped) →
+  `ideas_from_thumbnails` (shared with saved-photo `color_ideas`) minus names the
+  form's colors already have a swatch for; replies with the Askama fragment
+  `photo_color_ideas.html` (chips via shared `color_idea_chip.html`). Nothing is
+  saved. Forms have an empty `<p class="color-ideas chosen-photo-ideas" hidden>`;
+  colors.js (`wireChip` now a function) posts the chosen files + current color rows
+  on the photo input's change, shows "Finding…", inserts the reply, wires chips;
+  a counter drops stale replies. Browser check: a same-origin Python proxy in the
+  scratchpad (`proxy/proxy.py HARNESS PORT APP_PORT`, serves /__harness, forwards
+  the rest and rewrites Origin) so the CSRF guard is exercised for real.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

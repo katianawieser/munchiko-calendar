@@ -517,6 +517,31 @@ pub async fn color_ideas(state: &AppState, photos: &[Photo], existing: &[Color])
             Err(e) => eprintln!("color ideas: skipping photo {}: {e:?}", photo.id.0),
         }
     }
+    ideas_from_thumbnails(thumbnails, existing).await
+}
+
+/// The main colors of photos just chosen in a form, before they're saved
+/// (M13b): each is checked and converted like an upload (so HEIC and AVIF
+/// work too), then treated exactly like saved photos. Files that aren't
+/// usable photos are skipped; the form's own Save reports those.
+pub async fn ideas_for_uploads(
+    state: &AppState,
+    uploads: Vec<Bytes>,
+    existing: &[Color],
+) -> Vec<ColorIdea> {
+    let mut thumbnails = Vec::new();
+    for upload in uploads {
+        match prepare(state, upload).await {
+            Ok(prepared) => thumbnails.push(prepared.thumbnail),
+            Err(problem) => eprintln!("color ideas: skipping a chosen file: {problem:?}"),
+        }
+    }
+    ideas_from_thumbnails(thumbnails, existing).await
+}
+
+/// The main colors across `thumbnails` (small JPEGs), minus names `existing`
+/// already has a swatch for.
+async fn ideas_from_thumbnails(thumbnails: Vec<Vec<u8>>, existing: &[Color]) -> Vec<ColorIdea> {
     if thumbnails.is_empty() {
         return Vec::new();
     }

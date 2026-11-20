@@ -164,7 +164,8 @@ every shade picked anywhere in the stash, in rainbow order, to reuse with one
 click instead of picking it again. Color chips never replace a shade that's
 already set; they fill a color without one, or add a new color.
 
-**"From your photos"** offers the main colors of an item's photos, each with
+**"From your photos"** offers the main colors of an item's photos (including
+photos just chosen in the form, before saving), each with
 its exact shade and the nearest name from a built-in list ("teal", "baby
 pink"). One click adds it; click into one of your own colors first and the
 chip gives that color its shade instead, keeping your name.
@@ -296,7 +297,7 @@ Settings (all optional environment variables):
   - [x] **M12c**: AVIF photos; small / medium / large grid cards; "↑ Top" button
 - [ ] **M13**: Colors that behave
   - [x] **M13a**: the suggested name for a picked shade is always offered (one click to use it), typed names are never overwritten, and color chips fill an empty row instead of replacing a shade you set
-  - [ ] **M13b**: a photo's colors offered as soon as it's chosen, before saving
+  - [x] **M13b**: a photo's colors offered as soon as it's chosen, before saving
   - [ ] **M13c**: fewer near-duplicate shades: looser grouping in "Your shades", plus a page to merge look-alike shades everywhere they're used
 - [ ] **M14**: Finding things in long lists
   - [ ] **M14a**: type-to-search when choosing fabrics and a matching partner

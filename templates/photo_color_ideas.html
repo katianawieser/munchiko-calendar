@@ -1,0 +1,9 @@
+{#- Main colors of photos chosen in a form but not saved yet (POST
+    /colors/from-photos). colors.js puts this into the form's color list. -#}
+{%- if ideas.is_empty() -%}
+<small class="muted">No new colors found in the chosen photos.</small>
+{%- else -%}
+<small class="muted">From the photos you chose (not saved yet): click one to add it.</small>
+{% for idea in ideas %}{% include "color_idea_chip.html" %}
+{% endfor %}
+{%- endif %}

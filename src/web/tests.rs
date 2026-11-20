@@ -2597,3 +2597,51 @@ async fn grid_card_size_is_chosen_and_remembered() {
         "shown by page.js once scrolled"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Colors from photos chosen but not saved yet (M13b)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn chosen_photos_offer_their_colors_before_saving() {
+    let (app, db, _, dir) = setup_with_photos(d(2026, 10, 5)).await;
+    // The sample photo is one solid orange-brown.
+    let name = crate::palette::nearest_name([200, 100, 50]);
+
+    // Every color form has the (empty) box the chips go into.
+    for page in ["/fabrics/new", "/accessories/new", "/fabrics/1"] {
+        let (_, html) = get(&app, page).await;
+        assert!(
+            html.contains("class=\"color-ideas chosen-photo-ideas\" hidden"),
+            "{page}"
+        );
+    }
+
+    let reply = submit_multipart(&app, "/colors/from-photos", &[], &[&JPEG]).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert!(reply.html.contains("From the photos you chose"));
+    assert!(
+        reply.html.contains(&format!("data-name=\"{name}\"")),
+        "{}",
+        reply.html
+    );
+    assert!(!reply.html.contains("<html"), "just the chips, not a page");
+
+    // A color the form already has a shade for isn't offered again...
+    let fields = [("color_name", name), ("color_hex", "#c86432")];
+    let reply = submit_multipart(&app, "/colors/from-photos", &fields, &[&JPEG]).await;
+    assert!(reply.html.contains("No new colors found"), "{}", reply.html);
+    // ...but one with only a name is (the chip gives it the shade).
+    let fields = [("color_name", name), ("color_hex", "")];
+    let reply = submit_multipart(&app, "/colors/from-photos", &fields, &[&JPEG]).await;
+    assert!(reply.html.contains(&format!("data-name=\"{name}\"")));
+
+    // A file that isn't a photo is skipped, not an error.
+    let reply = submit_multipart(&app, "/colors/from-photos", &[], &[b"not a photo"]).await;
+    assert_eq!(reply.status, StatusCode::OK);
+    assert!(reply.html.contains("No new colors found"));
+
+    // Nothing was saved: no photo records, no files.
+    assert!(db.list_all_photos().await.unwrap().is_empty());
+    assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 0);
+}

@@ -6,12 +6,14 @@
 
 use std::collections::HashMap;
 
-use axum::extract::Query;
+use askama::Template;
+use axum::extract::{Query, State};
 use axum::http::header;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 
-use super::AppError;
-use super::photos::ColorIdea;
+use super::forms::read_colors;
+use super::photos::{self, ColorIdea, FormWithPhotos};
+use super::{AppError, AppState, render};
 use crate::models::{Accessory, Color, Fabric};
 use crate::palette;
 
@@ -39,6 +41,29 @@ pub async fn name_for_hex(
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
         palette::nearest_names(rgb, count).join("\n"),
     ))
+}
+
+/// The chips for photos chosen in a form but not saved yet: a piece of HTML
+/// that colors.js puts on the page as it is.
+#[derive(Template)]
+#[template(path = "photo_color_ideas.html")]
+struct ChosenPhotoIdeas {
+    ideas: Vec<ColorIdea>,
+}
+
+/// `POST /colors/from-photos`: the main colors of the photos just chosen in a
+/// fabric or accessory form, as color chips, before anything is saved. The
+/// form's current colors come along (`color_name` / `color_hex`), so colors
+/// it already has a swatch for aren't offered again. Same rules as for saved
+/// photos ([`photos::color_ideas`]); the page only shows the result.
+pub async fn from_photos(
+    State(state): State<AppState>,
+    FormWithPhotos { form, photos }: FormWithPhotos,
+) -> Result<Response, AppError> {
+    // Colors the form can't read yet just aren't used for skipping.
+    let existing = read_colors(&form).unwrap_or_default();
+    let ideas = photos::ideas_for_uploads(&state, photos, &existing).await;
+    Ok(render(ChosenPhotoIdeas { ideas })?.into_response())
 }
 
 /// Every named shade in the stash (fabrics' colors and accessories' own),
