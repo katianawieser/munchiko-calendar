@@ -175,6 +175,7 @@ a.plain:hover { text-decoration: underline; }
 }
 .color-row {
   display: flex;
+  flex-wrap: wrap; /* so name suggestions get their own line */
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
@@ -367,3 +368,8 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
   transition: opacity 0.2s;
 }
 .back-to-top.hidden { opacity: 0; pointer-events: none; }
+
+/* Name suggestions under a color row: "Suggested: peach · salmon". */
+.name-suggestions { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; margin: -0.25rem 0 0.4rem; }
+.name-suggestions[hidden] { display: none; }
+.name-suggestions .name-choice { width: auto; margin: 0; padding: 0.1rem 0.5rem; }

@@ -376,6 +376,18 @@ See README.md for the planning rules, data model and roadmap.
   `<a href="#top" class="back-to-top hidden">` in base.html, `static/page.js` shows it
   after one screen of scrolling (starts hidden so it doesn't fade out on every
   load; without JS it never shows). Checked in headless Chrome.
+- **M13a done:** `palette::nearest_names(rgb, n)` (distinct names, closest first;
+  `nearest_name` = first of it). `/colors/name?hex=&count=1..5` → one name per line
+  (no count = one name, as before; bad count = 400). colors.js: `suggestName` always
+  fetches 3; fills an empty / page-suggested name with the best, and `offerNames`
+  shows the rest ("Or:") or all three ("Suggested:", when the name was typed) as
+  buttons in a `.name-suggestions` line under the row (`.color-row` now wraps);
+  clicking one sets the name as the user's own. Chips NEVER replace a set shade:
+  focused row only if it has no shade > same-name row without shade > empty row >
+  new row. "Your shades" summary is now "🎨 Pick from your shades (N)" with a help
+  line. Verified in headless Chrome (A–D scenarios) via a file harness with
+  `<base href>` to the test server + `--disable-web-security`. Katiana has 266
+  shades on the copy (M13c).
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

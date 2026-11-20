@@ -3,9 +3,11 @@
 // Progressive enhancement: the form works without this script (names only).
 // With it, each row gets a swatch picker, colors can be added/removed, and
 // colors from the item's photos or from the rest of the stash ("Your shades")
-// can be added with one click. Picking a shade for a row with no name asks
-// the server for the nearest name (GET /colors/name), filled in as a
-// suggestion that typing replaces.
+// can be added with one click. Picking a shade asks the server for the
+// nearest names (GET /colors/name?count=3). An empty name (or one the page
+// suggested itself) gets the best one; a name the user typed is never
+// changed, and the names are offered as buttons under the row instead.
+// Chips never replace a shade that's already set (see below).
 //
 // A color input always holds *some* color (white by default), so it can't
 // say "no swatch". The picked value is therefore copied into a hidden
@@ -25,18 +27,57 @@ document.querySelectorAll(".color-list").forEach((list) => {
     status.timer = setTimeout(() => (status.textContent = ""), 4000);
   }
 
-  // Fill an empty name (or replace an earlier suggestion) with the nearest
-  // name for the shade. A name the user typed is never touched.
+  // Name buttons under a row: "Suggested: peach · salmon · coral". Clicking
+  // one makes it the row's name (the user chose it, so it's theirs).
+  function offerNames(row, names) {
+    let box = row.querySelector(".name-suggestions");
+    if (!box) {
+      box = document.createElement("div");
+      box.className = "name-suggestions";
+      row.append(box);
+    }
+    const name = row.querySelector('input[name="color_name"]');
+    const current = name.value.trim().toLowerCase();
+    const offered = names.filter((n) => n !== current);
+    box.replaceChildren();
+    box.hidden = offered.length === 0;
+    if (box.hidden) return;
+    const label = document.createElement("small");
+    label.className = "muted";
+    label.textContent = name.dataset.suggested === "yes" ? "Or: " : "Suggested: ";
+    box.append(label);
+    for (const suggestion of offered) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "outline secondary small name-choice";
+      button.textContent = suggestion;
+      button.addEventListener("click", () => {
+        name.value = suggestion;
+        delete name.dataset.suggested;
+        name.classList.remove("suggested");
+        box.hidden = true;
+      });
+      box.append(button);
+    }
+  }
+
+  // Ask for the nearest names for the shade. An empty name (or the page's
+  // own earlier suggestion) takes the best one; the others, or all of them
+  // when the user typed the name, are offered as buttons.
   async function suggestName(row, hex) {
     const name = row.querySelector('input[name="color_name"]');
-    if (name.value.trim() !== "" && name.dataset.suggested !== "yes") return;
     try {
-      const reply = await fetch(`/colors/name?hex=${encodeURIComponent(hex)}`);
+      const reply = await fetch(`/colors/name?count=3&hex=${encodeURIComponent(hex)}`);
       if (!reply.ok) return;
-      name.value = await reply.text();
-      name.dataset.suggested = "yes";
-      name.classList.add("suggested");
-      confirmShade(row, "✓ shade set · name suggested, change it if you like");
+      const names = (await reply.text()).split("\n").filter(Boolean);
+      if (names.length === 0) return;
+      if (name.value.trim() === "" || name.dataset.suggested === "yes") {
+        name.value = names[0];
+        name.dataset.suggested = "yes";
+        name.classList.add("suggested");
+        confirmShade(row, "✓ shade set · name suggested, change it if you like");
+      }
+      offerNames(row, names);
     } catch {
       // No name suggestion is fine; the shade is still set.
     }
@@ -108,12 +149,15 @@ document.querySelectorAll(".color-list").forEach((list) => {
     addRow().querySelector('input[name="color_name"]').focus();
   });
 
-  // Color chips: "From your photos" and "Your shades". Which row a chip
-  // fills, in order of preference:
-  //   1. the row whose name box was clicked into last: it gets the exact
-  //      shade and keeps its own name ("faded orange" stays "faded orange");
-  //   2. a row that already has the chip's name (it gains the exact shade);
+  // Color chips: "From your photos" and "Your shades". A chip never
+  // replaces a shade that's already set (that used to be easy to do by
+  // accident). Which row it fills, in order of preference:
+  //   1. the row whose name box was clicked into last, if it has no shade
+  //      yet: it gets the shade and keeps its own name;
+  //   2. a row with the chip's name and no shade yet;
   //   3. an empty row, then 4. a new row; these take the chip's name too.
+  // To change a shade that's set, use the row's own picker (or "No swatch"
+  // first, then a chip).
   const chipBoxes = list.querySelectorAll(".color-ideas, .your-shades");
   if (chipBoxes.length > 0) {
     chipBoxes.forEach((box) => (box.hidden = false));
@@ -137,11 +181,12 @@ document.querySelectorAll(".color-list").forEach((list) => {
       button.addEventListener("click", () => {
         const { name, hex } = button.dataset;
         const all = [...rows.querySelectorAll(".color-row")];
-        let row = chosenRow && rows.contains(chosenRow) ? chosenRow : null;
+        const open = (r) => r && rows.contains(r) && hexOf(r) === "";
+        let row = open(chosenRow) ? chosenRow : null;
         chosenRow = null; // one chip per click into a row
         row =
           row ||
-          all.find((r) => nameOf(r) === name) ||
+          all.find((r) => nameOf(r) === name && hexOf(r) === "") ||
           all.find((r) => nameOf(r) === "" && hexOf(r) === "") ||
           addRow();
         if (nameOf(row) === "" || nameBox(row).dataset.suggested === "yes") {

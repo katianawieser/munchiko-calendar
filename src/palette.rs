@@ -199,12 +199,29 @@ pub const NAMES: &[(&str, [u8; 3])] = &[
 
 /// The name in [`NAMES`] that looks most like `rgb`.
 pub fn nearest_name(rgb: [u8; 3]) -> &'static str {
+    nearest_names(rgb, 1).first().copied().unwrap_or("color")
+}
+
+/// Up to `count` different names from [`NAMES`], closest first: the best
+/// name and some alternatives ("peach", then "salmon", "coral"). A name that
+/// appears twice in the list (two navies) is offered once, at its closer shade.
+pub fn nearest_names(rgb: [u8; 3], count: usize) -> Vec<&'static str> {
     let lab = to_lab(rgb);
-    NAMES
+    let mut by_distance: Vec<(f32, &'static str)> = NAMES
         .iter()
-        .min_by(|(_, a), (_, b)| distance(to_lab(*a), lab).total_cmp(&distance(to_lab(*b), lab)))
-        .map(|(name, _)| *name)
-        .unwrap_or("color")
+        .map(|(name, shade)| (distance(to_lab(*shade), lab), *name))
+        .collect();
+    by_distance.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let mut names: Vec<&'static str> = Vec::new();
+    for (_, name) in by_distance {
+        if names.len() == count {
+            break;
+        }
+        if !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    names
 }
 
 /// Two shades too close to tell apart side by side (a Lab difference under 5;
@@ -416,6 +433,17 @@ mod tests {
             "not every blue is navy"
         );
         assert_eq!(nearest_name([58, 167, 155]), "teal green");
+    }
+
+    #[test]
+    fn alternatives_are_different_names_closest_first() {
+        let names = nearest_names([0, 0, 128], 3);
+        assert_eq!(names.len(), 3);
+        assert_eq!(names[0], "navy");
+        // The list has two navies; it's offered once.
+        assert_eq!(names.iter().filter(|n| **n == "navy").count(), 1);
+        assert_eq!(nearest_names([244, 194, 194], 1), ["baby pink"]);
+        assert!(nearest_names([1, 2, 3], 0).is_empty());
     }
 
     /// `n` pixels of `rgb`, wobbling by a few levels like real fabric.

@@ -15,7 +15,11 @@ use super::photos::ColorIdea;
 use crate::models::{Accessory, Color, Fabric};
 use crate::palette;
 
-/// `GET /colors/name?hex=%23f4c2c2` → `baby pink` (plain text).
+/// Most names to offer for one shade.
+const MAX_NAMES: usize = 5;
+
+/// `GET /colors/name?hex=%23f4c2c2` → `baby pink` (plain text). With
+/// `&count=3`, the best name and alternatives, one per line.
 pub async fn name_for_hex(
     Query(query): Query<HashMap<String, String>>,
 ) -> Result<impl IntoResponse, AppError> {
@@ -23,9 +27,17 @@ pub async fn name_for_hex(
         .get("hex")
         .and_then(|hex| palette::rgb_from_hex(&hex.to_ascii_lowercase()))
         .ok_or(AppError::BadRequest)?;
+    let count = match query.get("count") {
+        None => 1,
+        Some(n) => n
+            .parse::<usize>()
+            .ok()
+            .filter(|n| (1..=MAX_NAMES).contains(n))
+            .ok_or(AppError::BadRequest)?,
+    };
     Ok((
         [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
-        palette::nearest_name(rgb),
+        palette::nearest_names(rgb, count).join("\n"),
     ))
 }
 

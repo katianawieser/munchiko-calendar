@@ -156,10 +156,13 @@ gets a small JPEG thumbnail, turned the right way up; the first one is the
 thumbnail in the lists.
 
 Picking a shade for a color with no name fills in a **suggested name** (the
-nearest from a built-in list, shown in italics until you type your own), and
-a short **"✓ shade set"** confirms the pick. **"Your shades"** (a fold-out under
-the colors) lists every shade picked anywhere in the stash, in rainbow
-order, to reuse with one click instead of picking it again.
+nearest from a built-in list, shown in italics until you type your own), with
+two alternatives as buttons. A name you typed is never changed: the
+suggestions are offered under it instead. A short **"✓ shade set"** confirms
+the pick. **"Pick from your shades"** (a fold-out under the colors) lists
+every shade picked anywhere in the stash, in rainbow order, to reuse with one
+click instead of picking it again. Color chips never replace a shade that's
+already set; they fill a color without one, or add a new color.
 
 **"From your photos"** offers the main colors of an item's photos, each with
 its exact shade and the nearest name from a built-in list ("teal", "baby
@@ -292,7 +295,7 @@ Settings (all optional environment variables):
   - [x] **M12b**: a fabric made from a bow's page asks "in the stash or need to buy it", and starts with the bow's colors
   - [x] **M12c**: AVIF photos; small / medium / large grid cards; "↑ Top" button
 - [ ] **M13**: Colors that behave
-  - [ ] **M13a**: the suggested name for a picked shade is always offered (one click to use it), typed names are never overwritten, and color chips fill an empty row instead of replacing a shade you set
+  - [x] **M13a**: the suggested name for a picked shade is always offered (one click to use it), typed names are never overwritten, and color chips fill an empty row instead of replacing a shade you set
   - [ ] **M13b**: a photo's colors offered as soon as it's chosen, before saving
   - [ ] **M13c**: fewer near-duplicate shades: looser grouping in "Your shades", plus a page to merge look-alike shades everywhere they're used
 - [ ] **M14**: Finding things in long lists

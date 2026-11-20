@@ -1768,6 +1768,14 @@ async fn a_picked_shade_gets_a_suggested_name() {
     assert_eq!(name, "baby pink");
     let (status, _) = get(&app, "/colors/name?hex=pink").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+
+    // Alternatives, one per line, the best first.
+    let (_, names) = get(&app, "/colors/name?hex=%23F4C2C2&count=3").await;
+    let names: Vec<&str> = names.lines().collect();
+    assert_eq!(names.len(), 3);
+    assert_eq!(names[0], "baby pink");
+    let (status, _) = get(&app, "/colors/name?hex=%23F4C2C2&count=99").await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -1792,7 +1800,7 @@ async fn forms_offer_shades_already_picked_elsewhere() {
         let (_, html) = get(&app, page).await;
         let shades = &html[html.find("class=\"your-shades\"").expect(page)..];
         let shades = &shades[..shades.find("</details>").unwrap()];
-        assert!(shades.contains("Your shades (1)"), "{page}");
+        assert!(shades.contains("Pick from your shades (1)"), "{page}");
         assert!(shades.contains("data-name=\"black\" data-hex=\"#1b1b1b\""));
         // "orange" on the velvet has no swatch: nothing to reuse.
         assert!(!shades.contains("data-name=\"orange\""));

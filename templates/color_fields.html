@@ -31,7 +31,7 @@
   </template>
   {% if !color_ideas.is_empty() %}
   <p class="color-ideas" hidden>
-    <small class="muted">From your photos (click to add, or click into a color first to give it that shade):</small>
+    <small class="muted">From your photos: click one to add it. To give a color that has no shade yet this one, click into its name first.</small>
     {% for idea in color_ideas %}
     <button type="button" class="chip color-idea" data-name="{{ idea.name }}" data-hex="{{ idea.hex }}" title="Add {{ idea.name }} ({{ idea.hex }})"><span class="swatch" style="background: {{ idea.hex }}"></span>{{ idea.name }}</button>
     {% endfor %}
@@ -39,7 +39,8 @@
   {% endif %}
   {% if !your_shades.is_empty() %}
   <details class="your-shades" hidden>
-    <summary><small>Your shades ({{ your_shades.len() }}): reuse a shade you've picked before</small></summary>
+    <summary>🎨 Pick from your shades ({{ your_shades.len() }})</summary>
+    <small class="muted">Shades you've picked before, on any fabric or accessory. Click one to add it as a color here (or click into a color without a shade first to give it that one).</small><br>
     {% for idea in your_shades %}
     <button type="button" class="chip color-idea" data-name="{{ idea.name }}" data-hex="{{ idea.hex }}" title="Use {{ idea.name }} ({{ idea.hex }})"><span class="swatch" style="background: {{ idea.hex }}"></span>{{ idea.name }}</button>
     {% endfor %}
