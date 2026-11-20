@@ -14,8 +14,8 @@ use super::blockers::{self, Blockers, Link};
 use super::browse::{Browse, Controls, Filter, query_string};
 use super::colors;
 use super::forms::{
-    Choice, ColorRow, FormData, KINDS, NotANumber, ROLES, STATUSES, choices, color_rows,
-    color_rows_from_form, join_list, label_of, local_back, parse_choice, read_colors, split_list,
+    Choice, ColorRow, FormData, KINDS, ROLES, STATUSES, choices, color_rows, color_rows_from_form,
+    join_list, label_of, local_back, parse_choice, read_colors, split_list,
 };
 use super::outfits;
 use super::photos::{self, ColorIdea, FormWithPhotos, IdeaGroup, PhotoSection};
@@ -238,22 +238,58 @@ pub async fn set_status(
 // ---------------------------------------------------------------------------
 
 /// One `<select>` per fabric role.
-struct RoleSelect {
+/// One fabric box (main / middle / accent): type a fabric's name, with the
+/// stash's names suggested as you type (`<datalist id="fabric-names">`).
+struct FabricBox {
     field: &'static str,
     label: &'static str,
-    choices: Vec<Choice>,
-    /// The name box for "+ New fabric…": `new_main_fabric` and so on.
-    new_field: String,
-    new_name: String,
-    /// "Need to buy it" for the new fabric: `buy_new_main_fabric`.
+    /// The fabric's name, as saved or as typed.
+    value: String,
+    /// "Need to buy it", for a name that isn't a fabric yet: `buy_main_fabric`.
     buy_field: String,
     buy: bool,
 }
 
-/// The fabric select's value for "+ New fabric…".
-const NEW_FABRIC: &str = "new";
+/// What's typed in a fabric box.
+#[derive(Debug, Clone, PartialEq)]
+enum FabricPick {
+    None,
+    Existing(FabricId),
+    /// Not a fabric yet: it's created on save.
+    New(String),
+}
 
-/// A fabric named in an accessory's form with "+ New fabric…".
+/// A fabric box's text: empty is no fabric; a fabric's name (ignoring
+/// capitals and spaces around it) is that fabric; anything else is a new one.
+fn pick_fabric(text: &str, fabrics: &[Fabric]) -> FabricPick {
+    let text = text.trim();
+    if text.is_empty() {
+        return FabricPick::None;
+    }
+    match fabrics
+        .iter()
+        .find(|f| f.name.trim().eq_ignore_ascii_case(text))
+    {
+        Some(f) => FabricPick::Existing(f.id),
+        None => FabricPick::New(text.to_string()),
+    }
+}
+
+/// The matching partner box: an accessory's name (ignoring capitals), or
+/// empty for none. `Err` explains a name that isn't one of them.
+fn pick_partner(text: &str, accessories: &[Accessory]) -> Result<Option<AccessoryId>, String> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    accessories
+        .iter()
+        .find(|a| a.name.trim().eq_ignore_ascii_case(text))
+        .map(|a| Some(a.id))
+        .ok_or_else(|| format!("There's no accessory called “{text}” to pair with."))
+}
+
+/// A fabric typed into an accessory's form that isn't in the stash yet.
 #[derive(Debug, Clone, PartialEq)]
 struct NewFabricName {
     role: FabricRole,
@@ -274,11 +310,7 @@ fn new_fabric(new: &NewFabricName, accessory: &NewAccessory) -> NewFabric {
 }
 
 fn buy_field(field: &str) -> String {
-    format!("buy_{}", new_field(field))
-}
-
-fn new_field(field: &str) -> String {
-    format!("new_{field}")
+    format!("buy_{field}")
 }
 
 #[derive(Template)]
@@ -305,8 +337,13 @@ struct AccessoryFormPage {
     make_days: String,
     /// "How many", as typed (so a bad value can be shown again).
     quantity: String,
-    fabric_selects: Vec<RoleSelect>,
-    partner_choices: Vec<Choice>,
+    fabric_boxes: Vec<FabricBox>,
+    /// Every fabric, for the fabric boxes' suggestions.
+    fabric_names: Vec<NameOption>,
+    /// The partner's name, as saved or as typed.
+    partner: String,
+    /// Every other accessory, for the partner box's suggestions.
+    partner_names: Vec<NameOption>,
     /// Outfits it's a piece of (edit page only).
     outfits: Vec<Link>,
     blocked: Blockers,
@@ -319,64 +356,68 @@ struct AccessoryFormPage {
 }
 
 /// One fabric's colors, rendered as chips the page's script can copy.
+/// `name` is lowercase, matching what's typed in a fabric box.
 struct FabricChips {
-    id: i64,
+    name: String,
     colors: Vec<Color>,
 }
 
-/// "— none —" followed by every fabric, with `current` selected.
-fn fabric_choices(fabrics: &[Fabric], current: Option<FabricId>) -> Vec<Choice> {
-    let mut list = vec![Choice::new("", "— none —", current.is_none())];
-    for f in fabrics {
-        let label = if f.in_stock {
-            f.name.clone()
-        } else {
-            format!("{} (to buy)", f.name)
-        };
-        list.push(Choice::new(f.id.0, label, Some(f.id) == current));
-    }
-    // Last: make a fabric right here, e.g. for an old bow whose fabric was
-    // never entered (see `fabrics_for_new_names`).
-    list.push(Choice::new(NEW_FABRIC, "+ New fabric…", false));
-    list
+/// A suggestion in a name box's list, with a note the page script shows
+/// once it's chosen ("on the shopping list", "bow").
+struct NameOption {
+    name: String,
+    note: String,
 }
 
 impl AccessoryFormPage {
     fn new(editing: Option<&Accessory>, accessories: &[Accessory], fabrics: &[Fabric]) -> Self {
         let editing_id = editing.map(|a| a.id);
-        let fabric_selects = ROLES
+        let name_of = |id: FabricId| {
+            fabrics
+                .iter()
+                .find(|f| f.id == id)
+                .map(|f| f.name.clone())
+                .unwrap_or_default()
+        };
+        let fabric_boxes = ROLES
             .iter()
-            .map(|(role, field, label)| {
+            .map(|(role, field, label)| FabricBox {
+                field,
+                label,
                 // The form has one fabric per role; show the first one saved.
-                let current = editing
+                value: editing
                     .and_then(|a| a.fabrics.iter().find(|u| u.role == *role))
-                    .map(|u| u.fabric_id);
-                RoleSelect {
-                    field,
-                    label,
-                    choices: fabric_choices(fabrics, current),
-                    new_field: new_field(field),
-                    new_name: String::new(),
-                    buy_field: buy_field(field),
-                    buy: false,
-                }
+                    .map(|u| name_of(u.fabric_id))
+                    .unwrap_or_default(),
+                buy_field: buy_field(field),
+                buy: false,
+            })
+            .collect();
+        let fabric_names = fabrics
+            .iter()
+            .map(|f| NameOption {
+                name: f.name.clone(),
+                note: if f.in_stock {
+                    "in your stash".into()
+                } else {
+                    "on the shopping list".into()
+                },
             })
             .collect();
 
-        let current_partner = editing.and_then(|a| a.pair_id);
-        let mut partner_choices = vec![Choice::new("", "— none —", current_partner.is_none())];
-        for other in accessories.iter().filter(|a| Some(a.id) != editing_id) {
-            let label = format!(
-                "{} ({})",
-                other.name,
-                label_of(&KINDS, other.kind).to_lowercase()
-            );
-            partner_choices.push(Choice::new(
-                other.id.0,
-                label,
-                Some(other.id) == current_partner,
-            ));
-        }
+        let partner = editing
+            .and_then(|a| a.pair_id)
+            .and_then(|id| accessories.iter().find(|a| a.id == id))
+            .map(|a| a.name.clone())
+            .unwrap_or_default();
+        let partner_names = accessories
+            .iter()
+            .filter(|a| Some(a.id) != editing_id)
+            .map(|a| NameOption {
+                name: a.name.clone(),
+                note: label_of(&KINDS, a.kind).to_lowercase(),
+            })
+            .collect();
 
         let (kind, status) = editing.map_or((AccessoryKind::Bow, AccessoryStatus::Idea), |a| {
             (a.kind, a.status)
@@ -412,12 +453,14 @@ impl AccessoryFormPage {
                 .iter()
                 .filter(|f| !f.colors.is_empty())
                 .map(|f| FabricChips {
-                    id: f.id.0,
+                    name: f.name.trim().to_lowercase(),
                     colors: f.colors.clone(),
                 })
                 .collect(),
-            fabric_selects,
-            partner_choices,
+            fabric_boxes,
+            fabric_names,
+            partner,
+            partner_names,
             outfits: Vec::new(),
             blocked: Blockers::default(),
             photos: PhotoSection::unsaved(),
@@ -428,18 +471,12 @@ impl AccessoryFormPage {
         .with_fabric_colors()
     }
 
-    /// Fill in `fabric_colors` from the fabrics chosen in the selects, main
+    /// Fill in `fabric_colors` from the fabrics named in the boxes, main
     /// fabric first, the same way `Accessory::effective_colors` combines them.
     fn with_fabric_colors(mut self) -> Self {
-        let chosen = self.fabric_selects.iter().filter_map(|role| {
-            role.choices
-                .iter()
-                .find(|c| c.selected && !c.value.is_empty())
-                .and_then(|c| {
-                    self.fabric_chips
-                        .iter()
-                        .find(|f| f.id.to_string() == c.value)
-                })
+        let chosen = self.fabric_boxes.iter().filter_map(|b| {
+            let name = b.value.trim().to_lowercase();
+            self.fabric_chips.iter().find(|f| f.name == name)
         });
         self.fabric_colors = without_repeats(chosen.flat_map(|f| &f.colors));
         self
@@ -454,11 +491,10 @@ impl AccessoryFormPage {
         };
         select(&mut self.kind_choices, form.text("kind"));
         select(&mut self.status_choices, form.text("status"));
-        select(&mut self.partner_choices, form.text("partner"));
-        for role in &mut self.fabric_selects {
-            select(&mut role.choices, form.text(role.field));
-            role.new_name = form.text(&role.new_field);
-            role.buy = form.checked(&role.buy_field);
+        self.partner = form.text("partner");
+        for b in &mut self.fabric_boxes {
+            b.value = form.text(b.field);
+            b.buy = form.checked(&b.buy_field);
         }
         self.name = form.text("name");
         self.description = form.text("description");
@@ -478,11 +514,18 @@ impl AccessoryFormPage {
 struct AccessoryInput {
     accessory: NewAccessory,
     partner: Option<AccessoryId>,
-    /// Fabrics typed in with "+ New fabric…", to create (or find) on save.
+    /// Fabric names typed that aren't fabrics yet, to create on save.
     new_fabrics: Vec<NewFabricName>,
 }
 
-fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryInput, Vec<String>> {
+/// `stash` and `accessories` are every fabric and accessory, for the name
+/// boxes.
+fn read_form(
+    form: &FormData,
+    editing: Option<AccessoryId>,
+    stash: &[Fabric],
+    accessories: &[Accessory],
+) -> Result<AccessoryInput, Vec<String>> {
     let mut errors = Vec::new();
 
     let name = form.text("name");
@@ -537,34 +580,37 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
 
     let mut fabrics = Vec::new();
     let mut new_fabrics = Vec::new();
-    for (role, field, label) in ROLES {
-        if form.text(field) == NEW_FABRIC {
-            let name = form.text(&new_field(field));
-            if name.is_empty() {
-                errors.push(format!("Give the new {} a name.", label.to_lowercase()));
-            } else {
-                new_fabrics.push(NewFabricName {
-                    role,
-                    name,
-                    in_stock: !form.checked(&buy_field(field)),
-                });
-            }
-            continue;
-        }
-        match form.optional_id(field) {
-            Ok(Some(id)) => fabrics.push(FabricUse {
-                fabric_id: FabricId(id),
+    for (role, field, _) in ROLES {
+        match pick_fabric(&form.text(field), stash) {
+            FabricPick::None => {}
+            FabricPick::Existing(fabric_id) => fabrics.push(FabricUse { fabric_id, role }),
+            FabricPick::New(name) => new_fabrics.push(NewFabricName {
                 role,
+                name,
+                in_stock: !form.checked(&buy_field(field)),
             }),
-            Ok(None) => {}
-            Err(NotANumber) => errors.push(format!("{label} isn't a valid choice.")),
         }
     }
 
-    let partner = match form.optional_id("partner") {
-        Ok(p) => p.map(AccessoryId),
-        Err(NotANumber) => {
-            errors.push("Matching partner isn't a valid choice.".to_string());
+    let others: Vec<Accessory> = accessories
+        .iter()
+        .filter(|a| Some(a.id) != editing)
+        .cloned()
+        .collect();
+    let partner = match pick_partner(&form.text("partner"), &others) {
+        Ok(p) => p,
+        Err(problem) => {
+            // Its own name is the one mistake worth naming specifically.
+            let own = editing.is_some()
+                && accessories.iter().any(|a| {
+                    Some(a.id) == editing
+                        && a.name.eq_ignore_ascii_case(form.text("partner").trim())
+                });
+            errors.push(if own {
+                "An accessory can't be its own partner.".to_string()
+            } else {
+                problem
+            });
             None
         }
     };
@@ -594,7 +640,7 @@ fn read_form(form: &FormData, editing: Option<AccessoryId>) -> Result<AccessoryI
     }
 }
 
-/// Turn the "+ New fabric…" names into fabrics for the accessory: an existing
+/// Turn typed names that aren't fabrics yet into fabrics for the accessory: an existing
 /// fabric with the same name (ignoring capitals) is used as it is, rather
 /// than making a duplicate; otherwise a new one is created, in the stash
 /// unless "Need to buy it" was ticked, starting with the accessory's own
@@ -698,18 +744,18 @@ pub async fn create(
     State(state): State<AppState>,
     FormWithPhotos { form, photos }: FormWithPhotos,
 ) -> Result<Response, AppError> {
+    let stash = state.db.list_fabrics().await?;
+    let accessories = state.db.list_accessories().await?;
     let chosen = !photos.is_empty();
     let checked = photos::with_photos(
-        read_form(&form, None),
+        read_form(&form, None, &stash, &accessories),
         photos::prepare_all(&state, photos).await,
         chosen,
     );
     let (input, files) = match checked {
         Ok(ok) => ok,
         Err(errors) => {
-            let accessories = state.db.list_accessories().await?;
-            let fabrics = state.db.list_fabrics().await?;
-            let page = AccessoryFormPage::new(None, &accessories, &fabrics).refill(&form, errors);
+            let page = AccessoryFormPage::new(None, &accessories, &stash).refill(&form, errors);
             return form_response(&state, StatusCode::UNPROCESSABLE_ENTITY, page).await;
         }
     };
@@ -735,9 +781,11 @@ pub async fn update(
     FormWithPhotos { form, photos }: FormWithPhotos,
 ) -> Result<Response, AppError> {
     let accessory = state.db.get_accessory(AccessoryId(id)).await?;
+    let stash = state.db.list_fabrics().await?;
+    let accessories = state.db.list_accessories().await?;
     let chosen = !photos.is_empty();
     let checked = photos::with_photos(
-        read_form(&form, Some(accessory.id)),
+        read_form(&form, Some(accessory.id), &stash, &accessories),
         photos::prepare_all(&state, photos).await,
         chosen,
     );
@@ -783,5 +831,63 @@ pub async fn delete(
             form_response(&state, StatusCode::CONFLICT, page).await
         }
         Err(e) => Err(e.into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fabric(id: i64, name: &str) -> Fabric {
+        Fabric {
+            id: FabricId(id),
+            name: name.into(),
+            description: String::new(),
+            colors: vec![],
+            keywords: vec![],
+            pairings: vec![],
+            in_stock: true,
+        }
+    }
+
+    #[test]
+    fn a_fabric_box_is_none_a_fabric_or_a_new_one() {
+        let stash = [fabric(1, "Orange velvet"), fabric(2, "Black satin")];
+        assert_eq!(pick_fabric("", &stash), FabricPick::None);
+        assert_eq!(pick_fabric("   ", &stash), FabricPick::None);
+        assert_eq!(
+            pick_fabric("orange VELVET ", &stash),
+            FabricPick::Existing(FabricId(1))
+        );
+        assert_eq!(
+            pick_fabric(" Polka dots ", &stash),
+            FabricPick::New("Polka dots".into()),
+            "trimmed, capitals kept"
+        );
+    }
+
+    #[test]
+    fn a_partner_must_be_an_accessory() {
+        let bow = Accessory {
+            id: AccessoryId(3),
+            kind: AccessoryKind::Scarf,
+            name: "Ghost scarf".into(),
+            description: String::new(),
+            colors: vec![],
+            colors_from_fabrics: false,
+            tags: vec![],
+            fabrics: vec![],
+            source: Source::Handmade,
+            status: AccessoryStatus::Ready,
+            pair_id: None,
+            make_days: None,
+            quantity: 1,
+        };
+        assert_eq!(pick_partner("", std::slice::from_ref(&bow)), Ok(None));
+        assert_eq!(
+            pick_partner("ghost SCARF", std::slice::from_ref(&bow)),
+            Ok(Some(AccessoryId(3)))
+        );
+        assert!(pick_partner("Ghost scraf", &[bow]).is_err());
     }
 }

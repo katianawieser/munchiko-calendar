@@ -394,8 +394,8 @@ async fn adding_an_accessory_with_fabrics_and_a_partner() {
         &app,
         "/accessories",
         "kind=bow&status=idea&name=Candy+corn+bow&description=&color_hex=&color_name=orange\
-         &color_hex=&color_name=white&main_fabric=1&middle_fabric=&accent_fabric=2&source=bought&brand=Etsy\
-         &make_days=&partner=3",
+         &color_hex=&color_name=white&main_fabric=Orange+velvet&middle_fabric=&accent_fabric=Black+satin&source=bought&brand=Etsy\
+         &make_days=&partner=Ghost+scarf",
     )
     .await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER);
@@ -426,15 +426,15 @@ async fn editing_an_accessory_can_unpair_it() {
     let (_, html) = get(&app, "/accessories/1").await;
     assert!(html.contains("Edit Pumpkin bow"));
     assert!(
-        html.contains("<option value=\"2\" selected>Bat bow (bow)</option>"),
+        html.contains("name=\"partner\" value=\"Bat bow\" list=\"accessory-names\""),
         "current partner"
     );
 
     let reply = post(
         &app,
         "/accessories/1",
-        "kind=bow&status=in_progress&name=Pumpkin+bow&color_hex=&color_name=orange&main_fabric=1\
-         &middle_fabric=2&accent_fabric=&source=handmade&brand=&make_days=5&partner=",
+        "kind=bow&status=in_progress&name=Pumpkin+bow&color_hex=&color_name=orange&main_fabric=Orange+velvet\
+         &middle_fabric=Black+satin&accent_fabric=&source=handmade&brand=&make_days=5&partner=",
     )
     .await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER);
@@ -454,7 +454,7 @@ async fn accessory_form_mistakes_are_explained() {
     let reply = post(
         &app,
         "/accessories/1",
-        "kind=bow&status=idea&name=Pumpkin+bow&source=handmade&make_days=0&partner=1",
+        "kind=bow&status=idea&name=Pumpkin+bow&source=handmade&make_days=0&partner=Pumpkin+bow",
     )
     .await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
@@ -550,7 +550,7 @@ async fn accessory_colors_can_come_from_its_fabrics() {
         &app,
         "/accessories",
         "kind=bow&status=idea&name=Candy+corn+bow&colors_from_fabrics=on&color_hex=&color_name=White\
-         &main_fabric=1&middle_fabric=&accent_fabric=2&source=handmade&partner=",
+         &main_fabric=Orange+velvet&middle_fabric=&accent_fabric=Black+satin&source=handmade&partner=",
     )
     .await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER);
@@ -1449,8 +1449,8 @@ async fn accessory_page_shows_the_colors_it_gets_from_its_fabrics() {
     let black = shown.find(">black</span>").expect("black shown");
     assert!(orange < black, "main fabric's colors first");
     // Every fabric's chips are in the page, for the script to swap in.
-    assert!(html.contains("<template class=\"fabric-chip-set\" data-fabric=\"1\">"));
-    assert!(html.contains("<template class=\"fabric-chip-set\" data-fabric=\"2\">"));
+    assert!(html.contains("<template class=\"fabric-chip-set\" data-fabric=\"orange velvet\">"));
+    assert!(html.contains("<template class=\"fabric-chip-set\" data-fabric=\"black satin\">"));
 
     // The Ghost scarf doesn't use fabric colors: the line starts hidden.
     let (_, html) = get(&app, "/accessories/3").await;
@@ -1808,7 +1808,7 @@ async fn forms_offer_shades_already_picked_elsewhere() {
 }
 
 // ---------------------------------------------------------------------------
-// "+ New fabric…" on the accessory form (M9c)
+// New fabrics typed into the accessory form (M9c, by name since M14a)
 // ---------------------------------------------------------------------------
 
 /// An accessory form with the given fabric fields.
@@ -1828,8 +1828,8 @@ async fn a_new_fabric_can_be_made_from_the_accessory_form() {
         "/accessories",
         &bow_form(
             "Gingham+bow",
-            "main_fabric=new&new_main_fabric=Red+gingham&middle_fabric=2&new_middle_fabric=\
-             &accent_fabric=&new_accent_fabric=",
+            "main_fabric=Red+gingham&middle_fabric=Black+satin\
+             &accent_fabric=",
         ),
     )
     .await;
@@ -1867,8 +1867,8 @@ async fn a_new_fabric_to_buy_goes_on_the_shopping_list_with_the_bows_colors() {
     let (app, db, _) = setup(d(2026, 10, 5)).await;
     let body = "kind=bow&status=idea&name=Candy+bow&description=&color_name=red&color_hex=%23CC0000\
                 &color_name=white&color_hex=&source=handmade&brand=&make_days=&partner=\
-                &main_fabric=new&new_main_fabric=Candy+stripe&buy_new_main_fabric=on\
-                &middle_fabric=&new_middle_fabric=&accent_fabric=&new_accent_fabric=";
+                &main_fabric=Candy+stripe&buy_main_fabric=on\
+                &middle_fabric=&accent_fabric=";
     let reply = post(&app, "/accessories", body).await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER);
     let fabrics = db.list_fabrics().await.unwrap();
@@ -1887,7 +1887,7 @@ async fn a_new_fabric_to_buy_goes_on_the_shopping_list_with_the_bows_colors() {
     )
     .await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(reply.html.contains("name=\"buy_new_main_fabric\" checked"));
+    assert!(reply.html.contains("name=\"buy_main_fabric\" checked"));
 }
 
 #[tokio::test]
@@ -1900,8 +1900,7 @@ async fn a_new_fabric_name_that_already_exists_reuses_that_fabric() {
         "/accessories",
         &bow_form(
             "Twin+bow",
-            "main_fabric=new&new_main_fabric=orange+velvet&middle_fabric=new\
-             &new_middle_fabric=Polka+dots&accent_fabric=new&new_accent_fabric=polka+dots",
+            "main_fabric=orange+velvet&middle_fabric=Polka+dots&accent_fabric=polka+dots",
         ),
     )
     .await;
@@ -1920,26 +1919,55 @@ async fn a_new_fabric_name_that_already_exists_reuses_that_fabric() {
 }
 
 #[tokio::test]
-async fn a_new_fabric_needs_a_name() {
+async fn fabrics_and_partners_are_chosen_by_name() {
     let (app, db, _) = setup(d(2026, 10, 5)).await;
+    // The boxes suggest every fabric and every other accessory.
+    let (_, html) = get(&app, "/accessories/new").await;
+    assert!(html.contains("name=\"main_fabric\" value=\"\" list=\"fabric-names\""));
+    assert!(html.contains("<option value=\"Orange velvet\" data-note=\"on the shopping list\">"));
+    assert!(html.contains("<option value=\"Ghost scarf\" data-note=\"scarf\">"));
+
+    // A partner name that isn't an accessory: explained, kept, nothing saved.
     let before = db.list_accessories().await.unwrap().len();
     let reply = post(
         &app,
         "/accessories",
-        &bow_form(
-            "Nameless+fabric+bow",
-            "main_fabric=new&new_main_fabric=&middle_fabric=&new_middle_fabric=\
-             &accent_fabric=&new_accent_fabric=",
-        ),
+        "kind=bow&status=ready&name=Lonely+bow&description=&color_name=&color_hex=&source=handmade&brand=&make_days=&main_fabric=&partner=Ghost+scraf",
     )
     .await;
     assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
-    assert!(reply.html.contains("Give the new main fabric a name."));
     assert!(
-        reply.html.contains("<option value=\"new\" selected>"),
-        "the choice is kept"
+        reply
+            .html
+            .contains("There&#39;s no accessory called “Ghost scraf” to pair with."),
+        "{}",
+        reply.html
+    );
+    assert!(
+        reply
+            .html
+            .contains("name=\"partner\" value=\"Ghost scraf\"")
     );
     assert_eq!(db.list_accessories().await.unwrap().len(), before);
+
+    // Names match ignoring capitals and spaces around them.
+    let reply = post(
+        &app,
+        "/accessories",
+        "kind=bow&status=ready&name=Paired+bow&description=&color_name=&color_hex=&source=handmade&brand=&make_days=&main_fabric=+BLACK+SATIN+&partner=ghost+scarf",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let bow = db
+        .list_accessories()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|a| a.name == "Paired bow")
+        .unwrap();
+    assert_eq!(bow.fabrics[0].fabric_id, FabricId(2));
+    assert_eq!(bow.pair_id, Some(AccessoryId(3)));
+    assert_eq!(db.list_fabrics().await.unwrap().len(), 2, "no new fabric");
 }
 
 #[tokio::test]
@@ -1950,8 +1978,8 @@ async fn editing_an_old_bow_can_add_its_missing_fabric() {
         &app,
         "/accessories/3",
         "kind=scarf&status=idea&name=Ghost+scarf&description=&color_name=white&color_hex=\
-         &source=bought&brand=&make_days=&partner=&main_fabric=new&new_main_fabric=Glow+ghosts\
-         &middle_fabric=&new_middle_fabric=&accent_fabric=&new_accent_fabric=",
+         &source=bought&brand=&make_days=&partner=&main_fabric=Glow+ghosts\
+         &middle_fabric=&accent_fabric=",
     )
     .await;
     assert_eq!(reply.status, StatusCode::SEE_OTHER);
@@ -2171,8 +2199,8 @@ async fn both_pets_in_one_bow_warns_until_there_are_two() {
     assert!(html.contains("name=\"quantity\" type=\"number\" min=\"1\" value=\"1\""));
     let accessory = |quantity: &str| {
         format!(
-            "kind=bow&status=ready&name=Pumpkin+bow&color_hex=&color_name=orange&main_fabric=1\
-             &middle_fabric=2&accent_fabric=&source=handmade&brand=&make_days=&partner=\
+            "kind=bow&status=ready&name=Pumpkin+bow&color_hex=&color_name=orange&main_fabric=Orange+velvet\
+             &middle_fabric=Black+satin&accent_fabric=&source=handmade&brand=&make_days=&partner=\
              &quantity={quantity}"
         )
     };

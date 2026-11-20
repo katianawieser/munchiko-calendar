@@ -26,7 +26,7 @@ take the photos, and it suggests what to wear from what's already in the stash.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
 templates · Pico CSS · a few small optional scripts · the `image` crate.
-229 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+231 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -111,7 +111,7 @@ Example: Halloween (post Oct 31, default lead times):
 | **Calendar** | Month view of holidays, outings and every post's prep tasks; "to do today" box with **Done** buttons ("✓ Made it", "✓ Bought it"); overdue work outlined in red |
 | **Posts** | Plan a post for an event (with the same ideas shown above the choices), choose who wears what (single pieces or whole **outfits**), see its prep timeline and slack with **Done** buttons, add reference photos; save **ideas** with no date yet |
 | **Events** | Upcoming / past holidays and outings; "Plan a post" from any event; **ideas** for what to wear (or which fabric to make something from, and the date to start by); add and edit your own outings (holidays are edited in `data/holidays.toml`) |
-| **Accessories** | Bows, scarves, costumes, hats, props: table or photo grid (small / medium / large cards), tags (plus their fabrics' tags), filter by kind, status, tag and warm/cool tone, sort by color, one-click status, how many you have (×2), fabrics by role (or "+ New fabric…" to add one right there, in the stash or on the shopping list), matching sets, photos |
+| **Accessories** | Bows, scarves, costumes, hats, props: table or photo grid (small / medium / large cards), tags (plus their fabrics' tags), filter by kind, status, tag and warm/cool tone, sort by color, one-click status, how many you have (×2), fabrics by role and the matching partner chosen by typing part of a name (a new name makes a new fabric, in the stash or on the shopping list), matching sets, photos |
 | **Outfits** | Pieces worn together (Glinda's crown, dress and wand), with notes and photos; ready once every piece is |
 | **Fabrics** | Stash and shopping list as a table or photo grid, tags, tag and warm/cool filters, sort by color, pairings, what each fabric is used by, photos |
 | **Shades** | Every picked shade, one card per color with all its shades (each shade shown once) plus similar shades of other names; merge into one shade, with a preview and an automatic database backup first |
@@ -317,7 +317,7 @@ Settings (all optional environment variables):
   - [x] **M13d**: split or rename shades within a color, with name suggestions from your own names
   - [x] **M13e**: colors from photos reuse your existing shades when they match (and ask when they're close)
 - [ ] **M14**: Finding things in long lists
-  - [ ] **M14a**: type-to-search when choosing fabrics and a matching partner
+  - [x] **M14a**: type-to-search when choosing fabrics and a matching partner
   - [ ] **M14b**: fabric photos instead of long fabric names in the accessory list
   - [ ] **M14c**: suggest a matching partner from fabric pairings
 

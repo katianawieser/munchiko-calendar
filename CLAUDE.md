@@ -464,6 +464,23 @@ See README.md for the planning rules, data model and roadmap.
   that auto-matches every existing color to its nearest palette color (Rust) with a
   review list for corrections, optionally checked against photos. M13e's matching
   logic carries over. She chose A: M13e (done), then M14; palette later.
+- **M14a done:** fabric boxes (main/middle/accent) and the partner are text inputs
+  with `<datalist>` suggestions (`fabric-names`, `accessory-names`; option
+  `data-note` = "in your stash"/"on the shopping list" or the kind). Names are
+  unique in real data (75 fabrics, 54 accessories). Server resolves (pure, tested):
+  `pick_fabric` → None / Existing (name ignoring capitals + outer spaces) / New
+  (created on save via `fabrics_for_new_names`, "Need to buy it" = `buy_{field}`);
+  `pick_partner` → unknown name is a form error ("There's no accessory called …",
+  own name → "can't be its own partner"). The "+ New fabric…" option and
+  `new_{field}` boxes are gone. Fields keep their names (`main_fabric`, `partner`)
+  but carry names, not ids. colors.js: hint under each box ("✓ one of your fabrics
+  (…)" / "+ new fabric: it's made when you save" / red "No accessory has that
+  name"), Need-to-buy shown only for a new name; live fabric colors keyed by
+  lowercase name (`template.fabric-chip-set[data-fabric]`). **Verified in Firefox
+  160** (Katiana restarted it; no staged update): hints, live colors, and a real
+  submit (existing fabric by lowercase name, new fabric to buy, partner in caps).
+  Marionette client: scratchpad `marionette/client.py` (lost when the session ends;
+  ~50 lines, see the Firefox note above).
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

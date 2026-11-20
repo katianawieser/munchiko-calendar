@@ -248,22 +248,26 @@ document.querySelectorAll(".color-list").forEach((list) => {
 });
 
 // Accessory form: show the chosen fabrics' colors under "Use colors from these
-// fabrics", updating as fabrics are picked. Each fabric's chips are in a
-// hidden <template>; copy the chosen ones in role order (main first) and skip
-// a name that's already shown, the same rule the server uses.
+// fabrics", updating as fabric names are typed. Each fabric's chips are in a
+// hidden <template data-fabric="its name, lowercase">; copy the named ones in
+// box order (main first) and skip a color name that's already shown, the
+// same rule the server uses.
 document.querySelectorAll(".fabric-colors").forEach((box) => {
   const form = box.closest("form");
   const chips = box.querySelector(".fabric-color-chips");
   const none = box.querySelector(".no-fabric-colors");
   const toggle = form.querySelector('input[name="colors_from_fabrics"]');
-  const selects = [...form.querySelectorAll('select[name$="_fabric"]')];
+  const inputs = [...form.querySelectorAll("input.fabric-pick")];
 
   function update() {
     box.hidden = !toggle.checked;
     chips.replaceChildren();
     const shown = new Set();
-    for (const select of selects) {
-      const set = form.querySelector(`template.fabric-chip-set[data-fabric="${select.value}"]`);
+    for (const input of inputs) {
+      const name = input.value.trim().toLowerCase();
+      const set = [...form.querySelectorAll("template.fabric-chip-set")].find(
+        (t) => t.dataset.fabric === name
+      );
       if (!set) continue;
       for (const chip of set.content.children) {
         if (shown.has(chip.dataset.colorName)) continue;
@@ -275,20 +279,44 @@ document.querySelectorAll(".fabric-colors").forEach((box) => {
   }
 
   toggle.addEventListener("change", update);
-  selects.forEach((select) => select.addEventListener("change", update));
+  inputs.forEach((input) => input.addEventListener("input", update));
 });
 
-// Accessory form: "+ New fabric…" in a fabric select shows a name box for the
-// new fabric (created when the form is saved). Without this script the boxes
-// are always visible, which works too.
-document.querySelectorAll("select.fabric-select").forEach((select) => {
-  const box = select.closest(".fabric-role").querySelector(".new-fabric");
-  const name = box.querySelector(".new-fabric-name");
-  const show = (focus) => {
-    const isNew = select.value === "new";
-    box.hidden = !isNew;
-    if (isNew && focus) name.focus();
-  };
-  select.addEventListener("change", () => show(true));
-  show(false);
+// Accessory form: name boxes for fabrics and the matching partner. The
+// server decides what a name means when the form is saved (see
+// web/accessories.rs, pick_fabric / pick_partner); this only says so while
+// typing, so a typo doesn't quietly become a new fabric:
+//   fabric: "✓ one of your fabrics (in your stash)" / "+ new fabric" (then
+//           "Need to buy it" shows);
+//   partner: "✓ bow" / "no accessory has that name".
+document.querySelectorAll("input.name-pick").forEach((input) => {
+  const row = input.closest(".fabric-role");
+  const hint = row.querySelector(".pick-hint");
+  const buy = row.querySelector(".new-fabric");
+  const options = [...document.getElementById(input.getAttribute("list")).options];
+  const isFabric = input.classList.contains("fabric-pick");
+
+  function update() {
+    const typed = input.value.trim().toLowerCase();
+    const match = options.find((o) => o.value.trim().toLowerCase() === typed);
+    let text = "";
+    let isNew = false;
+    if (typed === "") {
+      text = "";
+    } else if (match) {
+      text = isFabric ? `✓ one of your fabrics (${match.dataset.note})` : `✓ ${match.dataset.note}`;
+    } else if (isFabric) {
+      text = "+ new fabric: it's made when you save";
+      isNew = true;
+    } else {
+      text = "No accessory has that name: pick one from the list";
+    }
+    hint.textContent = text;
+    hint.classList.toggle("pick-new", isNew);
+    hint.classList.toggle("pick-unknown", !isFabric && typed !== "" && !match);
+    if (buy) buy.hidden = !isNew;
+  }
+
+  input.addEventListener("input", update);
+  update();
 });

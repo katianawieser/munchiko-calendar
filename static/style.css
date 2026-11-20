@@ -292,10 +292,13 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
 .your-shades { margin: 0 0 0.75rem 0; }
 .your-shades summary { cursor: pointer; }
 
-/* "+ New fabric…" name box under a fabric select (M9c). */
-.new-fabric { margin-top: -0.5rem; }
+/* "Need to buy it", shown under a fabric box when the name is a new fabric. */
 .new-fabric[hidden] { display: none; }
-.new-fabric .new-fabric-name { margin-bottom: 0.25rem; }
+/* Name boxes (fabrics, partner): the hint line under the box. */
+.fabric-role label { margin-bottom: 0.2rem; }
+.pick-hint { display: block; min-height: 1.2em; margin-bottom: 0.3rem; }
+.pick-hint.pick-new { color: var(--pico-primary); }
+.pick-hint.pick-unknown { color: var(--mc-overdue); }
 
 /* Above the fabric and accessory lists: filters on the left, Table | Grid on the right. */
 .browse-bar {

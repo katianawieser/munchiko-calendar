@@ -34,21 +34,18 @@
   <fieldset>
     <legend>Fabrics</legend>
     <div class="grid">
-      {% for role in fabric_selects %}
+      {% for b in fabric_boxes %}
       <div class="fabric-role">
-        <label>{{ role.label }}
-          <select name="{{ role.field }}" class="fabric-select">
-            {% for c in role.choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
-          </select>
+        <label>{{ b.label }}
+          <input name="{{ b.field }}" value="{{ b.value }}" list="fabric-names" class="name-pick fabric-pick" placeholder="type to search, or leave empty" autocomplete="off">
         </label>
-        <div class="new-fabric">
-          <input name="{{ role.new_field }}" value="{{ role.new_name }}" class="new-fabric-name" placeholder="Name for &ldquo;+ New fabric…&rdquo;" aria-label="{{ role.label }}: new fabric's name">
-          <label class="inline-check"><input type="checkbox" name="{{ role.buy_field }}" {% if role.buy %}checked{% endif %}> Need to buy it</label>
-        </div>
+        <small class="pick-hint muted" aria-live="polite"></small>
+        <label class="inline-check new-fabric"><input type="checkbox" name="{{ b.buy_field }}" {% if b.buy %}checked{% endif %}> Need to buy it <span class="muted">(for a new fabric)</span></label>
       </div>
       {% endfor %}
     </div>
-    <p><small class="muted">Fabric not in the app yet? Choose &ldquo;+ New fabric…&rdquo; and type its name: it's created when you save, with this accessory's colors, in your stash (or on the Shopping list if you tick &ldquo;Need to buy it&rdquo;). You can add its photo and fix its colors on the Fabrics page later. A name you already have uses that fabric as it is.</small></p>
+    <datalist id="fabric-names">{% for f in fabric_names %}<option value="{{ f.name }}" data-note="{{ f.note }}">{% endfor %}</datalist>
+    <p><small class="muted">Type part of a fabric's name and pick it from the list. A name that isn't one of your fabrics makes a new fabric when you save, with this accessory's colors, in your stash (or on the Shopping list if you tick &ldquo;Need to buy it&rdquo;).</small></p>
     <label>
       <input type="checkbox" name="colors_from_fabrics" role="switch" {% if colors_from_fabrics %}checked{% endif %}>
       Use colors from these fabrics
@@ -62,7 +59,7 @@
       <small class="muted no-fabric-colors" {% if !fabric_colors.is_empty() %}hidden{% endif %}>none yet (choose fabrics above, or give them colors)</small>
     </p>
     {% for set in fabric_chips %}
-    <template class="fabric-chip-set" data-fabric="{{ set.id }}">{% for color in set.colors %}<span data-color-name="{{ color.name }}">{% include "color_chip.html" %} </span>{% endfor %}</template>
+    <template class="fabric-chip-set" data-fabric="{{ set.name }}">{% for color in set.colors %}<span data-color-name="{{ color.name }}">{% include "color_chip.html" %} </span>{% endfor %}</template>
     {% endfor %}
     <p><strong>Colors</strong><br><small class="muted">With the switch on, these are added to the fabrics' colors (e.g. a white trim); leave empty if the fabrics say it all.</small></p>
     {% include "color_fields.html" %}
@@ -86,12 +83,14 @@
     </label>
   </div>
 
-  <label>Matching Mochi &amp; Momo set
-    <select name="partner">
-      {% for c in partner_choices %}<option value="{{ c.value }}" {% if c.selected %}selected{% endif %}>{{ c.label }}</option>{% endfor %}
-    </select>
+  <div class="fabric-role">
+    <label>Matching Mochi &amp; Momo set
+      <input name="partner" value="{{ partner }}" list="accessory-names" class="name-pick partner-pick" placeholder="type to search, or leave empty" autocomplete="off">
+    </label>
+    <small class="pick-hint muted" aria-live="polite"></small>
+    <datalist id="accessory-names">{% for a in partner_names %}<option value="{{ a.name }}" data-note="{{ a.note }}">{% endfor %}</datalist>
     <small>Pairing is two-way. Choosing a partner that's already in a set takes it out of that set.</small>
-  </label>
+  </div>
 
   <div class="form-actions">
     <button type="submit">Save</button>
