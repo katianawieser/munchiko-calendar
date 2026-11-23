@@ -211,6 +211,9 @@ a.plain:hover { text-decoration: underline; }
 }
 /* Nothing picked yet: faded, with a dashed outline. */
 .color-row .swatch-picker.unset { opacity: 0.35; border-style: dashed; }
+/* A palette color's shade, locked (change it on the Palette page): shown at
+   full strength, since browsers fade disabled inputs. */
+.color-row .swatch-picker:disabled { opacity: 1; cursor: default; }
 .color-list .add-color { margin: 0 0 1rem 0; }
 
 /* Photos (M6b). */

@@ -1,20 +1,24 @@
 {#- The color list on the fabric and accessory forms. Expects `colors: Vec<ColorRow>`,
-    `color_ideas: Vec<ColorIdea>` (main colors of the item's photos) and
-    `your_shades: Vec<ColorIdea>` (shades already picked elsewhere).
+    `color_ideas: Vec<IdeaGroup>` (main colors of the item's photos) and
+    `palette: Vec<PaletteOption>` (every palette color, rainbow order).
 
-    Without JavaScript this is a list of name boxes (one spare at the end), so
-    the form still works. static/colors.js adds the swatch pickers and the
-    add/remove buttons; it stores the picked shade in the hidden color_hex
-    field, which stays empty until a shade is actually picked. -#}
+    Each row is a palette color, chosen by name (the palette is suggested as
+    you type). A name that isn't in the palette yet is added to it on save,
+    with the shade picked in the row. Without JavaScript this is a list of
+    name boxes (one spare at the end), so the form still works. colors.js adds
+    the shade pickers (for new colors), the hints and add/remove buttons; it
+    stores a picked shade in the hidden color_hex field. -#}
 <div class="color-list">
-  <p class="palette-note"><small class="muted">Colors come from your <a href="/palette">palette</a>: a name already there uses the palette's shade (change it on the Palette page, and it changes everywhere); a new name is added to the palette with the shade picked here.</small></p>
+  <p class="palette-note"><small class="muted">Colors come from your <a href="/palette">palette</a>: type a name and pick it from the list. A name that isn't in the palette yet is added to it when you save, with the shade you pick for it here. To change a palette color's shade, use the Palette page: it changes everywhere.</small></p>
+  <datalist id="palette-names">{% for option in palette %}<option value="{{ option.name }}" data-hex="{{ option.hex }}">{% endfor %}</datalist>
   <div class="color-rows">
     {% for row in colors %}
     <div class="color-row">
       <input type="color" class="swatch-picker" value="{% if row.hex.is_empty() %}#ffffff{% else %}{{ row.hex }}{% endif %}" aria-label="Exact shade" title="Pick the exact shade" hidden>
       <input type="hidden" name="color_hex" value="{{ row.hex }}">
-      <input name="color_name" value="{{ row.name }}" placeholder="e.g. baby pink" aria-label="Color name">
+      <input name="color_name" value="{{ row.name }}" placeholder="type a palette color, or a new one" aria-label="Color name" list="palette-names" autocomplete="off">
       <span class="shade-status" aria-live="polite"></span>
+      <small class="palette-hint muted" aria-live="polite"></small>
       <button type="button" class="outline secondary small clear-swatch" title="Remove the swatch, keep the name" hidden>No swatch</button>
       <button type="button" class="outline secondary small remove-color" aria-label="Remove this color" hidden>✕</button>
     </div>
@@ -24,8 +28,9 @@
     <div class="color-row">
       <input type="color" class="swatch-picker" value="#ffffff" aria-label="Exact shade" title="Pick the exact shade">
       <input type="hidden" name="color_hex" value="">
-      <input name="color_name" placeholder="e.g. baby pink" aria-label="Color name">
+      <input name="color_name" placeholder="type a palette color, or a new one" aria-label="Color name" list="palette-names" autocomplete="off">
       <span class="shade-status" aria-live="polite"></span>
+      <small class="palette-hint muted" aria-live="polite"></small>
       <button type="button" class="outline secondary small clear-swatch" title="Remove the swatch, keep the name">No swatch</button>
       <button type="button" class="outline secondary small remove-color" aria-label="Remove this color">✕</button>
     </div>
@@ -38,12 +43,12 @@
   </p>
   {% endif %}
   <p class="color-ideas chosen-photo-ideas" hidden aria-live="polite"></p>
-  {% if !your_shades.is_empty() %}
+  {% if !palette.is_empty() %}
   <details class="your-shades" hidden>
-    <summary>🎨 Pick from your shades ({{ your_shades.len() }})</summary>
-    <small class="muted">Shades you've picked before, on any fabric or accessory. Click one to add it as a color here (or click into a color without a shade first to give it that one). Look-alike shades show once; manage them all on the <a href="/palette">Palette</a> page.</small><br>
-    {% for idea in your_shades %}
-    <button type="button" class="chip color-idea" data-name="{{ idea.name }}" data-hex="{{ idea.hex }}" title="Use {{ idea.name }} ({{ idea.hex }})"><span class="swatch" style="background: {{ idea.hex }}"></span>{{ idea.name }}</button>
+    <summary>🎨 Pick from your palette ({{ palette.len() }})</summary>
+    <small class="muted">Click a color to add it here. To add, rename or reshade palette colors, use the <a href="/palette">Palette</a> page.</small><br>
+    {% for option in palette %}
+    <button type="button" class="chip color-idea" data-name="{{ option.name }}" data-hex="{{ option.hex }}" title="Add {{ option.name }}">{% if !option.hex.is_empty() %}<span class="swatch" style="background: {{ option.hex }}"></span>{% endif %}{{ option.name }}</button>
     {% endfor %}
   </details>
   {% endif %}

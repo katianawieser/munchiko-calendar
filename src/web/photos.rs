@@ -545,15 +545,12 @@ pub async fn color_ideas(state: &AppState, photos: &[Photo], existing: &[Color])
     ideas_from_thumbnails(thumbnails, &stash, existing).await
 }
 
-/// Every picked shade in the stash, to reuse for photo colors. A database
-/// problem only means no reuse, never a broken page.
+/// The palette's shades, to reuse for photo colors. A database problem
+/// only means no reuse, never a broken page.
 async fn stash_shades(state: &AppState) -> Vec<Shade> {
-    match (
-        state.db.list_fabrics().await,
-        state.db.list_accessories().await,
-    ) {
-        (Ok(fabrics), Ok(accessories)) => shades::collect(&fabrics, &accessories),
-        _ => Vec::new(),
+    match state.db.list_palette().await {
+        Ok(palette) => shades::from_palette(&palette),
+        Err(_) => Vec::new(),
     }
 }
 
@@ -619,10 +616,11 @@ fn group_ideas(ideas: Vec<ColorIdea>) -> Vec<IdeaGroup> {
     groups
 }
 
-/// Turn a photo's main colors into ideas, reusing the stash's shades:
-/// - one of yours that's practically the same → that one ("Yours");
-/// - one of yours that's close → yours, then the new one ("or new");
-/// - nothing close → the new shade, with a built-in name.
+/// Turn a photo's main colors into ideas, reusing the palette's shades:
+/// - a palette color that's practically the same → that one ("Yours");
+/// - one that's close → yours, then the new one ("or new");
+/// - nothing close → the new shade, with the nearest built-in name that no
+///   palette color (or earlier idea) has.
 ///
 /// Ideas whose name the item already has a swatch for are left out (nothing
 /// to add; a name without a swatch stays, since clicking fills the shade in),
@@ -632,34 +630,36 @@ fn ideas_from_swatches(
     stash: &[Shade],
     existing: &[Color],
 ) -> Vec<ColorIdea> {
-    let new = |s: &palette::Swatch, kind| ColorIdea {
-        name: s.name.to_string(),
-        hex: s.hex(),
-        kind,
-    };
     let yours = |shade: &Shade| ColorIdea {
         name: shade.name().to_string(),
         hex: shade.hex.clone(),
         kind: IdeaKind::Yours,
     };
+    // A new shade needs a name nothing else has: not a palette color's (that
+    // would *be* that color, with its own shade) and not another new idea's.
+    let free_name = |swatch: &palette::Swatch, ideas: &[ColorIdea]| -> String {
+        let taken = |name: &str| {
+            stash
+                .iter()
+                .any(|s| s.names.iter().any(|n| n.eq_ignore_ascii_case(name)))
+                || ideas.iter().any(|i| i.name.eq_ignore_ascii_case(name))
+        };
+        palette::nearest_names(swatch.rgb, palette::NAMES.len())
+            .into_iter()
+            .find(|n| !taken(n))
+            .map_or_else(|| format!("{} (new)", swatch.name), str::to_string)
+    };
     let mut ideas: Vec<ColorIdea> = Vec::new();
     for swatch in swatches {
+        let new = |kind| ColorIdea {
+            name: free_name(swatch, &ideas),
+            hex: swatch.hex(),
+            kind,
+        };
         let options = match shades::match_shade(swatch.rgb, stash) {
             ShadeMatch::Same(shade) => vec![yours(shade)],
-            ShadeMatch::Close(shade) => {
-                // A different shade needs a different name, or the stash
-                // gets two "red"s: the nearest built-in name that isn't yours.
-                let name = palette::nearest_names(swatch.rgb, 4)
-                    .into_iter()
-                    .find(|n| *n != shade.name())
-                    .unwrap_or(swatch.name);
-                let alternative = ColorIdea {
-                    name: name.to_string(),
-                    ..new(swatch, IdeaKind::OrNew)
-                };
-                vec![yours(shade), alternative]
-            }
-            ShadeMatch::New => vec![new(swatch, IdeaKind::New)],
+            ShadeMatch::Close(shade) => vec![yours(shade), new(IdeaKind::OrNew)],
+            ShadeMatch::New => vec![new(IdeaKind::New)],
         };
         let mut options: Vec<ColorIdea> = options
             .into_iter()
@@ -804,5 +804,27 @@ mod tests {
         assert_ne!(ideas[1].name, "red", "{ideas:?}");
         // Shown as one choice.
         assert_eq!(group_ideas(ideas).len(), 1);
+    }
+
+    #[test]
+    fn new_photo_colors_never_take_a_palette_name() {
+        use crate::models::{PaletteColor, PaletteColorId};
+        // The palette has an "orange", but a different one.
+        let palette = [PaletteColor {
+            id: PaletteColorId(1),
+            name: "orange".into(),
+            hex: Some("#cc5500".into()),
+        }];
+        let stash = shades::from_palette(&palette);
+        // Two bright oranges, far from the palette's and from each other.
+        let found = [
+            swatch("orange", [255, 140, 0]),
+            swatch("orange", [255, 170, 60]),
+        ];
+        let ideas = ideas_from_swatches(&found, &stash, &[]);
+        let names: Vec<&str> = ideas.iter().map(|i| i.name.as_str()).collect();
+        assert!(!names.contains(&"orange"), "{names:?}");
+        assert_eq!(ideas.len(), 2);
+        assert_ne!(names[0], names[1], "two new shades, two names");
     }
 }

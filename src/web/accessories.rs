@@ -18,7 +18,7 @@ use super::forms::{
     join_list, label_of, local_back, parse_choice, read_colors, split_list,
 };
 use super::outfits;
-use super::photos::{self, ColorIdea, FormWithPhotos, IdeaGroup, PhotoSection};
+use super::photos::{self, FormWithPhotos, IdeaGroup, PhotoSection};
 use super::{AppError, AppState, load_usage, render};
 use crate::db::{DbError, NewAccessory, NewFabric};
 use crate::models::{
@@ -372,8 +372,8 @@ struct AccessoryFormPage {
     photos: PhotoSection,
     /// Main colors of its photos, offered beside the color rows.
     color_ideas: Vec<IdeaGroup>,
-    /// Shades already picked elsewhere in the stash, to reuse.
-    your_shades: Vec<ColorIdea>,
+    /// The palette, for the color name boxes and "Pick from your palette".
+    palette: Vec<colors::PaletteOption>,
     errors: Vec<String>,
 }
 
@@ -603,7 +603,7 @@ impl AccessoryFormPage {
             blocked: Blockers::default(),
             photos: PhotoSection::unsaved(),
             color_ideas: Vec::new(),
-            your_shades: Vec::new(),
+            palette: Vec::new(),
             errors: Vec::new(),
         }
         .with_fabric_colors()
@@ -856,15 +856,13 @@ async fn edit_page(state: &AppState, accessory: &Accessory) -> Result<AccessoryF
 }
 
 /// Show the form with `status`. Every form page goes through here, so this
-/// is where "Your shades" (shades already picked elsewhere) are added.
+/// is where the palette (for the color rows) is added.
 async fn form_response(
     state: &AppState,
     status: StatusCode,
     mut page: AccessoryFormPage,
 ) -> Result<Response, AppError> {
-    let fabrics = state.db.list_fabrics().await?;
-    let accessories = state.db.list_accessories().await?;
-    page.your_shades = colors::your_shades(&fabrics, &accessories);
+    page.palette = colors::palette_options(&state.db.list_palette().await?);
     Ok((status, render(page)?).into_response())
 }
 

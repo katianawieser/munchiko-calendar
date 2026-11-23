@@ -79,7 +79,7 @@ fn uses_by_color(
 }
 
 /// Rainbow order (like the lists' "sort by color"), name-only colors last.
-fn rainbow(colors: &mut [PaletteColor]) {
+pub(super) fn rainbow(colors: &mut [PaletteColor]) {
     colors.sort_by(|a, b| {
         let key = |c: &PaletteColor| {
             c.hex

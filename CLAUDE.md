@@ -538,6 +538,23 @@ See README.md for the planning rules, data model and roadmap.
   `shades.rs` keeps collect / look_alike_groups / match_shade. Interim until M15b:
   color rows still have pickers, but an existing name uses the palette's shade (note
   under the rows says so). Old 0004 test now migrates a version-3 DB all the way.
+- **M15b done:** forms get `palette: Vec<colors::PaletteOption>` (rainbow, via
+  `palette::rainbow` now pub(super)); color_fields.html: `<datalist id=palette-names>`
+  (option data-hex), name inputs `list=palette-names`, `.palette-hint` per row,
+  "🎨 Pick from your palette (N)" chips (name-only colors without a dot).
+  colors.js `syncPalette(row)`: palette name with shade → picker locked to it +
+  hidden hex set ("✓ palette color"), shadeless palette name → picker open, new name
+  → "+ new palette color: pick its shade"; called on typing, suggestions, chips.
+  Palette chips ALWAYS add their color (never shade the focused row; skip if
+  already there); photo chips keep the M13a rule. Disabled pickers forced to
+  opacity 1 (browsers fade them; it's the real color). `/colors/name` →
+  `colors::name_ideas(rgb, palette, n)`: identical palette color (ΔE<5) first,
+  then built-in names NOT used by the palette. Photo ideas: stash =
+  `shades::from_palette(list_palette)`; New/OrNew names = nearest built-in name no
+  palette color or earlier idea has (`free_name`, fallback "x (new)"). Server
+  save path unchanged from M15a (by name). Verified in Firefox 160 on real data:
+  hints, locking, chips, a real save (sage kept palette shade; new color joined).
+  `your_shades` / look-alike chips removed from forms.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

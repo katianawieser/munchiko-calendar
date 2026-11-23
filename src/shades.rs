@@ -165,6 +165,24 @@ pub fn look_alike_groups(shades: &[Shade], closeness: Closeness) -> Vec<ShadeGro
     groups
 }
 
+/// The palette's shaded colors as shades (with no uses), for matching a
+/// photo's colors against the whole palette.
+pub fn from_palette(palette: &[crate::models::PaletteColor]) -> Vec<Shade> {
+    palette
+        .iter()
+        .filter_map(|c| {
+            let hex = c.hex.clone()?;
+            let rgb = palette::rgb_from_hex(&hex)?;
+            Some(Shade {
+                hex,
+                rgb,
+                names: vec![c.name.clone()],
+                uses: Vec::new(),
+            })
+        })
+        .collect()
+}
+
 /// How a newly found color (from a photo) compares with the stash's shades.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ShadeMatch<'a> {

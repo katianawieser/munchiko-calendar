@@ -26,7 +26,7 @@ take the photos, and it suggests what to wear from what's already in the stash.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
 templates · Pico CSS · a few small optional scripts · the `image` crate.
-233 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+235 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -156,14 +156,16 @@ converted to PNG, and iPhone HEIC and AVIF photos to JPEG (on a Mac, using the b
 gets a small JPEG thumbnail, turned the right way up; the first one is the
 thumbnail in the lists.
 
-Picking a shade for a color with no name fills in a **suggested name** (the
-nearest from a built-in list, shown in italics until you type your own), with
-two alternatives as buttons. A name you typed is never changed: the
-suggestions are offered under it instead. A short **"✓ shade set"** confirms
-the pick. **"Pick from your shades"** (a fold-out under the colors) lists
-every shade picked anywhere in the stash, in rainbow order, to reuse with one
-click instead of picking it again. Color chips never replace a shade that's
-already set; they fill a color without one, or add a new color.
+On a fabric or accessory, each color row is a **palette color chosen by
+name**: the palette is suggested as you type, and a palette color shows its
+own shade ("✓ palette color"; change it on the Palette page). A name that
+isn't in the palette yet is a **new palette color**: pick its shade in the row
+(the eyedropper works on the photos above) and it joins the palette when you
+save. Picking a shade for a row with no name fills in a **suggested name**:
+the palette color it practically is, or else the nearest built-in name the
+palette doesn't use yet, with alternatives as buttons; a name you typed is
+never changed. **"Pick from your palette"** (a fold-out under the colors)
+adds any palette color with one click.
 
 **The palette** (linked from the Fabrics and Accessories pages) is the one
 list of colors everything uses. A color picker rarely lands on the same value
@@ -177,10 +179,10 @@ used with several clearly different shades became "pink", "pink (2)", … to
 tidy up there.
 
 **"From your photos"** offers the main colors of an item's photos (including
-photos just chosen in the form, before saving). Each reuses one of your
-shades when it matches ("yours"); when yours is close but not the same, both
-are offered ("red · or new: burgundy"); otherwise it's a new shade with the
-nearest name from a built-in list. One click adds it; click into one of your
+photos just chosen in the form, before saving). Each reuses a palette color
+when it matches ("yours"); when one is close but not the same, both are
+offered ("red · or new: burgundy"); otherwise it's a new color, named with
+the nearest built-in name no palette color has yet. One click adds it; click into one of your
 own colors first and the chip gives that color its shade instead, keeping
 your name.
 
@@ -322,7 +324,7 @@ Settings (all optional environment variables):
   - [x] **M14c**: suggest a matching partner from fabric pairings
 - [ ] **M15**: The palette: one list of named colors that everything uses
   - [x] **M15a**: palette colors (items point at them; edits change everywhere), moved over losing nothing; Palette page with merge, replacing the Shades page
-  - [ ] **M15b**: color rows on the forms pick from the palette; photo color ideas and "Pick from your shades" use it
+  - [x] **M15b**: color rows on the forms pick from the palette (new names join it on save); photo color ideas, name suggestions and "Pick from your palette" use it
   - [ ] **M15c**: polish from real use
 
 Ideas for later: consistent naming (a suggested name from the main fabric,

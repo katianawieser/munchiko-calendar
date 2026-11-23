@@ -1787,9 +1787,10 @@ async fn a_picked_shade_gets_a_suggested_name() {
 }
 
 #[tokio::test]
-async fn forms_offer_shades_already_picked_elsewhere() {
+async fn forms_offer_the_whole_palette() {
     let (app, db, _) = setup(d(2026, 10, 5)).await;
-    // Give the black satin (fabric 2) an exact shade.
+    // Give the black satin (fabric 2) an exact shade: the palette's "black"
+    // had none, so it takes this one.
     let satin = db.get_fabric(FabricId(2)).await.unwrap();
     db.update_fabric(
         satin.id,
@@ -1803,15 +1804,30 @@ async fn forms_offer_shades_already_picked_elsewhere() {
     )
     .await
     .unwrap();
+    let count = db.list_palette().await.unwrap().len();
 
     for page in ["/fabrics/new", "/accessories/1", "/fabrics/1"] {
         let (_, html) = get(&app, page).await;
-        let shades = &html[html.find("class=\"your-shades\"").expect(page)..];
-        let shades = &shades[..shades.find("</details>").unwrap()];
-        assert!(shades.contains("Pick from your shades (1)"), "{page}");
-        assert!(shades.contains("data-name=\"black\" data-hex=\"#1b1b1b\""));
-        // "orange" on the velvet has no swatch: nothing to reuse.
-        assert!(!shades.contains("data-name=\"orange\""));
+        // The name boxes suggest the palette, with shades for the page script.
+        assert!(
+            html.contains("<option value=\"black\" data-hex=\"#1b1b1b\">"),
+            "{page}"
+        );
+        assert!(html.contains("list=\"palette-names\""));
+        let chips = &html[html.find("class=\"your-shades\"").expect(page)..];
+        let chips = &chips[..chips.find("</details>").unwrap()];
+        assert!(
+            chips.contains(&format!("Pick from your palette ({count})")),
+            "{page}"
+        );
+        assert!(chips.contains("data-name=\"black\" data-hex=\"#1b1b1b\""));
+        // A name-only palette color is offered too, without a dot.
+        assert!(
+            chips.contains(
+                "data-name=\"orange\" data-hex=\"\" title=\"Add orange\">orange</button>"
+            ),
+            "{chips}"
+        );
     }
 }
 

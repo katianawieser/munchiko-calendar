@@ -56,6 +56,7 @@ document.querySelectorAll(".color-list").forEach((list) => {
         delete name.dataset.suggested;
         name.classList.remove("suggested");
         box.hidden = true;
+        syncPalette(row);
       });
       box.append(button);
     }
@@ -75,11 +76,48 @@ document.querySelectorAll(".color-list").forEach((list) => {
         name.value = names[0];
         name.dataset.suggested = "yes";
         name.classList.add("suggested");
+        syncPalette(row);
         confirmShade(row, "✓ shade set · name suggested, change it if you like");
       }
       offerNames(row, names);
     } catch {
       // No name suggestion is fine; the shade is still set.
+    }
+  }
+
+  // The palette, from the name boxes' suggestion list: lowercase name →
+  // its shade ("" for a name-only color).
+  const paletteList = document.getElementById("palette-names");
+  const paletteShade = new Map(
+    paletteList ? [...paletteList.options].map((o) => [o.value.trim().toLowerCase(), o.dataset.hex]) : []
+  );
+
+  // A row's name decides what it is (the server decides the same way on
+  // save): a palette color (its own shade, shown and locked: change it on
+  // the Palette page), a palette color without a shade (pick one to give it
+  // one), or a new color (pick its shade; it joins the palette on save).
+  function syncPalette(row) {
+    const picker = row.querySelector(".swatch-picker");
+    const hex = row.querySelector('input[name="color_hex"]');
+    const name = row.querySelector('input[name="color_name"]');
+    const hint = row.querySelector(".palette-hint");
+    const clear = row.querySelector(".clear-swatch");
+    const typed = name.value.trim().toLowerCase();
+    const shade = paletteShade.get(typed);
+    if (typed !== "" && shade) {
+      picker.value = shade;
+      hex.value = shade;
+      picker.disabled = true;
+      picker.classList.remove("unset");
+      clear.hidden = true;
+      hint.textContent = "✓ palette color";
+    } else {
+      picker.disabled = false;
+      picker.classList.toggle("unset", hex.value === "");
+      clear.hidden = hex.value === "";
+      if (typed === "") hint.textContent = "";
+      else if (shade === "") hint.textContent = "✓ palette color, no shade yet: pick one to give it one";
+      else hint.textContent = "+ new palette color: pick its shade";
     }
   }
 
@@ -123,6 +161,7 @@ document.querySelectorAll(".color-list").forEach((list) => {
     name.addEventListener("input", () => {
       delete name.dataset.suggested;
       name.classList.remove("suggested");
+      syncPalette(row);
     });
     clear.addEventListener("click", () => {
       hex.value = "";
@@ -134,6 +173,7 @@ document.querySelectorAll(".color-list").forEach((list) => {
     picker.hidden = false;
     remove.hidden = false;
     show();
+    syncPalette(row);
   }
 
   function addRow() {
@@ -177,15 +217,22 @@ document.querySelectorAll(".color-list").forEach((list) => {
   const hexOf = (row) => row.querySelector('input[name="color_hex"]').value;
 
   function wireChip(button) {
+    // A palette chip is a color to add; a photo chip is a shade, which can
+    // also go to the color you clicked into (see above).
+    const isPalette = button.closest(".your-shades") !== null;
     button.addEventListener("click", () => {
       const { name, hex } = button.dataset;
       const all = [...rows.querySelectorAll(".color-row")];
       const open = (r) => r && rows.contains(r) && hexOf(r) === "";
-      let row = open(chosenRow) ? chosenRow : null;
+      let row = !isPalette && open(chosenRow) ? chosenRow : null;
       chosenRow = null; // one chip per click into a row
+      if (isPalette && all.some((r) => nameOf(r) === name.toLowerCase())) {
+        button.disabled = true; // already one of this item's colors
+        return;
+      }
       row =
         row ||
-        all.find((r) => nameOf(r) === name && hexOf(r) === "") ||
+        (isPalette ? null : all.find((r) => nameOf(r) === name && hexOf(r) === "")) ||
         all.find((r) => nameOf(r) === "" && hexOf(r) === "") ||
         addRow();
       if (nameOf(row) === "" || nameBox(row).dataset.suggested === "yes") {
@@ -193,11 +240,16 @@ document.querySelectorAll(".color-list").forEach((list) => {
         delete nameBox(row).dataset.suggested;
         nameBox(row).classList.remove("suggested");
       }
+      syncPalette(row);
+      // A palette color brings its own shade (the row is locked to it); a
+      // new color takes the chip's shade.
       const picker = row.querySelector(".swatch-picker");
-      picker.value = hex;
-      // Let the row's own handler copy the shade into the hidden field.
-      picker.dispatchEvent(new Event("input"));
-      confirmShade(row, "✓ shade set");
+      if (hex && !picker.disabled) {
+        picker.value = hex;
+        // Let the row's own handler copy the shade into the hidden field.
+        picker.dispatchEvent(new Event("input"));
+        confirmShade(row, "✓ shade set");
+      }
       button.disabled = true;
       button.title = `Added ${name}`;
     });
