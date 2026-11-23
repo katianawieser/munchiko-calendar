@@ -25,13 +25,14 @@ thin storage layer and a thin web layer around them:
         └─────────┬─────────┘          └──────────┬──────────┘
                   │       pure core: no I/O       │
    ┌──────────────▼───────────────────────────────▼───────────────┐
-   │ models · planner · suggest · holidays · palette · process     │
+   │ models · planner · suggest · holidays · palette · shades ·    │
+   │ process                                                       │
    └───────────────────────────────────────────────────────────────┘
 ```
 
 **Decision: keep the core free of databases, files and HTTP.** `models`,
-`planner`, `suggest`, `holidays`, `palette` and `photos::process` take values
-and return values. That makes most of the logic testable with plain unit
+`planner`, `suggest`, `holidays`, `palette`, `shades` and `photos::process`
+take values and return values. That makes most of the logic testable with plain unit
 tests and no setup, and it kept later changes local. Swapping the scoring
 rules, or adding plural matching, never touched SQL or HTML.
 
@@ -58,11 +59,24 @@ rules, or adding plural matching, never touched SQL or HTML.
   publish task is swapped for one per post. The shoot lands before the
   *first* post; later posts are edited while they wait. The calendar draws each
   series once, so one backdrop and one shoot, not three.
+- **Tasks aren't stored; "Done" changes the thing itself.** A "make this bow"
+  task exists because the bow isn't ready. So the Done button on the calendar
+  or a timeline marks the *bow* ready (or the fabric bought), and the planner
+  simply stops producing the task. There's no to-do list to fall out of step
+  with the inventory. "Bought it" *sets* in-stock rather than toggling it, so a
+  double click or an old tab can't put the fabric back on the shopping list.
+- **Outfits are copied into a post, not referenced.** Choosing "Glinda" ticks
+  its crown, dress and wand in the post, and any piece can be unticked for that
+  post. Editing the outfit later doesn't silently change planned posts. The
+  post remembers which pieces the outfit had when chosen, so a piece *added* to
+  the outfit later is offered once ("add the cape to Momo's look?") while a
+  piece left out on purpose is never offered back. Storing only "Momo wears
+  Glinda" couldn't tell those two cases apart.
 
 ## Suggestions: explainable scoring, not a model
 
 Each event word scores once: 3 points if it matches a keyword (an
-accessory's name or its fabrics' keywords), otherwise 2 if it matches a
+accessory's name, its tags or its fabrics' tags), otherwise 2 if it matches a
 color. Small bonuses (half of a matching set, ready to wear) apply **only
 after a real match**, so a ready bow never gets suggested just for being ready.
 
@@ -76,6 +90,15 @@ after a real match**, so a ready bow never gets suggested just for being ready.
   produces non-words ("christma", "berri") that would show up in reasons. A
   short exception list stops false matches like "news" → "new" (New Year).
 - Ties sort by name, so the order never jumps around between page loads.
+- **Matching partners, measured before built.** Before scoring which bow is
+  another's Mochi & Momo partner, I checked what actually links the 12 real
+  sets: 9 share a fabric, none are linked only through fabric pairings, and
+  the other 3 have no fabrics recorded but share name words ("Embroidered
+  Candy Canes - Small / - Large"). So the score uses shared fabric, paired
+  fabric and shared name words (ignoring sizes like "small"), with same kind as
+  a bonus. Run against the real sets, the true partner came first for 22 of
+  24; the two misses have nothing in common to go on. Fabric links alone would
+  have missed a quarter of the sets.
 
 ## Holidays: an editable file, not an API
 
@@ -97,7 +120,10 @@ Thanksgiving + 1).
 ## Storage: SQLite with migrations, and rules in the schema
 
 - **SQLite** fits a single-user local app: one file, no server, easy to back
-  up. **Numbered migrations** (`migrations/0001…0005`) run on startup.
+  up. **Numbered migrations** (`migrations/0001…0015`) run on startup.
+Migrations that rebuild a table or move existing data are tested from an
+older database version, and every one was run on a copy of the real database
+first.
 - **The database enforces rules itself:** `STRICT` tables (no text in integer
   columns), `CHECK` constraints on enums, dates and JSON shape, and foreign
   keys. The app checks too, but a bug can't quietly write bad data.
@@ -105,9 +131,10 @@ Thanksgiving + 1).
   still uses, but SQLite reports `RESTRICT` with an error code sqlx doesn't
   map to a foreign-key violation, so the app couldn't tell "in use" from
   "broken".
-- **Short word lists (colors, keywords) are JSON arrays** in one column, not
-  join tables: they're always read and written whole, and never queried
-  on their own.
+- **Short word lists (keywords, tags) are JSON arrays** in one column, not
+  join tables: they're always read and written whole, and never queried on
+  their own. Colors started that way too, and moved to their own table once
+  they needed an identity shared across items (see the palette, below).
 - **Runtime-checked queries** (`sqlx::query`, not the `query!` macro): the
   macro needs a live database at compile time, which complicates a fresh
   clone and CI. The trade-off is that SQL typos surface in tests, not at
@@ -142,7 +169,7 @@ database and checks that sets, fabric order, looks and photos survive; I also
 compared every row of a copy of my real data before and after. I kept the
 `CHECK` anyway: new kinds are rare, and the rule protects the data every day.
 
-## Web: server-rendered pages with one optional script
+## Web: server-rendered pages, small optional scripts
 
 - **Askama templates compiled into the binary** (a template typo is a build
   error) and plain HTML forms, styled with Pico CSS. No front-end framework:
@@ -159,10 +186,29 @@ compared every row of a copy of my real data before and after. I kept the
   `Sec-Fetch-Site` (or `Origin`) isn't our own page are refused. Redirect
   targets are checked (no open redirects), and color values are validated as
   `#rrggbb` before they go into a `style` attribute.
-- **Progressive enhancement:** the only script, `colors.js`, adds swatch
-  pickers and color chips; the forms work without it. One subtlety: a browser
-  color input can't be blank (it always holds a color), so the picked shade is
-  copied into a hidden field that stays empty until a shade is really chosen.
+- **Logic in Rust, JavaScript for presentation.** Four small scripts make
+  pages nicer (shade pickers and chips, photo previews, ticking an outfit's
+  pieces, the back-to-top button), and every form still works without them.
+  Anything that decides something stays in Rust with tests, behind a small
+  endpoint: color names (`/colors/name`), the main colors of a photo chosen
+  but not yet saved (`/colors/from-photos`) and partner ideas
+  (`/accessories/partner-ideas`) all return server-rendered HTML that the
+  script just inserts, so there's no second copy of the markup or the rules
+  in JavaScript. Where a script changes what the server should do, it says so
+  explicitly: `outfits.js` sets a hidden `outfits_live=1`, so the server knows
+  the outfit's pieces are already ticked (and one may have been unticked on
+  purpose) and doesn't add them back.
+- **Long lists became name boxes, after checking names are unique.** With 75
+  fabrics and 54 accessories, dropdowns were hard to use. Fabric and partner
+  pickers are text boxes with the stash's names as suggestions (a plain HTML
+  `<datalist>`), and the server resolves the name (ignoring capitals); a new
+  fabric name makes a new fabric on save. That's only safe because every name
+  in the real data turned out to be unique, which I checked first. A hint under
+  the box ("✓ one of your fabrics" / "+ new fabric") stops a typo from quietly
+  creating a fabric.
+- One subtlety: a browser color input can't be blank (it always holds a
+  color), so the picked shade is copied into a hidden field that stays empty
+  until a shade is really chosen.
 
 ## Photos
 
@@ -171,12 +217,16 @@ compared every row of a copy of my real data before and after. I kept the
   directly. Files are named `<id>.<ext>`, never by the uploaded name, so an
   upload can't write elsewhere (`../../munchiko.db`).
 - **"A photo belongs to exactly one thing", enforced by the schema:** one
-  nullable foreign key per owner type (fabric, accessory, post plan) plus a
-  `CHECK` that exactly one is set. The common alternative (`owner_type` +
+  nullable foreign key per owner type (fabric, accessory, outfit, post plan)
+  plus a `CHECK` that exactly one is set. The common alternative (`owner_type` +
   `owner_id`) can't use foreign keys, so the database couldn't guarantee the
   owner exists or clean up when it's deleted.
 - **`AUTOINCREMENT` so ids are never reused.** Photos are cached as immutable
-  by the browser; a reused id would show an old photo for a new one.
+  by the browser; a reused id would show an old photo for a new one. Adding
+  outfits as a fourth owner meant rebuilding the table (the `CHECK` again),
+  and dropping a table also drops its `AUTOINCREMENT` counter, so migration
+  0011 saves the counter and puts it back. On the real data: 119 photos kept
+  their ids, and the counter stayed at 123.
 - **Uploads are checked by content, not name:** the first bytes ("magic
   number") decide the type, and every image is fully decoded to make its
   thumbnail, which also rejects damaged or fake files. A multi-file upload
@@ -216,10 +266,13 @@ compared every row of a copy of my real data before and after. I kept the
 - **"Look alike" is measured in CIE Lab**, a color space where distance tracks
   how different colors look to people (RGB distance doesn't). The conversion
   is tested against published values.
-- Each color gets the **nearest name** from a built-in list, because names
-  are what suggestions match on. The simple distance formula over-weights
-  saturation, so a name can have two reference shades (two "navy"s) rather
-  than switching to the much more complex CIEDE2000 formula.
+- Each color gets the **nearest name** from a list of named colors, because
+  names are what suggestions match on (see "Color names" below).
+- **Photo colors reuse the palette first:** a palette color that's practically
+  the same (ΔE under 5) is offered as "yours"; a close one (under 10) is offered
+  next to the new shade ("red · or new: burgundy"); otherwise it's new. A new
+  color never gets a name the palette already uses, or saving it would
+  silently become that other color.
 - **Computed from thumbnails on each page load:** fast enough that nothing
   needs storing or keeping in sync.
 
@@ -245,6 +298,57 @@ compared every row of a copy of my real data before and after. I kept the
 - **Filters live in the address** (`?tone=warm&sort=color`), so a filtered list
   can be bookmarked and the status buttons return to it. Table vs grid is a
   standing preference, so it's also remembered in a cookie.
+
+## Colors: from free picking to a palette
+
+This is the clearest example in the project of real use changing the design.
+
+1. **Free picking drifted.** Each fabric and bow stored its own colors, and a
+   color picker almost never lands on the same value twice. After a few months
+   the data had **302 different shades for 84 names** (15 blacks, 14 reds).
+   Suggestions only match names, so nothing broke, but the "pick a shade you've
+   used before" list was unusable.
+2. **First fix: a cleanup page.** A Shades page grouped look-alike shades so
+   they could be merged into one (with a preview, and a backup first). Grouping
+   by look alone turned out wrong for how the user thinks: a color with many
+   shades was split across several groups, each mixed with different
+   neighbors (31 names appeared in more than one group). Grouping by name
+   first, with similar shades of *other* names as unticked extras, fixed that.
+3. **The real fix: change the data model.** Cleanup treated the symptom;
+   drift would come back. Now there's one **palette** of named colors, and
+   fabrics and bows store links to it (in order). Renaming or reshading a color
+   changes it everywhere, a color in use can't be deleted (a foreign key does
+   that), and a new name joins the palette on purpose.
+4. **The migration lost nothing.** Every name became a palette color with its
+   most used shade. A name with clearly different shades kept all of them as
+   "pink", "pink (2)", … to tidy up by hand, rather than the migration silently
+   picking one. Colors without a shade joined their name's color. On a copy of
+   the real data, all 372 colors were compared position by position before and
+   after: 0 differences. The old JSON columns were dropped with `ALTER TABLE …
+   DROP COLUMN`, which doesn't rebuild the table, so none of the cascade traps
+   above applied.
+5. **The old cleanup page became a smaller Palette page:** colors in rainbow
+   order with what uses each, merge (with preview and backup), and colors that
+   are hard to tell apart (ΔE under 5) pointed out, with "keep apart" for pairs
+   that really differ (white vs "white sparkle" differ in finish, not shade).
+
+**Backups before merges.** A merge rewrites many rows, so it first copies the
+whole database with SQLite's `VACUUM INTO`, a consistent snapshot even while
+the app runs. A test found that on an **in-memory** database `VACUUM INTO`
+reports success but writes nothing, so the app now checks that the file
+really exists before going ahead: a silent failure must never count as a
+backup. Only the 10 newest automatic backups are kept.
+
+**Color names.** The app's own 46 sewing names were replaced by the **xkcd
+color survey** (names people actually typed for colors, public domain). The
+Wikipedia lists were considered: they're under a share-alike license and
+include proprietary names (Pantone, Crayola), and only some entries record
+their source. The survey list needed cleaning: 41 vulgar or unhelpful names
+and 39 duplicate spellings ("blue/green", "bluegreen", "blue green";
+"terracota") were removed, each listed at the top of the data file, and a test
+keeps every name to one spelling. The Palette page shows each color's closest
+survey name as a second opinion, with "use it" (one click; it offers a merge
+if another color already has that name) or "keep my name".
 
 ## Performance: measure first
 
@@ -272,9 +376,19 @@ output (the existing tests guarded the refactor).
   depend on the date; photo tests use temporary folders.
 - **Platform-dependent tests** (the HEIC conversion) skip themselves where
   `sips` isn't available, and a separate test covers the fallback.
-- **Beyond `cargo test`:** schema changes were tried on a *backup copy* of the
-  real database before release, and the one script's chip behavior was
-  checked in headless Chrome.
+- **Beyond `cargo test`:** every schema change was tried on a *copy* of the
+  real database first, comparing the data before and after (for the palette,
+  every color, position by position).
+- **Real browser checks**, in Firefox (the user's main browser) driven
+  headlessly over its Marionette remote-control protocol with a ~50-line
+  Python client, and in headless Chrome while Firefox couldn't be launched.
+  Scripts that call the server are tested through a small same-origin proxy,
+  so the cross-site protection is exercised for real instead of being switched
+  off for the test. These checks caught bugs the Rust tests couldn't: a
+  palette chip that changed the wrong row's shade, locked color swatches drawn
+  faded (browsers dim disabled inputs, and the dot *was* the color), suggestion
+  buttons with white text on a pale background, and a back-to-top button that
+  visibly faded out on every page load.
 
 ## Known limitations, and what I'd do next
 
@@ -283,8 +397,11 @@ output (the existing tests guarded the refactor).
 - **HEIC and AVIF conversion needs macOS**: neither has a dependable pure-Rust
   decoder, so both are handed to macOS's `sips` tool and stored as JPEG. On
   other systems the upload page asks for a JPEG instead.
-- **Color names are approximate** (a salmon-pink can come out as "peach"), and
-  a photo's background can show up as a suggested color. Both are one click
-  to ignore or rename.
-- **Next:** photos in the suggestion box; a calendar nudge for upcoming events
-  with no post yet.
+- **Color names are approximate** (the survey's name for a shade is one
+  person's word for it), and a photo's background can show up as a suggested
+  color. Both are one click to ignore or rename.
+- **Name lists are built in:** the holidays and color names are data files
+  read at build or start time; editing them means a restart or rebuild.
+- **Next:** outfits in suggestions; photos in the suggestion box; a calendar
+  nudge for upcoming events with no post yet; a suggested name for new bows
+  built from the main fabric, kind and size.

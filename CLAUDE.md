@@ -615,6 +615,15 @@ See README.md for the planning rules, data model and roadmap.
   `marionette/shoot.py OUT [names…]` (full-page capture, crop between selectors with
   sips). README pitch/highlights rewritten for v2. Also fixed the fabric form's
   pre-palette color help text. Next: R2 (DESIGN.md + v2.0 tag), then she reviews.
+- **R2 done:** docs/DESIGN.md updated for v2 (Done buttons change items; outfits as
+  copies + new-piece offers; partner ideas measured first (22/24); migrations
+  0001–0015; colors JSON → palette; web: logic in Rust/JS presents, name boxes after
+  checking names unique; photos 4th owner + AUTOINCREMENT counter; photo colors
+  reuse palette; new section "Colors: from free picking to a palette" (drift
+  302/84 → Shades page → name families → palette data model → lossless migration →
+  VACUUM INTO backups + in-memory trap → xkcd names vs Wikipedia); testing: Firefox
+  Marionette + same-origin proxy + bugs caught (back-to-top fade was Chrome); next
+  steps). Tagged v2.0 (annotated, local first).
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
