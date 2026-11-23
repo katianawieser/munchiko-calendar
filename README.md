@@ -26,7 +26,7 @@ take the photos, and it suggests what to wear from what's already in the stash.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
 templates · Pico CSS · a few small optional scripts · the `image` crate.
-240 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+241 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -179,8 +179,10 @@ used with several clearly different shades became "pink", "pink (2)", … to
 tidy up there. Colors that are **hard to tell apart** (ΔE under 5) are pointed
 out with both merge directions, or **Keep apart** when they really differ
 (white vs white sparkle differ in finish, not shade). Each color also shows
-its **closest everyday name** as a second opinion, until you **keep your
-name** (one color at a time, or all at once).
+its **closest everyday name** as a second opinion: **use** it in one click
+(same shade, same items; if another color already has that name, it offers
+the merge instead), or **keep your name** (one color at a time, or all at
+once).
 
 **Color names** come from `data/color_names.txt`: the
 [xkcd color survey](https://xkcd.com/color/rgb.txt) (about 870 names people

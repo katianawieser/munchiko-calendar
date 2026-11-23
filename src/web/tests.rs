@@ -3062,3 +3062,50 @@ async fn closest_name_hints_can_be_dismissed() {
     let (_, html) = get(&app, "/palette").await;
     assert_eq!(hints(&html), 1);
 }
+
+#[tokio::test]
+async fn a_color_can_take_its_suggested_name_in_one_click() {
+    let (app, db, _dir) = setup_shades().await;
+    // A new color whose suggestion is free: renamed, same shade.
+    post(&app, "/palette", "name=my+lime&hex=%2399dd00").await;
+    let lime = palette_id(&db, "my lime").await;
+    let suggestion = crate::palette::nearest_name([0x99, 0xdd, 0x00]);
+    let (_, html) = get(&app, "/palette").await;
+    assert!(html.contains(&format!("use “{suggestion}”")), "{html}");
+    let reply = post(&app, &format!("/palette/{lime}/use-suggestion"), "").await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let renamed = db
+        .list_palette()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|c| c.id.0 == lime)
+        .unwrap();
+    assert_eq!(renamed.name, suggestion);
+    assert_eq!(renamed.hex.as_deref(), Some("#99dd00"));
+
+    // Charcoal's suggestion is a name another color already has: the link
+    // says "merge into" and leads to the merge preview, renaming nothing.
+    let charcoal = palette_id(&db, "charcoal").await;
+    let taken = crate::palette::nearest_name([0x12, 0x12, 0x12]);
+    post(
+        &app,
+        "/palette",
+        &format!("name={}&hex=%23000000", taken.replace(' ', "+")),
+    )
+    .await;
+    let (_, html) = get(&app, "/palette").await;
+    assert!(html.contains(&format!("merge into “{taken}”")), "{html}");
+    let reply = post(&app, &format!("/palette/{charcoal}/use-suggestion"), "").await;
+    assert_eq!(
+        reply.location.as_deref(),
+        Some(format!("/palette/{charcoal}/merge?into={}", taken.replace(' ', "+")).as_str())
+    );
+    assert!(
+        db.list_palette()
+            .await
+            .unwrap()
+            .iter()
+            .any(|c| c.name == "charcoal")
+    );
+}

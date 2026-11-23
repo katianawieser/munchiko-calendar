@@ -51,6 +51,8 @@
     {% for row in rows %}
     <tr>
       <td class="nowrap">{% let color = row.color %}{% include "color_chip.html" %}{% if let Some(hex) = row.color.hex %} <small class="muted">{{ hex }}</small>{% endif %}{% if !row.everyday.is_empty() %}<br><small class="muted everyday-hint" title="The nearest name in the xkcd color survey (data/color_names.txt)">closest everyday name: {{ row.everyday }}</small>
+        <form method="post" action="/palette/{{ row.id }}/use-suggestion" class="inline"><button type="submit" class="link-button" title="{% if row.everyday_taken %}Another color is already called “{{ row.everyday }}”: preview merging into it{% else %}Rename to “{{ row.everyday }}” (same shade, same items){% endif %}">{% if row.everyday_taken %}merge into “{{ row.everyday }}”{% else %}use “{{ row.everyday }}”{% endif %}</button></form>
+        <span class="muted">·</span>
         <form method="post" action="/palette/{{ row.id }}/keep-name" class="inline"><button type="submit" class="link-button" title="Keep “{{ row.color.name }}”; stop suggesting another name">keep my name</button></form>{% endif %}</td>
       <td>{% if row.uses == 0 %}<span class="muted">nothing</span>{% else %}<details><summary>{{ row.uses }} {% if row.uses == 1 %}item{% else %}items{% endif %}</summary>{% for user in row.users %}{% if !loop.first %}, {% endif %}<a href="{{ user.href }}">{{ user.label }}</a>{% endfor %}</details>{% endif %}</td>
       <td>

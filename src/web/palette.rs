@@ -75,6 +75,9 @@ struct Row {
     /// The xkcd survey's name for its shade, when that's not its own name
     /// and the name hasn't been kept on purpose.
     everyday: String,
+    /// Another palette color already has that name (so "use it" means
+    /// merging into that color).
+    everyday_taken: bool,
     /// For the shade picker: the shade, or white when there's none.
     picker: String,
     uses: usize,
@@ -146,7 +149,8 @@ async fn page(state: &AppState, notice: Option<String>) -> Result<PalettePage, A
     let fabrics = state.db.list_fabrics().await?;
     let accessories = state.db.list_accessories().await?;
     let mut users = uses_by_color(&uses, &fabrics, &accessories);
-    let names = colors.iter().map(|c| c.name.clone()).collect();
+    let names: Vec<String> = colors.iter().map(|c| c.name.clone()).collect();
+    let names_now = names.clone();
     let kept = state.db.kept_apart().await?;
     let close = close_pairs(&colors, &kept)
         .into_iter()
@@ -185,8 +189,13 @@ async fn page(state: &AppState, notice: Option<String>) -> Result<PalettePage, A
                     .filter(|n| !n.eq_ignore_ascii_case(&c.name))
                     .unwrap_or_default()
                     .to_string();
+                let everyday_taken = !everyday.is_empty()
+                    && names_now
+                        .iter()
+                        .any(|n: &String| n.eq_ignore_ascii_case(&everyday));
                 Row {
                     everyday,
+                    everyday_taken,
                     id: c.id.0,
                     picker: c.hex.clone().unwrap_or_else(|| "#ffffff".into()),
                     color: c.color(),
@@ -229,6 +238,46 @@ pub async fn keep_name(
         .keep_palette_names(Some(&[PaletteColorId(id)]))
         .await?;
     Ok(Redirect::to("/palette").into_response())
+}
+
+/// The closest everyday name for a palette color's shade, if it has one and
+/// it isn't already its name.
+fn suggested_name(color: &PaletteColor) -> Option<&'static str> {
+    let rgb = palette::rgb_from_hex(color.hex.as_deref()?)?;
+    Some(palette::nearest_name(rgb)).filter(|n| !n.eq_ignore_ascii_case(&color.name))
+}
+
+/// `POST /palette/{id}/use-suggestion`: rename the color to its closest
+/// everyday name (same shade, same items). If another color already has that
+/// name, go to the merge preview instead.
+pub async fn use_suggestion(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    let colors = state.db.list_palette().await?;
+    let color = colors
+        .iter()
+        .find(|c| c.id.0 == id)
+        .ok_or(AppError::NotFound)?;
+    let Some(name) = suggested_name(color) else {
+        return Ok(Redirect::to("/palette").into_response());
+    };
+    match state
+        .db
+        .update_palette_color(color.id, name, color.hex.as_deref())
+        .await
+    {
+        Ok(()) => Ok(Redirect::to(&format!(
+            "/palette?done=Renamed+{}+to+{}",
+            encode(&color.name),
+            encode(name)
+        ))
+        .into_response()),
+        Err(DbError::Duplicate { .. }) => {
+            Ok(Redirect::to(&format!("/palette/{id}/merge?into={}", encode(name))).into_response())
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// `POST /palette/keep-names`: keep every color's current name.

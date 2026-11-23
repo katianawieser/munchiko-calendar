@@ -584,7 +584,11 @@ See README.md for the planning rules, data model and roadmap.
   None = all)`. Palette page: hint only when !name_kept; per-row "keep my name"
   (`button.link-button`, POST /palette/{id}/keep-name) and "Keep all current names
   (N)" (POST /palette/keep-names, confirm). New colors start with hints. Real data:
-  57 colors, 53 hints. Checked in Firefox 160.
+  57 colors, 53 hints. Checked in Firefox 160. Then "use “X”" next to it (her
+  request): POST /palette/{id}/use-suggestion, server recomputes
+  `suggested_name` (nearest_name of its hex, if different) and renames keeping
+  the hex; if the name is taken (`DbError::Duplicate`) it redirects to the merge
+  preview, and the page labels that link "merge into “X”" (`everyday_taken`).
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

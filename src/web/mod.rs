@@ -108,6 +108,10 @@ pub fn router(state: AppState) -> Router {
         .route("/palette/keep-apart", post(palette::keep_apart))
         .route("/palette/keep-names", post(palette::keep_all_names))
         .route("/palette/{id}/keep-name", post(palette::keep_name))
+        .route(
+            "/palette/{id}/use-suggestion",
+            post(palette::use_suggestion),
+        )
         .route("/palette/{id}", post(palette::update))
         .route("/palette/{id}/delete", post(palette::delete))
         .route(
