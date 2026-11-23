@@ -579,6 +579,12 @@ See README.md for the planning rules, data model and roadmap.
   purpley/purpley blue/purpley pink). One-letter-apart names that are different
   colors stay (dusky/dusty, sea/tea green, bluey green). Test
   `each_name_has_one_spelling` guards it.
+- **Keep my name (her request):** migration 0015 `palette_colors.name_kept` (0/1,
+  default 0); `PaletteColor.name_kept`; `Repository::keep_palette_names(Some(ids) |
+  None = all)`. Palette page: hint only when !name_kept; per-row "keep my name"
+  (`button.link-button`, POST /palette/{id}/keep-name) and "Keep all current names
+  (N)" (POST /palette/keep-names, confirm). New colors start with hints. Real data:
+  57 colors, 53 hints. Checked in Firefox 160.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

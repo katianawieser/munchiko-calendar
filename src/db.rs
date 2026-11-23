@@ -806,18 +806,41 @@ impl Repository {
 
     /// Every palette color, by name.
     pub async fn list_palette(&self) -> Result<Vec<PaletteColor>> {
-        let rows: Vec<(i64, String, Option<String>)> =
-            sqlx::query_as("SELECT id, name, hex FROM palette_colors ORDER BY name COLLATE NOCASE")
-                .fetch_all(&self.pool)
-                .await?;
+        let rows: Vec<(i64, String, Option<String>, bool)> = sqlx::query_as(
+            "SELECT id, name, hex, name_kept FROM palette_colors ORDER BY name COLLATE NOCASE",
+        )
+        .fetch_all(&self.pool)
+        .await?;
         Ok(rows
             .into_iter()
-            .map(|(id, name, hex)| PaletteColor {
+            .map(|(id, name, hex, name_kept)| PaletteColor {
                 id: PaletteColorId(id),
                 name,
                 hex,
+                name_kept,
             })
             .collect())
+    }
+
+    /// Keep these palette colors' names (`ids`), or with `None` every
+    /// color's: the closest-name hints stop showing for them.
+    pub async fn keep_palette_names(&self, ids: Option<&[PaletteColorId]>) -> Result<()> {
+        match ids {
+            None => {
+                sqlx::query("UPDATE palette_colors SET name_kept = 1")
+                    .execute(&self.pool)
+                    .await?;
+            }
+            Some(ids) => {
+                for id in ids {
+                    sqlx::query("UPDATE palette_colors SET name_kept = 1 WHERE id = ?")
+                        .bind(id.0)
+                        .execute(&self.pool)
+                        .await?;
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Who uses each palette color: (color, fabric or accessory), one row per

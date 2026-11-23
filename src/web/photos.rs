@@ -746,6 +746,7 @@ mod tests {
             id: PaletteColorId(1),
             name: "teal".into(),
             hex: Some("#008080".into()),
+            name_kept: false,
         }]);
         let found = [
             swatch("teal", [0, 128, 128]),
@@ -844,6 +845,7 @@ mod tests {
             id: PaletteColorId(1),
             name: "orange".into(),
             hex: Some("#cc5500".into()),
+            name_kept: false,
         }];
         let stash = shades::from_palette(&palette);
         // Two bright oranges, far from the palette's and from each other.

@@ -49,6 +49,9 @@ pub struct PaletteColor {
     pub name: String,
     /// `#rrggbb`, or `None` for a name-only color ("sparkly").
     pub hex: Option<String>,
+    /// The name was kept on purpose: the Palette page stops suggesting the
+    /// closest everyday name for it.
+    pub name_kept: bool,
 }
 
 impl PaletteColor {

@@ -72,7 +72,8 @@ struct ClosePair {
 struct Row {
     id: i64,
     color: Color,
-    /// The xkcd survey's name for its shade, when that's not its own name.
+    /// The xkcd survey's name for its shade, when that's not its own name
+    /// and the name hasn't been kept on purpose.
     everyday: String,
     /// For the shade picker: the shade, or white when there's none.
     picker: String,
@@ -85,6 +86,8 @@ struct Row {
 struct PalettePage {
     rows: Vec<Row>,
     close: Vec<ClosePair>,
+    /// How many rows show a closest-name hint.
+    hints: usize,
     /// Every color's name, for the "merge into" boxes.
     names: Vec<String>,
     notice: Option<String>,
@@ -156,7 +159,18 @@ async fn page(state: &AppState, notice: Option<String>) -> Result<PalettePage, A
         })
         .collect();
     rainbow(&mut colors);
+    let hints = colors
+        .iter()
+        .filter(|c| {
+            !c.name_kept
+                && c.hex
+                    .as_deref()
+                    .and_then(palette::rgb_from_hex)
+                    .is_some_and(|rgb| !palette::nearest_name(rgb).eq_ignore_ascii_case(&c.name))
+        })
+        .count();
     Ok(PalettePage {
+        hints,
         close,
         rows: colors
             .iter()
@@ -165,6 +179,7 @@ async fn page(state: &AppState, notice: Option<String>) -> Result<PalettePage, A
                 let everyday = c
                     .hex
                     .as_deref()
+                    .filter(|_| !c.name_kept)
                     .and_then(palette::rgb_from_hex)
                     .map(palette::nearest_name)
                     .filter(|n| !n.eq_ignore_ascii_case(&c.name))
@@ -201,6 +216,25 @@ pub async fn list(
             b => format!("{done}. A copy of the database from before was saved as backups/{b}."),
         });
     Ok(render(page(&state, notice).await?)?.into_response())
+}
+
+/// `POST /palette/{id}/keep-name`: keep this color's name; its closest-name
+/// hint stops showing.
+pub async fn keep_name(
+    State(state): State<AppState>,
+    Path(id): Path<i64>,
+) -> Result<Response, AppError> {
+    state
+        .db
+        .keep_palette_names(Some(&[PaletteColorId(id)]))
+        .await?;
+    Ok(Redirect::to("/palette").into_response())
+}
+
+/// `POST /palette/keep-names`: keep every color's current name.
+pub async fn keep_all_names(State(state): State<AppState>) -> Result<Response, AppError> {
+    state.db.keep_palette_names(None).await?;
+    Ok(Redirect::to("/palette?done=Kept+every+color%27s+name").into_response())
 }
 
 /// A palette color's name and shade from a form: `name`, `hex` from the
@@ -507,6 +541,7 @@ mod tests {
             id: PaletteColorId(id),
             name: name.into(),
             hex: hex.map(String::from),
+            name_kept: false,
         }
     }
 

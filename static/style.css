@@ -453,3 +453,12 @@ button.partner-idea:hover { border-color: var(--pico-primary); }
 /* Palette page: colors that are hard to tell apart. */
 .close-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.5rem; }
 .close-pair [role="button"], .close-pair button { width: auto; margin: 0; }
+
+/* Palette page: the count line with "Keep all current names", and the small
+   "keep my name" button after a hint. */
+.palette-count { display: flex; flex-wrap: wrap; align-items: baseline; gap: 1rem; }
+.palette-count button { width: auto; margin: 0; }
+button.link-button {
+  width: auto; margin: 0 0 0 0.3rem; padding: 0; border: none; background: none;
+  color: var(--pico-primary); font-size: 0.8rem; text-decoration: underline; cursor: pointer;
+}

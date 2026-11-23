@@ -124,6 +124,7 @@ mod tests {
             id: PaletteColorId(id),
             name: name.into(),
             hex: hex.map(String::from),
+            name_kept: false,
         }
     }
 

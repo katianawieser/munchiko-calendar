@@ -3032,3 +3032,33 @@ async fn hard_to_tell_apart_colors_are_pointed_out_until_kept_apart() {
     post(&app, &format!("/palette/{charcoal}/merge"), "into=black").await;
     assert!(db.kept_apart().await.unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn closest_name_hints_can_be_dismissed() {
+    let (app, db, _dir) = setup_shades().await;
+    let charcoal = palette_id(&db, "charcoal").await;
+    let hints = |html: &str| html.matches("closest everyday name:").count();
+    let (_, html) = get(&app, "/palette").await;
+    let before = hints(&html);
+    assert!(before >= 1, "charcoal's shade has another everyday name");
+    assert!(html.contains(&format!("Keep all current names ({before})")));
+    assert!(html.contains(&format!("action=\"/palette/{charcoal}/keep-name\"")));
+
+    // Keep one name: its hint goes, the others stay.
+    let reply = post(&app, &format!("/palette/{charcoal}/keep-name"), "").await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let (_, html) = get(&app, "/palette").await;
+    assert_eq!(hints(&html), before - 1);
+    assert!(!html.contains(&format!("action=\"/palette/{charcoal}/keep-name\"")));
+
+    // Keep them all: no hints, no button.
+    post(&app, "/palette/keep-names", "").await;
+    let (_, html) = get(&app, "/palette").await;
+    assert_eq!(hints(&html), 0);
+    assert!(!html.contains("Keep all current names"));
+
+    // A color added later gets its hint until its name is kept too.
+    post(&app, "/palette", "name=my+lime&hex=%2399dd00").await;
+    let (_, html) = get(&app, "/palette").await;
+    assert_eq!(hints(&html), 1);
+}
