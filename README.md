@@ -13,20 +13,29 @@ take the photos, and it suggests what to wear from what's already in the stash.
 
 - **Backward planning:** each post becomes a dated prep timeline (buy fabric →
   make bow → build backdrop → photo shoot → publish), with the critical path
-  and slack worked out, shown on a month calendar.
-- **Suggestions with reasons:** "for Thanksgiving, consider the Orange
-  Sunflower bow: autumn, orange · matching set · ready to wear".
+  and slack, on a month calendar with a "to do today" box. **Done** buttons
+  mark a bow made or fabric bought, and the task disappears.
+- **Flexible posts:** ideas without a date, and **series**: several posts from
+  one setup and photo shoot, each published on its own day.
+- **Suggestions with reasons:** "for Christmas, consider Holiday Ornament
+  Red & Green: green, red · ready to wear", plus likely **matching partners**
+  for a bow (checked against the real sets: the right partner came first for
+  22 of 24).
+- **A shared color palette:** fabrics and bows use one list of named colors,
+  so renaming or reshading one changes it everywhere; near-duplicates are
+  pointed out and merged with a preview and an automatic backup. Names come
+  from the public-domain xkcd color survey.
+- **Photos and real colors:** upload photos (HEIC and AVIF converted on a Mac)
+  and take the main colors straight from them, matched to the palette.
+- **Outfits and inventory:** pieces worn together (Glinda's crown, dress and
+  wand), how many of each you own, and type-to-search pickers for long lists.
 - **~45 holidays from an editable file**, with date rules for "4th Thursday of
   November", Easter-relative days and multi-day events.
-- **Photos and real colors:** upload photos (HEIC and AVIF converted on a Mac), give
-  each color an exact swatch with the picker's eyedropper, or take the main
-  colors straight from a photo.
-- **Guided errors:** instead of "can't delete", the chain of what's in the way
-  and where to start.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
-templates · Pico CSS · a few small optional scripts · the `image` crate.
-241 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+templates · Pico CSS · a few small optional scripts (the logic stays in Rust) ·
+the `image` crate.
+243 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -42,39 +51,59 @@ something to look at.
 
 ## Screenshots
 
-The screenshots show real data from the account's stash (its fabrics, bows
-and photos), plus two posts planned for the screenshots.
+Real data from the account's stash (its fabrics, bows, photos and palette),
+with posts planned for the screenshots. Two small changes were made on a copy
+of the data for the pictures: one bow (Embroidered Candy Canes - Small) marked
+as not arrived yet, so a Done button shows, and the Elphaba outfit chosen for
+Momo in the Halloween Shoot.
 
-**Calendar:** holidays and every prep task for the Thanksgiving post, worked
-backward from Nov 26. The box at the top says what's due today, or what's next.
+**Calendar:** holidays and every prep task, worked backward from the post
+dates; the box at the top says what's due today, with a Done button for the
+bow that's still on its way.
 
-![Month calendar with holidays and prep tasks](docs/screenshots/calendar.png)
+![Month calendar with holidays, prep tasks and the to-do box](docs/screenshots/calendar.png)
 
-**A post's prep timeline:** who wears what, the backdrop, and when each task
-has to happen.
+**A series:** three Throwback Thursday posts from one shared setup and photo
+shoot; the timeline plans the shoot once, before the first post.
 
-![Thanksgiving post with its prep timeline](docs/screenshots/post-timeline.png)
+![Holiday Throwback Thursdays series with its shared timeline](docs/screenshots/series.png)
+
+**A post with an outfit:** Momo wears the Elphaba costume (cape and witch hat),
+chosen as one outfit.
+
+![Halloween post with an outfit for Momo](docs/screenshots/post-outfit.png)
 
 **Suggestions:** accessories that fit the event, best first, with the reasons
-why. The top two are a matching Mochi & Momo set.
+why.
 
-![Ideas for Thanksgiving](docs/screenshots/ideas.png)
+![Ideas for Christmas](docs/screenshots/ideas.png)
 
-**Fabrics:** photo thumbnails, colors with their exact shades, pairings, and
-which bows use each fabric.
+**Accessories:** a photo grid (small / medium / large), filters by kind,
+status, tag and warm/cool tone, sort by color.
 
-![Fabric list with photo thumbnails and color swatches](docs/screenshots/fabrics.png)
+![Accessory grid with photos, colors and tags](docs/screenshots/accessories-grid.png)
 
-**Colors from photos:** the main colors of the fabric's photos are offered as
-chips. Here "faded yellow" and "faded orange" have just been given the shades
-of the "pale yellow" and "peach" chips. (Trimmed view: the name, description
-and keyword fields are hidden.)
+**An accessory's fabrics and colors:** fabrics chosen by typing their name;
+colors from the palette (each shows its own shade); colors found in the
+photos, reusing palette colors ("yours") or offered as new ones.
 
-![Fabric photos, color rows and the colors found in the photos](docs/screenshots/colors-from-photos.png)
+![Accessory form with fabric boxes, palette colors and photo colors](docs/screenshots/accessory-form.png)
 
-**Guided deletes:** what's in the way, and where to start.
+**Matching partner ideas:** likely other halves of a Mochi & Momo set, with
+the reason (a paired fabric, shared name words).
 
-![Can't delete this fabric yet, with what uses it](docs/screenshots/delete-chain.png)
+![Partner ideas under the matching set box](docs/screenshots/partner-ideas.png)
+
+**Colors from photos:** the fabric's photo, its palette colors, and the main
+colors found in the photo: mostly "yours", with "or new" where a palette color
+is close but not the same.
+
+![Fabric photo, color rows and the colors found in the photo](docs/screenshots/colors-from-photos.png)
+
+**The palette:** every color once, in rainbow order, with what uses it; edit a
+color (it changes everywhere) or merge it into another.
+
+![Palette page with a color's edit panel open](docs/screenshots/palette.png)
 
 ## How the planning works
 

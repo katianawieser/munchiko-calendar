@@ -604,6 +604,17 @@ See README.md for the planning rules, data model and roadmap.
   Shot list: calendar (Done buttons), post with outfit, suggestions, accessory grid,
   accessory form (name boxes/palette/partner ideas), colors from a photo, Palette
   page, guided deletes.
+- **R1 done (portfolio refresh, 2026-11-23):** 9 screenshots in docs/screenshots (calendar,
+  series, post-outfit, ideas, accessories-grid, accessory-form, partner-ideas,
+  colors-from-photos, palette; delete-chain/fabrics/post-timeline removed), taken in
+  headless Firefox 160 at 2x (profile user.js `layout.css.devPixelsPerPx` = 2.0,
+  window 1200 wide) from a copy of her data with the posts she set up; on the copy
+  only: Embroidered Candy Canes - Small set to in_progress (a bought bow → "✓ It
+  arrived" Done button) and Elphaba outfit chosen for Momo in Halloween Shoot (both
+  disclosed in README); palette shot opens one Edit panel. Scratchpad script
+  `marionette/shoot.py OUT [names…]` (full-page capture, crop between selectors with
+  sips). README pitch/highlights rewritten for v2. Also fixed the fabric form's
+  pre-palette color help text. Next: R2 (DESIGN.md + v2.0 tag), then she reviews.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
