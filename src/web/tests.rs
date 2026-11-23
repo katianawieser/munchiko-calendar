@@ -2766,7 +2766,8 @@ async fn the_palette_lists_each_color_once_with_what_uses_it() {
     assert!(html.contains("<a href=\"/fabrics/3\">Tweed</a>"));
     assert!(html.contains("<option value=\"charcoal\">"));
     // Red before black and charcoal: rainbow order, greys last.
-    assert!(html.find(">red</span>").unwrap() < html.find(">black</span>").unwrap());
+    let table = &html[html.find("class=\"palette-table\"").unwrap()..];
+    assert!(table.find(">red</span>").unwrap() < table.find(">black</span>").unwrap());
 }
 
 #[tokio::test]
@@ -2994,4 +2995,40 @@ async fn partner_ideas_come_from_fabrics_and_names() {
     // Nothing in common: nothing offered.
     let (_, part) = get(&app, "/accessories/partner-ideas?name=Zebra&kind=hat").await;
     assert!(!part.contains("partner-idea"));
+}
+
+#[tokio::test]
+async fn hard_to_tell_apart_colors_are_pointed_out_until_kept_apart() {
+    let (app, db, _dir) = setup_shades().await;
+    let black = palette_id(&db, "black").await;
+    let charcoal = palette_id(&db, "charcoal").await;
+    let (_, html) = get(&app, "/palette").await;
+    assert!(html.contains("Hard to tell apart (1)"), "{html}");
+    assert!(html.contains(&format!("/palette/{charcoal}/merge?into=black")));
+    // Each color's closest name from the survey, when it's not its own.
+    assert!(html.contains("closest everyday name:"));
+
+    let reply = post(
+        &app,
+        "/palette/keep-apart",
+        &format!("a={charcoal}&b={black}"),
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let (_, html) = get(&app, "/palette").await;
+    assert!(!html.contains("Hard to tell apart"));
+    // Twice is fine; nonsense is refused.
+    post(
+        &app,
+        "/palette/keep-apart",
+        &format!("a={black}&b={charcoal}"),
+    )
+    .await;
+    assert_eq!(db.kept_apart().await.unwrap().len(), 1);
+    let reply = post(&app, "/palette/keep-apart", "a=x&b=1").await;
+    assert_eq!(reply.status, StatusCode::BAD_REQUEST);
+
+    // Merging one away takes the pair with it.
+    post(&app, &format!("/palette/{charcoal}/merge"), "into=black").await;
+    assert!(db.kept_apart().await.unwrap().is_empty());
 }

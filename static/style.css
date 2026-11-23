@@ -449,3 +449,7 @@ button.partner-idea:hover { border-color: var(--pico-primary); }
 .palette-edit button { width: auto; margin: 0; }
 .palette-add { margin-bottom: 1rem; }
 .palette-add summary { width: auto; display: inline-block; }
+
+/* Palette page: colors that are hard to tell apart. */
+.close-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; margin-bottom: 0.5rem; }
+.close-pair [role="button"], .close-pair button { width: auto; margin: 0; }

@@ -105,6 +105,7 @@ pub fn router(state: AppState) -> Router {
         .merge(uploads)
         .route("/colors/name", get(colors::name_for_hex))
         .route("/palette", get(palette::list).post(palette::create))
+        .route("/palette/keep-apart", post(palette::keep_apart))
         .route("/palette/{id}", post(palette::update))
         .route("/palette/{id}/delete", post(palette::delete))
         .route(

@@ -900,6 +900,32 @@ impl Repository {
         Ok(())
     }
 
+    /// Pairs of palette colors meant to stay apart, though they look alike.
+    pub async fn kept_apart(&self) -> Result<Vec<(PaletteColorId, PaletteColorId)>> {
+        let rows: Vec<(i64, i64)> =
+            sqlx::query_as("SELECT color_a, color_b FROM palette_kept_apart")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(a, b)| (PaletteColorId(a), PaletteColorId(b)))
+            .collect())
+    }
+
+    /// Remember that `a` and `b` are meant to differ. Doing it twice is fine.
+    pub async fn keep_apart(&self, a: PaletteColorId, b: PaletteColorId) -> Result<()> {
+        let (a, b) = if a.0 < b.0 { (a, b) } else { (b, a) };
+        if a == b {
+            return Ok(());
+        }
+        sqlx::query("INSERT OR IGNORE INTO palette_kept_apart (color_a, color_b) VALUES (?, ?)")
+            .bind(a.0)
+            .bind(b.0)
+            .execute(&self.pool)
+            .await?;
+        Ok(())
+    }
+
     /// Merge palette colors into `into`: every item using one of `from` uses
     /// `into` instead (an item that ends up with it twice keeps the first),
     /// and the `from` colors are deleted. All or nothing.

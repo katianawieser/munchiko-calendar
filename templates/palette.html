@@ -16,6 +16,26 @@
   </form>
 </details>
 
+{% if !close.is_empty() %}
+<article class="close-pairs">
+  <header><strong>Hard to tell apart ({{ close.len() }})</strong></header>
+  <p class="muted"><small>These look almost the same (ΔE under 5). Merge them, or keep them apart if they really differ (in finish, say), and they stop showing here.</small></p>
+  {% for pair in close %}
+  <div class="close-pair">
+    {% let color = pair.a %}{% include "color_chip.html" %} ~ {% let color = pair.b %}{% include "color_chip.html" %}
+    <small class="muted">ΔE {{ pair.difference }}</small>
+    <a href="/palette/{{ pair.b_id }}/merge?into={{ pair.a.name|urlencode }}" role="button" class="outline small">Merge {{ pair.b.name }} into {{ pair.a.name }}</a>
+    <a href="/palette/{{ pair.a_id }}/merge?into={{ pair.b.name|urlencode }}" role="button" class="outline small">Merge {{ pair.a.name }} into {{ pair.b.name }}</a>
+    <form method="post" action="/palette/keep-apart" class="inline">
+      <input type="hidden" name="a" value="{{ pair.a_id }}">
+      <input type="hidden" name="b" value="{{ pair.b_id }}">
+      <button type="submit" class="secondary outline small">Keep apart</button>
+    </form>
+  </div>
+  {% endfor %}
+</article>
+{% endif %}
+
 <p>{{ rows.len() }} colors.</p>
 <datalist id="palette-names">{% for name in names %}<option value="{{ name }}">{% endfor %}</datalist>
 <table class="palette-table">
@@ -23,7 +43,7 @@
   <tbody>
     {% for row in rows %}
     <tr>
-      <td class="nowrap">{% let color = row.color %}{% include "color_chip.html" %}{% if let Some(hex) = row.color.hex %} <small class="muted">{{ hex }}</small>{% endif %}</td>
+      <td class="nowrap">{% let color = row.color %}{% include "color_chip.html" %}{% if let Some(hex) = row.color.hex %} <small class="muted">{{ hex }}</small>{% endif %}{% if !row.everyday.is_empty() %}<br><small class="muted" title="The nearest name in the xkcd color survey (data/color_names.txt)">closest everyday name: {{ row.everyday }}</small>{% endif %}</td>
       <td>{% if row.uses == 0 %}<span class="muted">nothing</span>{% else %}<details><summary>{{ row.uses }} {% if row.uses == 1 %}item{% else %}items{% endif %}</summary>{% for user in row.users %}{% if !loop.first %}, {% endif %}<a href="{{ user.href }}">{{ user.label }}</a>{% endfor %}</details>{% endif %}</td>
       <td>
         <details class="palette-actions">

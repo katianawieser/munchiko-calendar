@@ -26,7 +26,7 @@ take the photos, and it suggests what to wear from what's already in the stash.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
 templates · Pico CSS · a few small optional scripts · the `image` crate.
-235 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+238 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -176,7 +176,16 @@ that should be one are **merged** (with a preview of every item that changes,
 and a copy of the database saved in `backups/` first). A color nothing uses can
 be deleted; one in use can't. Moving to the palette kept every color: a name
 used with several clearly different shades became "pink", "pink (2)", … to
-tidy up there.
+tidy up there. Colors that are **hard to tell apart** (ΔE under 5) are pointed
+out with both merge directions, or **Keep apart** when they really differ
+(white vs white sparkle differ in finish, not shade). Each color also shows
+its **closest everyday name** as a second opinion.
+
+**Color names** come from `data/color_names.txt`: the
+[xkcd color survey](https://xkcd.com/color/rgb.txt) (about 950 names people
+actually use, public domain under CC0), with vulgar and unhelpful names left
+out (they're listed at the top of the file). Suggested names, photo colors
+and the Palette page's hints all use it; edit it freely (rebuild to apply).
 
 **"From your photos"** offers the main colors of an item's photos (including
 photos just chosen in the form, before saving). Each reuses a palette color
@@ -322,10 +331,10 @@ Settings (all optional environment variables):
   - [x] **M14a**: type-to-search when choosing fabrics and a matching partner
   - [x] **M14b**: fabric photos instead of long fabric names in the accessory list
   - [x] **M14c**: suggest a matching partner from fabric pairings
-- [ ] **M15**: The palette: one list of named colors that everything uses
+- [x] **M15**: The palette: one list of named colors that everything uses
   - [x] **M15a**: palette colors (items point at them; edits change everywhere), moved over losing nothing; Palette page with merge, replacing the Shades page
   - [x] **M15b**: color rows on the forms pick from the palette (new names join it on save); photo color ideas, name suggestions and "Pick from your palette" use it
-  - [ ] **M15c**: polish from real use
+  - [x] **M15c**: color names from the xkcd survey (vulgar ones left out); "hard to tell apart" pairs with keep apart; closest everyday name per color
 
 Ideas for later: consistent naming (a suggested name from the main fabric,
 kind and size); outfits in suggestions; photos in the suggestion box; a
@@ -335,7 +344,8 @@ calendar nudge for upcoming events with no post planned yet.
 
 ```
 data/
-  holidays.toml  the editable holidays list
+  holidays.toml    the editable holidays list
+  color_names.txt  color names (xkcd survey, CC0) for suggestions
 docs/
   DESIGN.md      design decisions and trade-offs
   screenshots/

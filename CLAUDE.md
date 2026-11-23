@@ -555,6 +555,22 @@ See README.md for the planning rules, data model and roadmap.
   save path unchanged from M15a (by name). Verified in Firefox 160 on real data:
   hints, locking, chips, a real save (sage kept palette shade; new color joined).
   `your_shades` / look-alike chips removed from forms.
+- **M15c done (M15 complete), from Katiana's refinement (palette now 59 colors, all
+  shaded, all used; only 3 pairs < ΔE 5, all whites):** she chose the xkcd survey
+  (CC0) over Wikipedia's lists (CC BY-SA, many proprietary Pantone/Crayola names;
+  only the A–F page has a Source column). `data/color_names.txt` = xkcd 949 minus
+  41 vulgar/negative names (listed in its header; kept: blood orange, mud, dirt,
+  swamp, hospital green). `palette::NAMES` is a `LazyLock<Vec<(&'static str,
+  [u8;3])>>` parsed from `include_str!` (edit + rebuild). XKCD quirks: duplicate
+  spellings (terra cotta / terracotta / terracota), slash names (blue/green);
+  names more specific ("pumpkin", "royal" for #000080). Tests now check rules
+  with fixed shades, not name-list shades. Photo ideas: a shadeless color the
+  item has, if among the swatch's 5 nearest names (`UNSHADED_NAME_RANK`), names
+  the idea (so the chip shades it). Migration 0014 `palette_kept_apart` (a<b,
+  CASCADE); `Repository::{kept_apart, keep_apart}`; Palette page "Hard to tell
+  apart (N)" box (`close_pairs`, ΔE < 5, not kept apart) with both merge links +
+  Keep apart (POST /palette/keep-apart); per row "closest everyday name" (xkcd)
+  when it differs (on real data 57 of 59 differ; it's a second opinion).
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

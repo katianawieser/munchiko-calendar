@@ -29,10 +29,51 @@ use crate::models::{Accessory, Color, Fabric, PaletteColor, PaletteColorId};
 use crate::palette;
 use crate::shades::Owner;
 
+/// Colors closer than this (ΔE) are pointed out as hard to tell apart.
+const CLOSE: f32 = 5.0;
+
+/// Pairs of palette colors closer than [`CLOSE`] that haven't been marked as
+/// meant to differ, closest first: (a, b, ΔE).
+fn close_pairs<'a>(
+    palette: &'a [PaletteColor],
+    kept_apart: &[(PaletteColorId, PaletteColorId)],
+) -> Vec<(&'a PaletteColor, &'a PaletteColor, f32)> {
+    let shaded: Vec<(&PaletteColor, [u8; 3])> = palette
+        .iter()
+        .filter_map(|c| Some((c, palette::rgb_from_hex(c.hex.as_deref()?)?)))
+        .collect();
+    let kept = |a: PaletteColorId, b: PaletteColorId| {
+        kept_apart.contains(&(a, b)) || kept_apart.contains(&(b, a))
+    };
+    let mut pairs = Vec::new();
+    for (i, (a, rgb_a)) in shaded.iter().enumerate() {
+        for (b, rgb_b) in &shaded[i + 1..] {
+            let d = palette::difference(*rgb_a, *rgb_b);
+            if d < CLOSE && !kept(a.id, b.id) {
+                pairs.push((*a, *b, d));
+            }
+        }
+    }
+    pairs.sort_by(|x, y| x.2.total_cmp(&y.2));
+    pairs
+}
+
+/// A pair of colors that are hard to tell apart, as shown.
+struct ClosePair {
+    a: Color,
+    a_id: i64,
+    b: Color,
+    b_id: i64,
+    /// "1.6"
+    difference: String,
+}
+
 /// One palette color as listed.
 struct Row {
     id: i64,
     color: Color,
+    /// The xkcd survey's name for its shade, when that's not its own name.
+    everyday: String,
     /// For the shade picker: the shade, or white when there's none.
     picker: String,
     uses: usize,
@@ -43,6 +84,7 @@ struct Row {
 #[template(path = "palette.html")]
 struct PalettePage {
     rows: Vec<Row>,
+    close: Vec<ClosePair>,
     /// Every color's name, for the "merge into" boxes.
     names: Vec<String>,
     notice: Option<String>,
@@ -102,13 +144,34 @@ async fn page(state: &AppState, notice: Option<String>) -> Result<PalettePage, A
     let accessories = state.db.list_accessories().await?;
     let mut users = uses_by_color(&uses, &fabrics, &accessories);
     let names = colors.iter().map(|c| c.name.clone()).collect();
+    let kept = state.db.kept_apart().await?;
+    let close = close_pairs(&colors, &kept)
+        .into_iter()
+        .map(|(a, b, d)| ClosePair {
+            a: a.color(),
+            a_id: a.id.0,
+            b: b.color(),
+            b_id: b.id.0,
+            difference: format!("{d:.1}"),
+        })
+        .collect();
     rainbow(&mut colors);
     Ok(PalettePage {
+        close,
         rows: colors
             .iter()
             .map(|c| {
                 let users = users.remove(&c.id).unwrap_or_default();
+                let everyday = c
+                    .hex
+                    .as_deref()
+                    .and_then(palette::rgb_from_hex)
+                    .map(palette::nearest_name)
+                    .filter(|n| !n.eq_ignore_ascii_case(&c.name))
+                    .unwrap_or_default()
+                    .to_string();
                 Row {
+                    everyday,
                     id: c.id.0,
                     picker: c.hex.clone().unwrap_or_else(|| "#ffffff".into()),
                     color: c.color(),
@@ -238,6 +301,23 @@ pub async fn delete(
         }
         Err(e) => Err(e.into()),
     }
+}
+
+/// `POST /palette/keep-apart` (`a`, `b`): these two are meant to differ;
+/// stop pointing them out.
+pub async fn keep_apart(
+    State(state): State<AppState>,
+    Form(pairs): Form<Vec<(String, String)>>,
+) -> Result<Response, AppError> {
+    let form = FormData::new(pairs);
+    let id = |field: &str| {
+        form.text(field)
+            .parse::<i64>()
+            .map(PaletteColorId)
+            .map_err(|_| AppError::BadRequest)
+    };
+    state.db.keep_apart(id("a")?, id("b")?).await?;
+    Ok(Redirect::to("/palette?done=Kept+apart").into_response())
 }
 
 /// Percent-encode text for an address (the notice after a change).
@@ -471,5 +551,37 @@ mod tests {
             [(coral.color(), false)],
             "already had coral: once"
         );
+    }
+
+    #[test]
+    fn close_pairs_leave_out_ones_kept_apart() {
+        let palette = [
+            color(1, "white", Some("#fffefb")),
+            color(2, "white sparkle", Some("#ffffff")),
+            color(3, "off white", Some("#faf4f4")),
+            color(4, "navy", Some("#01153e")),
+            color(5, "glitter", None),
+        ];
+        let names = |kept: &[(PaletteColorId, PaletteColorId)]| -> Vec<(String, String)> {
+            close_pairs(&palette, kept)
+                .into_iter()
+                .map(|(a, b, _)| (a.name.clone(), b.name.clone()))
+                .collect()
+        };
+        let all = names(&[]);
+        assert_eq!(
+            all.len(),
+            3,
+            "the three whites; navy and glitter aren't close"
+        );
+        assert_eq!(
+            all[0],
+            ("white".to_string(), "white sparkle".to_string()),
+            "closest first"
+        );
+        // Kept apart, in either order: no longer pointed out.
+        let kept = names(&[(PaletteColorId(2), PaletteColorId(1))]);
+        assert_eq!(kept.len(), 2);
+        assert!(!kept.contains(&("white".to_string(), "white sparkle".to_string())));
     }
 }
