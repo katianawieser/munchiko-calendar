@@ -410,7 +410,7 @@ mod tests {
             Some(ItemTone::Mixed)
         );
         assert_eq!(
-            item_tone(&colors(&["cream", "Black"])),
+            item_tone(&colors(&["white", "Black"])),
             Some(ItemTone::Neutral)
         );
         // Unknown names and no colors at all: no tone, so no tone filter shows them.

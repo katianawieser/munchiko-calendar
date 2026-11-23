@@ -1773,7 +1773,7 @@ async fn a_picked_shade_gets_a_suggested_name() {
     let (app, _, _) = setup(d(2026, 10, 5)).await;
     let (status, name) = get(&app, "/colors/name?hex=%23F4C2C2").await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(name, "baby pink");
+    assert_eq!(name, "pale rose");
     let (status, _) = get(&app, "/colors/name?hex=pink").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 
@@ -1781,7 +1781,7 @@ async fn a_picked_shade_gets_a_suggested_name() {
     let (_, names) = get(&app, "/colors/name?hex=%23F4C2C2&count=3").await;
     let names: Vec<&str> = names.lines().collect();
     assert_eq!(names.len(), 3);
-    assert_eq!(names[0], "baby pink");
+    assert_eq!(names[0], "pale rose");
     let (status, _) = get(&app, "/colors/name?hex=%23F4C2C2&count=99").await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
 }

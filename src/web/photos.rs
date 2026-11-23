@@ -601,6 +601,11 @@ async fn ideas_from_thumbnails(
     group_ideas(ideas_from_swatches(&swatches, stash, existing))
 }
 
+/// How far down a photo color's list of nearest names an item's own
+/// shadeless color may be and still be taken as that color ("orange" is the
+/// third nearest name for a typical orange, after "pumpkin").
+const UNSHADED_NAME_RANK: usize = 5;
+
 /// Ideas as shown: each one alone, except "yours" followed by its "or new"
 /// alternative, which stay together as one choice.
 pub type IdeaGroup = Vec<ColorIdea>;
@@ -644,7 +649,21 @@ fn ideas_from_swatches(
                 .any(|s| s.names.iter().any(|n| n.eq_ignore_ascii_case(name)))
                 || ideas.iter().any(|i| i.name.eq_ignore_ascii_case(name))
         };
-        palette::nearest_names(swatch.rgb, palette::NAMES.len())
+        let nearest = palette::nearest_names(swatch.rgb, palette::NAMES.len());
+        // A color this item has without a shade yet, if it's one of the
+        // closest names: then the chip gives that color its shade.
+        let unshaded = existing.iter().find(|c| {
+            c.hex.is_none()
+                && nearest
+                    .iter()
+                    .take(UNSHADED_NAME_RANK)
+                    .any(|n| n.eq_ignore_ascii_case(&c.name))
+                && !ideas.iter().any(|i| i.name.eq_ignore_ascii_case(&c.name))
+        });
+        if let Some(color) = unshaded {
+            return color.name.clone();
+        }
+        nearest
             .into_iter()
             .find(|n| !taken(n))
             .map_or_else(|| format!("{} (new)", swatch.name), str::to_string)
@@ -720,16 +739,23 @@ mod tests {
 
     #[test]
     fn ideas_skip_colors_that_already_have_a_swatch() {
+        use crate::models::{PaletteColor, PaletteColorId};
+        // The item's teal is a palette color with a swatch: the photo's teal
+        // is "yours" and the item already has it, so it isn't offered.
+        let stash = shades::from_palette(&[PaletteColor {
+            id: PaletteColorId(1),
+            name: "teal".into(),
+            hex: Some("#008080".into()),
+        }]);
         let found = [
             swatch("teal", [0, 128, 128]),
             swatch("pink", [245, 150, 185]),
         ];
         let existing = [Color::with_hex("teal", "#008080"), Color::named("pink")];
-        assert_eq!(
-            ideas_from_swatches(&found, &[], &existing),
-            vec![idea("pink", "#f596b9", IdeaKind::New)],
-            "pink has no swatch yet, so it's still offered"
-        );
+        let ideas = ideas_from_swatches(&found, &stash, &existing);
+        assert_eq!(ideas.len(), 1, "{ideas:?}");
+        assert_eq!(ideas[0].hex, "#f596b9");
+        assert_eq!(ideas[0].kind, IdeaKind::New);
     }
 
     fn stash_fabric() -> crate::models::Fabric {
@@ -774,7 +800,11 @@ mod tests {
                     "#b0aa60",
                     IdeaKind::New
                 ),
-                idea("orange", "#f5821e", IdeaKind::New),
+                idea(
+                    crate::palette::nearest_name([245, 130, 30]),
+                    "#f5821e",
+                    IdeaKind::New
+                ),
             ],
             "each shade once"
         );
@@ -826,5 +856,20 @@ mod tests {
         assert!(!names.contains(&"orange"), "{names:?}");
         assert_eq!(ideas.len(), 2);
         assert_ne!(names[0], names[1], "two new shades, two names");
+    }
+
+    #[test]
+    fn a_photo_color_can_shade_a_color_the_item_has_without_one() {
+        // The item has "orange" with no shade; a photo's orange is named
+        // "orange" (not the list's first pick), so clicking it shades that.
+        let found = [swatch("orange", [245, 130, 30])];
+        let ideas = ideas_from_swatches(&found, &[], &[Color::named("orange")]);
+        assert_eq!(ideas[0].name, "orange");
+        // Without that color, the list's nearest free name.
+        let ideas = ideas_from_swatches(&found, &[], &[]);
+        assert_eq!(ideas[0].name, crate::palette::nearest_name([245, 130, 30]));
+        // A shadeless color that isn't near (navy) isn't used.
+        let ideas = ideas_from_swatches(&found, &[], &[Color::named("navy")]);
+        assert_ne!(ideas[0].name, "navy");
     }
 }

@@ -161,7 +161,7 @@ mod tests {
         assert!(!ideas.contains(&"orange".to_string()), "{ideas:?}");
         assert_eq!(ideas.len(), 3);
         // Nothing like it in the palette: built-in names only.
-        let ideas = name_ideas([0, 0, 128], &palette, 2);
+        let ideas = name_ideas([0x01, 0x15, 0x3e], &palette, 2);
         assert_eq!(ideas[0], "navy");
     }
 }

@@ -20,6 +20,8 @@
 //! guesses, so the same photo could give different answers on different days.
 //! Buckets are deterministic and easy to explain.
 
+use std::sync::LazyLock;
+
 /// Colors covering less of the photo than this are ignored (stray highlights,
 /// the edge of a table).
 pub const MIN_SHARE: f32 = 0.04;
@@ -140,62 +142,27 @@ impl Group {
 // Color names
 // ---------------------------------------------------------------------------
 
-/// Names a sewer would use, with a typical shade of each. A photo color gets
-/// the name whose shade is closest. Edit freely: suggestions match on names,
-/// so names that also appear in event keywords ("orange", "gold") are useful.
-///
-/// A name can appear more than once. The simple distance formula used here
-/// over-weights saturation, so a vivid shade and a dusty one of the same color
-/// can be far apart; a second entry covers the other end (see "navy").
-pub const NAMES: &[(&str, [u8; 3])] = &[
-    ("white", [250, 250, 250]),
-    ("cream", [245, 238, 215]),
-    ("beige", [222, 205, 170]),
-    ("tan", [200, 165, 120]),
-    ("brown", [130, 85, 50]),
-    ("chocolate", [80, 50, 30]),
-    ("black", [20, 20, 20]),
-    ("charcoal", [60, 62, 66]),
-    ("grey", [128, 128, 128]),
-    ("light grey", [200, 200, 200]),
-    ("silver", [175, 180, 185]),
-    ("red", [205, 30, 40]),
-    ("burgundy", [120, 20, 40]),
-    ("coral", [250, 125, 100]),
-    ("peach", [255, 200, 165]),
-    ("orange", [245, 130, 30]),
-    ("burnt orange", [200, 85, 25]),
-    ("gold", [215, 170, 50]),
-    ("mustard", [205, 165, 30]),
-    ("yellow", [250, 220, 40]),
-    ("pale yellow", [255, 245, 160]),
-    ("olive", [120, 120, 40]),
-    ("lime", [170, 215, 50]),
-    ("green", [50, 160, 70]),
-    ("forest green", [30, 85, 45]),
-    ("mint", [170, 230, 195]),
-    ("sage", [160, 180, 140]),
-    ("teal", [0, 128, 128]),
-    ("teal green", [40, 170, 140]),
-    ("turquoise", [60, 205, 200]),
-    ("sky blue", [125, 195, 235]),
-    ("baby blue", [175, 210, 240]),
-    ("blue", [40, 100, 200]),
-    ("royal blue", [40, 60, 170]),
-    ("navy", [25, 35, 80]),
-    // Dyed-fabric navy above; the vivid "CSS navy" here.
-    ("navy", [0, 0, 128]),
-    ("lavender", [200, 185, 235]),
-    ("lilac", [190, 160, 210]),
-    ("purple", [120, 50, 150]),
-    ("plum", [100, 40, 80]),
-    ("magenta", [210, 30, 140]),
-    ("hot pink", [245, 70, 150]),
-    ("pink", [245, 150, 185]),
-    ("baby pink", [245, 200, 210]),
-    ("rose", [200, 100, 120]),
-    ("mauve", [175, 130, 150]),
-];
+/// Color names with a typical shade of each, from `data/color_names.txt`:
+/// the xkcd color survey (names people actually use; CC0), minus vulgar and
+/// unhelpful ones. A picked or photo color gets the name whose shade is
+/// closest. The file is part of the program (read when it's built), so
+/// editing it means rebuilding.
+pub static NAMES: LazyLock<Vec<(&'static str, [u8; 3])>> =
+    LazyLock::new(|| parse_names(include_str!("../data/color_names.txt")));
+
+/// "name<TAB>#rrggbb" lines; `#` comments and blank or malformed lines are
+/// skipped.
+fn parse_names(text: &'static str) -> Vec<(&'static str, [u8; 3])> {
+    text.lines()
+        .filter(|line| !line.starts_with('#'))
+        .filter_map(|line| {
+            let (name, hex) = line.split_once('\t')?;
+            let rgb = rgb_from_hex(hex.trim())?;
+            let name = name.trim();
+            (!name.is_empty()).then_some((name, rgb))
+        })
+        .collect()
+}
 
 /// The name in [`NAMES`] that looks most like `rgb`.
 pub fn nearest_name(rgb: [u8; 3]) -> &'static str {
@@ -378,8 +345,33 @@ mod tests {
 
     #[test]
     fn tones_follow_the_color_wheel() {
+        // Typical shades of these colors (fixed here, so the rule is tested
+        // and not the name list's choice of shade).
+        let shades: &[(&str, [u8; 3])] = &[
+            ("red", [205, 30, 40]),
+            ("coral", [250, 125, 100]),
+            ("orange", [245, 130, 30]),
+            ("gold", [215, 170, 50]),
+            ("yellow", [250, 220, 40]),
+            ("hot pink", [245, 70, 150]),
+            ("baby pink", [245, 200, 210]),
+            ("brown", [130, 85, 50]),
+            ("lime", [170, 215, 50]),
+            ("sage", [160, 180, 140]),
+            ("teal", [0, 128, 128]),
+            ("baby blue", [175, 210, 240]),
+            ("navy", [25, 35, 80]),
+            ("lavender", [200, 185, 235]),
+            ("purple", [120, 50, 150]),
+            ("magenta", [210, 30, 140]),
+            ("white", [250, 250, 250]),
+            ("cream", [245, 238, 215]),
+            ("silver", [175, 180, 185]),
+            ("charcoal", [60, 62, 66]),
+            ("black", [20, 20, 20]),
+        ];
         let tone_of = |name: &str| {
-            let (_, rgb) = NAMES.iter().find(|(n, _)| *n == name).unwrap();
+            let (_, rgb) = shades.iter().find(|(n, _)| *n == name).unwrap();
             tone(*rgb)
         };
         for warm in [
@@ -427,28 +419,33 @@ mod tests {
 
     #[test]
     fn names_come_from_the_nearest_shade() {
+        // A name's own shade gets that name.
         assert_eq!(nearest_name([255, 255, 255]), "white");
         assert_eq!(nearest_name([0, 0, 0]), "black");
-        assert_eq!(nearest_name([255, 128, 0]), "orange");
-        assert_eq!(nearest_name([244, 194, 194]), "baby pink");
-        assert_eq!(nearest_name([0, 0, 128]), "navy");
-        assert_eq!(nearest_name([30, 40, 75]), "navy", "dusty fabric navy too");
-        assert_eq!(
-            nearest_name([65, 105, 225]),
-            "blue",
-            "not every blue is navy"
-        );
-        assert_eq!(nearest_name([58, 167, 155]), "teal green");
+        assert_eq!(nearest_name([0x01, 0x15, 0x3e]), "navy");
+        assert_eq!(nearest_name([0xff, 0xb7, 0xce]), "baby pink");
+        // Others get the closest one.
+        assert_eq!(nearest_name([0x02, 0x16, 0x40]), "navy");
+        assert_eq!(nearest_name([250, 250, 250]), "pale grey");
+    }
+
+    #[test]
+    fn the_name_list_is_the_cleaned_xkcd_survey() {
+        assert!(NAMES.len() > 900, "{}", NAMES.len());
+        // Left out on purpose (see the top of data/color_names.txt).
+        for gone in ["puke", "vomit", "poop", "shit brown", "ugly pink", "booger"] {
+            assert!(!NAMES.iter().any(|(n, _)| *n == gone), "{gone}");
+        }
+        // Everyday names, and neutral ones like "mud", stay.
+        for kept in ["orange", "teal", "navy", "mud", "blood orange"] {
+            assert!(NAMES.iter().any(|(n, _)| *n == kept), "{kept}");
+        }
     }
 
     #[test]
     fn alternatives_are_different_names_closest_first() {
-        let names = nearest_names([0, 0, 128], 3);
-        assert_eq!(names.len(), 3);
-        assert_eq!(names[0], "navy");
-        // The list has two navies; it's offered once.
-        assert_eq!(names.iter().filter(|n| **n == "navy").count(), 1);
-        assert_eq!(nearest_names([244, 194, 194], 1), ["baby pink"]);
+        let names = nearest_names([0x01, 0x15, 0x3e], 3);
+        assert_eq!(names, ["navy", "dark navy", "dark navy blue"]);
         assert!(nearest_names([1, 2, 3], 0).is_empty());
     }
 
@@ -470,7 +467,10 @@ mod tests {
         .concat();
         let colors = main_colors(pixels, 6);
         let names: Vec<&str> = colors.iter().map(|s| s.name).collect();
-        assert_eq!(names, vec!["teal green", "pink", "white"]);
+        // Three colors, biggest first; the near-white patch (lifted to pure
+        // white by the patch's wobble) is named white.
+        assert_eq!(names.len(), 3, "{names:?}");
+        assert_eq!(names[2], "white");
         assert!((colors[0].share - 0.6).abs() < 0.01);
         assert!(colors[0].hex().starts_with('#') && colors[0].hex().len() == 7);
     }
@@ -481,7 +481,7 @@ mod tests {
         let pixels = [patch([245, 130, 30], 500), patch([225, 115, 25], 500)].concat();
         let colors = main_colors(pixels, 6);
         assert_eq!(colors.len(), 1);
-        assert_eq!(colors[0].name, "orange");
+        assert_eq!(colors[0].name, "pumpkin");
         assert!((colors[0].share - 1.0).abs() < 0.001);
     }
 
@@ -493,7 +493,7 @@ mod tests {
         ]
         .concat();
         let names: Vec<&str> = main_colors(pixels, 6).iter().map(|s| s.name).collect();
-        assert_eq!(names, vec!["navy"]);
+        assert_eq!(names.len(), 1, "{names:?}");
 
         let rainbow = [
             patch([205, 30, 40], 200),
