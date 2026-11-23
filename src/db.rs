@@ -70,6 +70,8 @@ pub enum DbError {
     Corrupt(String),
     /// The row comes from `holidays.toml` and can only be changed there.
     ReadOnly { what: &'static str, id: i64 },
+    /// Another row already has this name (palette colors are unique by name).
+    Duplicate { what: &'static str, name: String },
     /// Anything else from SQLite, including a CHECK rule rejecting an insert.
     Sqlx(sqlx::Error),
 }
@@ -80,6 +82,9 @@ impl fmt::Display for DbError {
             DbError::NotFound { what, id } => write!(f, "there's no {what} #{id}"),
             DbError::InUse { what, id } => {
                 write!(f, "{what} #{id} is still in use, so it can't be deleted")
+            }
+            DbError::Duplicate { what, name } => {
+                write!(f, "there's already a {what} called {name:?}")
             }
             DbError::ReadOnly { what, id } => {
                 write!(f, "{what} #{id} comes from holidays.toml; edit it there")
@@ -108,6 +113,16 @@ impl From<sqlx::Error> for DbError {
 pub type Result<T> = std::result::Result<T, DbError>;
 
 /// Turn a foreign-key failure from a DELETE into a friendly `InUse` error.
+fn duplicate(err: sqlx::Error, what: &'static str, name: &str) -> DbError {
+    match err.as_database_error() {
+        Some(db) if db.is_unique_violation() => DbError::Duplicate {
+            what,
+            name: name.to_string(),
+        },
+        _ => DbError::Sqlx(err),
+    }
+}
+
 fn in_use(err: sqlx::Error, what: &'static str, id: i64) -> DbError {
     match err.as_database_error() {
         Some(db) if db.is_foreign_key_violation() => DbError::InUse { what, id },
@@ -261,7 +276,6 @@ struct FabricRow {
     id: i64,
     name: String,
     description: String,
-    colors: Json<Vec<Color>>,
     keywords: Json<Vec<String>>,
     in_stock: bool,
 }
@@ -272,7 +286,6 @@ struct AccessoryRow {
     kind: String,
     name: String,
     description: String,
-    colors: Json<Vec<Color>>,
     colors_from_fabrics: bool,
     tags: Json<Vec<String>>,
     source: String,
@@ -387,12 +400,12 @@ struct LookRow {
 }
 
 impl FabricRow {
-    fn into_model(self, pairings: Vec<FabricId>) -> Fabric {
+    fn into_model(self, pairings: Vec<FabricId>, colors: Vec<Color>) -> Fabric {
         Fabric {
             id: FabricId(self.id),
             name: self.name,
             description: self.description,
-            colors: self.colors.0,
+            colors,
             keywords: self.keywords.0,
             pairings,
             in_stock: self.in_stock,
@@ -401,7 +414,7 @@ impl FabricRow {
 }
 
 impl AccessoryRow {
-    fn into_model(self, fabrics: Vec<FabricUse>) -> Result<Accessory> {
+    fn into_model(self, fabrics: Vec<FabricUse>, colors: Vec<Color>) -> Result<Accessory> {
         let source = match self.source.as_str() {
             "handmade" => Source::Handmade,
             "bought" => Source::Bought { brand: self.brand },
@@ -412,7 +425,7 @@ impl AccessoryRow {
             kind: AccessoryKind::from_sql(&self.kind)?,
             name: self.name,
             description: self.description,
-            colors: self.colors.0,
+            colors,
             colors_from_fabrics: self.colors_from_fabrics,
             tags: self.tags.0,
             fabrics,
@@ -462,6 +475,116 @@ fn source_columns(source: &Source) -> (&'static str, Option<&str>) {
         Source::Handmade => ("handmade", None),
         Source::Bought { brand } => ("bought", brand.as_deref()),
     }
+}
+
+/// Which list of item colors: fabrics' or accessories'.
+#[derive(Clone, Copy)]
+enum ColorList {
+    Fabric,
+    Accessory,
+}
+
+impl ColorList {
+    /// The link table and its owner column.
+    fn table(self) -> (&'static str, &'static str) {
+        match self {
+            ColorList::Fabric => ("fabric_colors", "fabric_id"),
+            ColorList::Accessory => ("accessory_colors", "accessory_id"),
+        }
+    }
+}
+
+/// The palette colors for `colors`, by name (ignoring capitals and spaces
+/// around it). A name that isn't in the palette yet is added with its shade.
+/// The palette's shade wins over the one given, except that a palette color
+/// without a shade takes it. The same palette color twice counts once.
+async fn palette_ids_for(conn: &mut SqliteConnection, colors: &[Color]) -> Result<Vec<i64>> {
+    let mut ids: Vec<i64> = Vec::new();
+    for color in colors {
+        let name = color.name.trim();
+        if name.is_empty() {
+            continue;
+        }
+        let found: Option<(i64, Option<String>)> =
+            sqlx::query_as("SELECT id, hex FROM palette_colors WHERE name = ? COLLATE NOCASE")
+                .bind(name)
+                .fetch_optional(&mut *conn)
+                .await?;
+        let id = match found {
+            Some((id, None)) if color.hex.is_some() => {
+                sqlx::query("UPDATE palette_colors SET hex = ? WHERE id = ?")
+                    .bind(&color.hex)
+                    .bind(id)
+                    .execute(&mut *conn)
+                    .await?;
+                id
+            }
+            Some((id, _)) => id,
+            None => {
+                sqlx::query_scalar(
+                    "INSERT INTO palette_colors (name, hex) VALUES (?, ?) RETURNING id",
+                )
+                .bind(name)
+                .bind(&color.hex)
+                .fetch_one(&mut *conn)
+                .await?
+            }
+        };
+        if !ids.contains(&id) {
+            ids.push(id);
+        }
+    }
+    Ok(ids)
+}
+
+/// Replace an item's colors with `colors` (see [`palette_ids_for`]), inside
+/// the caller's transaction.
+async fn set_item_colors(
+    conn: &mut SqliteConnection,
+    list: ColorList,
+    owner: i64,
+    colors: &[Color],
+) -> Result<()> {
+    let ids = palette_ids_for(conn, colors).await?;
+    let (table, column) = list.table();
+    sqlx::query(&format!("DELETE FROM {table} WHERE {column} = ?"))
+        .bind(owner)
+        .execute(&mut *conn)
+        .await?;
+    for (position, id) in ids.iter().enumerate() {
+        sqlx::query(&format!(
+            "INSERT INTO {table} ({column}, position, palette_color_id) VALUES (?, ?, ?)"
+        ))
+        .bind(owner)
+        .bind(position as i64)
+        .bind(id)
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Items' colors (one item, or all for `None`), in order, by item id.
+async fn load_item_colors(
+    conn: &mut SqliteConnection,
+    list: ColorList,
+    only: Option<i64>,
+) -> Result<HashMap<i64, Vec<Color>>> {
+    let (table, column) = list.table();
+    let rows: Vec<(i64, String, Option<String>)> = sqlx::query_as(&format!(
+        "SELECT l.{column}, p.name, p.hex
+         FROM {table} l JOIN palette_colors p ON p.id = l.palette_color_id
+         WHERE ?1 IS NULL OR l.{column} = ?1
+         ORDER BY l.{column}, l.position"
+    ))
+    .bind(only)
+    .fetch_all(&mut *conn)
+    .await?;
+    let mut by_owner: HashMap<i64, Vec<Color>> = HashMap::new();
+    for (owner, name, hex) in rows {
+        by_owner.entry(owner).or_default().push(Color { name, hex });
+    }
+    Ok(by_owner)
 }
 
 /// Insert an accessory's fabric list. Takes a connection rather than the
@@ -603,20 +726,23 @@ impl Repository {
 
     // -- Fabrics -------------------------------------------------------------
 
+    /// Saves the fabric and its colors (see [`palette_ids_for`]) together.
     pub async fn create_fabric(&self, new: &NewFabric) -> Result<FabricId> {
+        let mut tx = self.pool.begin().await?;
         // RETURNING hands back the id SQLite just assigned.
         let id: i64 = sqlx::query_scalar(
-            "INSERT INTO fabrics (name, description, colors, keywords, in_stock)
-             VALUES (?, ?, ?, ?, ?)
+            "INSERT INTO fabrics (name, description, keywords, in_stock)
+             VALUES (?, ?, ?, ?)
              RETURNING id",
         )
         .bind(&new.name)
         .bind(&new.description)
-        .bind(Json(&new.colors))
         .bind(Json(&new.keywords))
         .bind(new.in_stock)
-        .fetch_one(&self.pool)
+        .fetch_one(&mut *tx)
         .await?;
+        set_item_colors(&mut tx, ColorList::Fabric, id, &new.colors).await?;
+        tx.commit().await?;
         Ok(FabricId(id))
     }
 
@@ -637,7 +763,7 @@ impl Repository {
         let mut tx = self.pool.begin().await?;
 
         let rows: Vec<FabricRow> = sqlx::query_as(
-            "SELECT id, name, description, colors, keywords, in_stock
+            "SELECT id, name, description, keywords, in_stock
              FROM fabrics
              WHERE ?1 IS NULL OR id = ?1
              ORDER BY name, id",
@@ -655,6 +781,7 @@ impl Repository {
         .bind(only)
         .fetch_all(&mut *tx)
         .await?;
+        let mut colors = load_item_colors(&mut tx, ColorList::Fabric, only).await?;
         tx.commit().await?;
 
         let mut pairings_by_fabric: HashMap<i64, Vec<FabricId>> = HashMap::new();
@@ -669,33 +796,159 @@ impl Repository {
             .into_iter()
             .map(|row| {
                 let pairings = pairings_by_fabric.remove(&row.id).unwrap_or_default();
-                row.into_model(pairings)
+                let colors = colors.remove(&row.id).unwrap_or_default();
+                row.into_model(pairings, colors)
             })
             .collect())
     }
 
-    /// Save new color lists for several fabrics and accessories at once (a
-    /// shade merge), in one transaction: all of them change, or none.
-    pub async fn set_colors(&self, changes: &[(crate::shades::Owner, Vec<Color>)]) -> Result<()> {
+    // -- Palette -------------------------------------------------------------
+
+    /// Every palette color, by name.
+    pub async fn list_palette(&self) -> Result<Vec<PaletteColor>> {
+        let rows: Vec<(i64, String, Option<String>)> =
+            sqlx::query_as("SELECT id, name, hex FROM palette_colors ORDER BY name COLLATE NOCASE")
+                .fetch_all(&self.pool)
+                .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(id, name, hex)| PaletteColor {
+                id: PaletteColorId(id),
+                name,
+                hex,
+            })
+            .collect())
+    }
+
+    /// Who uses each palette color: (color, fabric or accessory), one row per
+    /// use.
+    pub async fn palette_uses(&self) -> Result<Vec<(PaletteColorId, crate::shades::Owner)>> {
         use crate::shades::Owner;
+        let rows: Vec<(i64, String, i64)> = sqlx::query_as(
+            "SELECT palette_color_id, 'fabric', fabric_id FROM fabric_colors
+             UNION ALL
+             SELECT palette_color_id, 'accessory', accessory_id FROM accessory_colors",
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|(color, kind, owner)| {
+                let owner = if kind == "fabric" {
+                    Owner::Fabric(FabricId(owner))
+                } else {
+                    Owner::Accessory(AccessoryId(owner))
+                };
+                (PaletteColorId(color), owner)
+            })
+            .collect())
+    }
+
+    /// Add a color to the palette. Names are unique ignoring capitals.
+    pub async fn create_palette_color(
+        &self,
+        name: &str,
+        hex: Option<&str>,
+    ) -> Result<PaletteColorId> {
+        let id: i64 =
+            sqlx::query_scalar("INSERT INTO palette_colors (name, hex) VALUES (?, ?) RETURNING id")
+                .bind(name)
+                .bind(hex)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|e| duplicate(e, "palette color", name))?;
+        Ok(PaletteColorId(id))
+    }
+
+    /// Rename or reshade a palette color: every item using it changes too.
+    pub async fn update_palette_color(
+        &self,
+        id: PaletteColorId,
+        name: &str,
+        hex: Option<&str>,
+    ) -> Result<()> {
+        let result = sqlx::query("UPDATE palette_colors SET name = ?, hex = ? WHERE id = ?")
+            .bind(name)
+            .bind(hex)
+            .bind(id.0)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| duplicate(e, "palette color", name))?;
+        if result.rows_affected() == 0 {
+            return Err(DbError::NotFound {
+                what: "palette color",
+                id: id.0,
+            });
+        }
+        Ok(())
+    }
+
+    /// Delete a palette color nothing uses. In use: `DbError::InUse` (merge
+    /// it into another color instead).
+    pub async fn delete_palette_color(&self, id: PaletteColorId) -> Result<()> {
+        let result = sqlx::query("DELETE FROM palette_colors WHERE id = ?")
+            .bind(id.0)
+            .execute(&self.pool)
+            .await
+            .map_err(|e| in_use(e, "palette color", id.0))?;
+        if result.rows_affected() == 0 {
+            return Err(DbError::NotFound {
+                what: "palette color",
+                id: id.0,
+            });
+        }
+        Ok(())
+    }
+
+    /// Merge palette colors into `into`: every item using one of `from` uses
+    /// `into` instead (an item that ends up with it twice keeps the first),
+    /// and the `from` colors are deleted. All or nothing.
+    pub async fn merge_palette_colors(
+        &self,
+        from: &[PaletteColorId],
+        into: PaletteColorId,
+    ) -> Result<()> {
         let mut tx = self.pool.begin().await?;
-        for (owner, colors) in changes {
-            let (sql, what, id) = match owner {
-                Owner::Fabric(id) => ("UPDATE fabrics SET colors = ? WHERE id = ?", "fabric", id.0),
-                Owner::Accessory(id) => (
-                    "UPDATE accessories SET colors = ? WHERE id = ?",
-                    "accessory",
-                    id.0,
-                ),
-            };
-            let result = sqlx::query(sql)
-                .bind(Json(colors))
-                .bind(id)
+        let exists: Option<i64> = sqlx::query_scalar("SELECT id FROM palette_colors WHERE id = ?")
+            .bind(into.0)
+            .fetch_optional(&mut *tx)
+            .await?;
+        if exists.is_none() {
+            return Err(DbError::NotFound {
+                what: "palette color",
+                id: into.0,
+            });
+        }
+        for list in [ColorList::Fabric, ColorList::Accessory] {
+            let (table, column) = list.table();
+            for color in from.iter().filter(|c| **c != into) {
+                sqlx::query(&format!(
+                    "UPDATE {table} SET palette_color_id = ? WHERE palette_color_id = ?"
+                ))
+                .bind(into.0)
+                .bind(color.0)
                 .execute(&mut *tx)
                 .await?;
-            if result.rows_affected() == 0 {
-                return Err(DbError::NotFound { what, id });
             }
+            // The same color twice in one item: keep the earlier one.
+            sqlx::query(&format!(
+                "DELETE FROM {table} WHERE rowid IN (
+                     SELECT rowid FROM (
+                         SELECT rowid, ROW_NUMBER() OVER (
+                             PARTITION BY {column}, palette_color_id ORDER BY position
+                         ) AS n
+                         FROM {table}
+                     ) WHERE n > 1
+                 )"
+            ))
+            .execute(&mut *tx)
+            .await?;
+        }
+        for color in from.iter().filter(|c| **c != into) {
+            sqlx::query("DELETE FROM palette_colors WHERE id = ?")
+                .bind(color.0)
+                .execute(&mut *tx)
+                .await?;
         }
         tx.commit().await?;
         Ok(())
@@ -780,18 +1033,18 @@ impl Repository {
     /// Save edits to a fabric's details. Pairings are changed separately
     /// with `set_fabric_pairings`.
     pub async fn update_fabric(&self, id: FabricId, new: &NewFabric) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
         let result = sqlx::query(
             "UPDATE fabrics
-             SET name = ?, description = ?, colors = ?, keywords = ?, in_stock = ?
+             SET name = ?, description = ?, keywords = ?, in_stock = ?
              WHERE id = ?",
         )
         .bind(&new.name)
         .bind(&new.description)
-        .bind(Json(&new.colors))
         .bind(Json(&new.keywords))
         .bind(new.in_stock)
         .bind(id.0)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
         if result.rows_affected() == 0 {
             return Err(DbError::NotFound {
@@ -799,6 +1052,8 @@ impl Repository {
                 id: id.0,
             });
         }
+        set_item_colors(&mut tx, ColorList::Fabric, id.0, &new.colors).await?;
+        tx.commit().await?;
         Ok(())
     }
 
@@ -867,15 +1122,14 @@ impl Repository {
 
         let id: i64 = sqlx::query_scalar(
             "INSERT INTO accessories
-                 (kind, name, description, colors, colors_from_fabrics, tags, source, brand,
+                 (kind, name, description, colors_from_fabrics, tags, source, brand,
                   status, make_days, quantity)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              RETURNING id",
         )
         .bind(new.kind.to_sql())
         .bind(&new.name)
         .bind(&new.description)
-        .bind(Json(&new.colors))
         .bind(new.colors_from_fabrics)
         .bind(Json(&new.tags))
         .bind(source)
@@ -886,6 +1140,7 @@ impl Repository {
         .fetch_one(&mut *tx)
         .await?;
         insert_fabric_uses(&mut tx, id, &new.fabrics).await?;
+        set_item_colors(&mut tx, ColorList::Accessory, id, &new.colors).await?;
 
         // If we returned early with an error above, `tx` is dropped without
         // committing and SQLite rolls everything back.
@@ -907,7 +1162,7 @@ impl Repository {
         let mut tx = self.pool.begin().await?;
 
         let rows: Vec<AccessoryRow> = sqlx::query_as(
-            "SELECT id, kind, name, description, colors, colors_from_fabrics, tags, source, brand,
+            "SELECT id, kind, name, description, colors_from_fabrics, tags, source, brand,
                     status, pair_id, make_days, quantity
              FROM accessories
              WHERE ?1 IS NULL OR id = ?1
@@ -928,6 +1183,7 @@ impl Repository {
         .bind(only)
         .fetch_all(&mut *tx)
         .await?;
+        let mut colors = load_item_colors(&mut tx, ColorList::Accessory, only).await?;
         tx.commit().await?;
 
         let mut uses_by_accessory: HashMap<i64, Vec<FabricUse>> = HashMap::new();
@@ -944,7 +1200,8 @@ impl Repository {
         rows.into_iter()
             .map(|row| {
                 let fabrics = uses_by_accessory.remove(&row.id).unwrap_or_default();
-                row.into_model(fabrics)
+                let colors = colors.remove(&row.id).unwrap_or_default();
+                row.into_model(fabrics, colors)
             })
             .collect()
     }
@@ -957,7 +1214,7 @@ impl Repository {
 
         let result = sqlx::query(
             "UPDATE accessories
-             SET kind = ?, name = ?, description = ?, colors = ?, colors_from_fabrics = ?,
+             SET kind = ?, name = ?, description = ?, colors_from_fabrics = ?,
                  tags = ?, source = ?, brand = ?,
                  status = ?, make_days = ?, quantity = ?
              WHERE id = ?",
@@ -965,7 +1222,6 @@ impl Repository {
         .bind(new.kind.to_sql())
         .bind(&new.name)
         .bind(&new.description)
-        .bind(Json(&new.colors))
         .bind(new.colors_from_fabrics)
         .bind(Json(&new.tags))
         .bind(source)
@@ -988,6 +1244,7 @@ impl Repository {
             .execute(&mut *tx)
             .await?;
         insert_fabric_uses(&mut tx, id.0, &new.fabrics).await?;
+        set_item_colors(&mut tx, ColorList::Accessory, id.0, &new.colors).await?;
 
         tx.commit().await?;
         Ok(())
@@ -2500,8 +2757,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn colors_are_set_all_or_nothing_and_backups_are_real_copies() {
-        use crate::shades::Owner;
+    async fn palette_colors_are_shared_and_merged_with_a_backup_first() {
         // A real file: an in-memory database can't be copied to disk (and
         // `backup_to` says so rather than pretending).
         let dir = tempfile::tempdir().unwrap();
@@ -2519,49 +2775,144 @@ mod tests {
                 .await
                 .is_err()
         );
+        let fabric = |name: &str, colors: Vec<Color>| NewFabric {
+            name: name.into(),
+            description: String::new(),
+            colors,
+            keywords: vec![],
+            in_stock: true,
+        };
+        // "Black" and "black" are one palette color; the palette's shade wins.
         let velvet = db
-            .create_fabric(&NewFabric {
-                name: "Velvet".into(),
-                description: String::new(),
-                colors: vec![Color::with_hex("black", "#141414")],
-                keywords: vec![],
-                in_stock: true,
-            })
+            .create_fabric(&fabric("Velvet", vec![Color::with_hex("black", "#101010")]))
             .await
             .unwrap();
-        let black = vec![Color::with_hex("black", "#101010")];
-
-        // One unknown item: nothing is saved.
-        let bad = [
-            (Owner::Fabric(velvet), black.clone()),
-            (Owner::Accessory(AccessoryId(99)), black.clone()),
-        ];
-        assert!(db.set_colors(&bad).await.is_err());
+        let satin = db
+            .create_fabric(&fabric(
+                "Satin",
+                vec![
+                    Color::with_hex("Black", "#141414"),
+                    Color::with_hex("jet", "#0a0a0a"),
+                ],
+            ))
+            .await
+            .unwrap();
+        let palette = db.list_palette().await.unwrap();
+        assert_eq!(palette.len(), 2);
         assert_eq!(
-            db.get_fabric(velvet).await.unwrap().colors[0]
-                .hex
-                .as_deref(),
-            Some("#141414")
+            db.get_fabric(satin).await.unwrap().colors[0],
+            Color::with_hex("black", "#101010")
         );
 
-        // A backup taken now still has the old shade after the change.
-        let copy = dir.path().join("before.db");
-        db.backup_to(&copy).await.unwrap();
-        db.set_colors(&[(Owner::Fabric(velvet), black.clone())])
+        // Reshading a palette color changes every item using it.
+        let black = palette.iter().find(|c| c.name == "black").unwrap().id;
+        db.update_palette_color(black, "black", Some("#111111"))
             .await
             .unwrap();
-        assert_eq!(db.get_fabric(velvet).await.unwrap().colors, black);
+        for id in [velvet, satin] {
+            assert_eq!(
+                db.get_fabric(id).await.unwrap().colors[0].hex.as_deref(),
+                Some("#111111")
+            );
+        }
+        // Names stay unique, ignoring capitals.
+        assert!(matches!(
+            db.create_palette_color("JET", None).await,
+            Err(DbError::Duplicate { .. })
+        ));
+        // In use: can't be deleted.
+        assert!(matches!(
+            db.delete_palette_color(black).await,
+            Err(DbError::InUse { .. })
+        ));
+
+        // Merge jet into black, after a backup.
+        let jet = db
+            .list_palette()
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|c| c.name == "jet")
+            .unwrap()
+            .id;
+        let copy = dir.path().join("before.db");
+        db.backup_to(&copy).await.unwrap();
+        db.merge_palette_colors(&[jet], black).await.unwrap();
+        assert_eq!(
+            db.get_fabric(satin).await.unwrap().colors,
+            [Color::with_hex("black", "#111111")],
+            "black twice is kept once"
+        );
+        assert_eq!(db.list_palette().await.unwrap().len(), 1);
+        let uses = db.palette_uses().await.unwrap();
+        assert_eq!(uses.len(), 2);
+        // The backup still has jet.
         let old = Repository::connect(&format!("sqlite://{}", copy.display()))
             .await
             .unwrap();
+        assert_eq!(old.get_fabric(satin).await.unwrap().colors.len(), 2);
+        assert!(db.backup_to(&copy).await.is_err(), "won't overwrite");
+
+        // An unused color can go.
+        let spare = db.create_palette_color("spare", None).await.unwrap();
+        db.delete_palette_color(spare).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn migration_0013_moves_colors_into_the_palette_losing_nothing() {
+        let pool = database_at_version(12).await;
+        sqlx::raw_sql(
+            r##"INSERT INTO fabrics (id, name, colors) VALUES
+                 (1, 'Velvet', '[{"name":"pink","hex":"#d37cab"},{"name":"black","hex":"#101010"}]'),
+                 (2, 'Satin',  '[{"name":"pink","hex":"#d37cab"},{"name":"black"}]'),
+                 (3, 'Tulle',  '[{"name":"pink","hex":"#ffcef8"},{"name":"sparkly"}]'),
+                 (4, 'Plain',  '[]');
+               INSERT INTO accessories (id, kind, name, source, status, colors) VALUES
+                 (1, 'bow', 'Pink bow', 'handmade', 'ready', '[{"name":"Pink","hex":"#d37cab"}]');"##,
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+        let db = Repository::migrate(pool).await.unwrap();
+
+        let names: Vec<(String, Option<String>)> = db
+            .list_palette()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|c| (c.name, c.hex))
+            .collect();
         assert_eq!(
-            old.get_fabric(velvet).await.unwrap().colors[0]
-                .hex
-                .as_deref(),
-            Some("#141414")
+            names,
+            [
+                ("black".to_string(), Some("#101010".to_string())),
+                ("pink".to_string(), Some("#d37cab".to_string())),
+                ("pink (2)".to_string(), Some("#ffcef8".to_string())),
+                ("sparkly".to_string(), None),
+            ],
+            "most used pink first; the other gets (2)"
         );
-        // It won't overwrite an existing file.
-        assert!(db.backup_to(&copy).await.is_err());
+        assert_eq!(
+            db.get_fabric(FabricId(2)).await.unwrap().colors,
+            [
+                Color::with_hex("pink", "#d37cab"),
+                Color::with_hex("black", "#101010")
+            ],
+            "a shadeless black takes black's shade; order kept"
+        );
+        assert_eq!(
+            db.get_fabric(FabricId(3)).await.unwrap().colors,
+            [
+                Color::with_hex("pink (2)", "#ffcef8"),
+                Color::named("sparkly")
+            ]
+        );
+        assert!(db.get_fabric(FabricId(4)).await.unwrap().colors.is_empty());
+        assert_eq!(
+            db.get_accessory(AccessoryId(1)).await.unwrap().colors,
+            [Color::with_hex("pink", "#d37cab")],
+            "\"Pink\" is pink"
+        );
     }
 
     #[tokio::test]
@@ -2959,21 +3310,18 @@ mod tests {
 
     #[tokio::test]
     async fn migration_0004_turns_color_words_into_objects() {
-        // A fresh test database has no old rows for the migration to convert,
-        // so write one the old way (plain strings) and run its SQL again.
-        let db = Repository::in_memory().await.unwrap();
+        // A database from before 0004 (colors were plain words), migrated all
+        // the way: 0004 makes them objects, 0013 moves them into the palette.
+        let pool = database_at_version(3).await;
         sqlx::query(
             "INSERT INTO fabrics (name, description, colors, keywords, in_stock)
              VALUES ('Old', '', '[\"baby pink\",\"white\"]', '[]', 1),
                     ('Plain', '', '[]', '[]', 1)",
         )
-        .execute(&db.pool)
+        .execute(&pool)
         .await
         .unwrap();
-        sqlx::raw_sql(include_str!("../migrations/0004_color_swatches.sql"))
-            .execute(&db.pool)
-            .await
-            .unwrap();
+        let db = Repository::migrate(pool).await.unwrap();
 
         let fabrics = db.list_fabrics().await.unwrap();
         let old = fabrics.iter().find(|f| f.name == "Old").unwrap();

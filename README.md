@@ -26,7 +26,7 @@ take the photos, and it suggests what to wear from what's already in the stash.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
 templates · Pico CSS · a few small optional scripts · the `image` crate.
-235 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+233 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -114,7 +114,7 @@ Example: Halloween (post Oct 31, default lead times):
 | **Accessories** | Bows, scarves, costumes, hats, props: table or photo grid (small / medium / large cards), tags (plus their fabrics' tags), filter by kind, status, tag and warm/cool tone, sort by color, one-click status, how many you have (×2), fabrics by role and the matching partner chosen by typing part of a name (a new name makes a new fabric, in the stash or on the shopping list), matching sets (with suggested partners: same fabric, paired fabrics, or shared name words), photos |
 | **Outfits** | Pieces worn together (Glinda's crown, dress and wand), with notes and photos; ready once every piece is |
 | **Fabrics** | Stash and shopping list as a table or photo grid, tags, tag and warm/cool filters, sort by color, pairings, what each fabric is used by, photos |
-| **Shades** | Every picked shade, one card per color with all its shades (each shade shown once) plus similar shades of other names; merge into one shade, with a preview and an automatic database backup first |
+| **Palette** | Every color the stash uses, once, in rainbow order, with what uses it; add, rename and reshade (it changes everywhere), merge one color into another (with a preview and an automatic database backup first), delete unused ones |
 
 **Post ideas** are posts with no date yet, like an outing you want to post
 about "sometime". You can plan who wears what and the backdrop. The Posts
@@ -165,17 +165,16 @@ every shade picked anywhere in the stash, in rainbow order, to reuse with one
 click instead of picking it again. Color chips never replace a shade that's
 already set; they fill a color without one, or add a new color.
 
-**Shades** (linked from the Fabrics and Accessories pages) gathers every
-picked shade. A color picker rarely lands on the same value twice, so one
-"black" can become fifteen slightly different blacks. Each color gets one
-card with all its shades (every shade appears once), plus lone shades of other
-names that look like it (how alike: tight / medium / loose), unticked. Tick
-the shades you mean, then either **merge** them into the kept shade (under
-its name or a new one), or **rename** them, keeping their own shades, to
-split them off into a color of their own ("light sage" out of "sage"). Name
-suggestions put the names you already use on similar shades first. The
-preview shows every color that will change. Merging first saves a copy of the database in `backups/`, then
-switches every ticked color to the kept shade and its name.
+**The palette** (linked from the Fabrics and Accessories pages) is the one
+list of colors everything uses. A color picker rarely lands on the same value
+twice, so free picking turned one "black" into fifteen slightly different
+blacks; now fabrics and accessories point at palette colors, so renaming or
+reshading a color on the Palette page changes it everywhere, and two colors
+that should be one are **merged** (with a preview of every item that changes,
+and a copy of the database saved in `backups/` first). A color nothing uses can
+be deleted; one in use can't. Moving to the palette kept every color: a name
+used with several clearly different shades became "pink", "pink (2)", … to
+tidy up there.
 
 **"From your photos"** offers the main colors of an item's photos (including
 photos just chosen in the form, before saving). Each reuses one of your
@@ -208,7 +207,8 @@ out by the planner itself.
 
 | Model | Key fields |
 |---|---|
-| **Fabric** | name, description, colors (name + optional `#rrggbb` swatch), keywords, pairings, in stock |
+| **Palette color** | name (unique), optional `#rrggbb` shade; used by fabrics and accessories |
+| **Fabric** | name, description, colors (palette colors, in order), keywords, pairings, in stock |
 | **Accessory** (bow / scarf / costume / hat / prop) | name, description, tags, colors, fabrics (main/middle/accent), handmade or bought (brand), status (idea → in progress → ready), how many, matching pair |
 | **Outfit** | name, notes, pieces (accessories; a piece can be in several outfits); status worked out from its pieces |
 | **Event** | name, description, type, start/end date, keywords |
@@ -320,10 +320,12 @@ Settings (all optional environment variables):
   - [x] **M14a**: type-to-search when choosing fabrics and a matching partner
   - [x] **M14b**: fabric photos instead of long fabric names in the accessory list
   - [x] **M14c**: suggest a matching partner from fabric pairings
+- [ ] **M15**: The palette: one list of named colors that everything uses
+  - [x] **M15a**: palette colors (items point at them; edits change everywhere), moved over losing nothing; Palette page with merge, replacing the Shades page
+  - [ ] **M15b**: color rows on the forms pick from the palette; photo color ideas and "Pick from your shades" use it
+  - [ ] **M15c**: polish from real use
 
-Ideas for later: a palette-first color model (a short list of your own
-named shades that items choose from, with a guided pass to map existing
-colors onto it); consistent naming (a suggested name from the main fabric,
+Ideas for later: consistent naming (a suggested name from the main fabric,
 kind and size); outfits in suggestions; photos in the suggestion box; a
 calendar nudge for upcoming events with no post planned yet.
 
@@ -342,7 +344,7 @@ src/
   planner.rs  the scheduling engine + its tests
   suggest.rs  scores accessories and fabrics for an event, with reasons + tests
   palette.rs  finds a photo's main colors and names them (CIE Lab) + tests
-  shades.rs   groups near-duplicate shades and plans merges + tests
+  shades.rs   the shades in use: look-alike groups, matching photo colors + tests
   holidays.rs reads holidays.toml and calculates dates (Easter, nth weekday...) + tests
   photos/     uploaded photos + tests
     mod.rs      recognises files by their first bytes, saves them on disk
@@ -362,7 +364,7 @@ src/
     photos.rs   photo upload, serving and deleting; color ideas from photos
     series.rs   series pages (shared setup, posts, shared timeline)
     outfits.rs  outfit pages + tests
-    shades.rs   Shades page: color families, merge preview, backup + merge
+    palette.rs  Palette page: add, rename, reshade, merge (preview + backup), delete
     calendar.rs, posts.rs, events.rs, fabrics.rs, accessories.rs   page handlers
     tests.rs    request-level tests against an in-memory app
   main.rs     starts the server

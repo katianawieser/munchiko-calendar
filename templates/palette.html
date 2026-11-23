@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Palette{% endblock %}
+{% block content %}
+<h2>Palette</h2>
+{% if let Some(text) = notice %}<p class="notice good">✓ {{ text }}</p>{% endif %}
+{% include "form_errors.html" %}
+<p class="muted">Every color your fabrics and accessories use, once. They all point at these colors, so renaming or reshading one here changes it everywhere. Similar colors sit next to each other (rainbow order); to make two into one, merge them.</p>
+
+<details class="palette-add" {% if !errors.is_empty() && !new_name.is_empty() %}open{% endif %}>
+  <summary role="button" class="outline small">+ Add a color</summary>
+  <form method="post" action="/palette" class="palette-edit">
+    <label>Name <input name="name" value="{{ new_name }}" required></label>
+    <label>Shade <input type="color" name="hex" value="{{ new_hex }}"></label>
+    <label class="inline-check"><input type="checkbox" name="no_shade" {% if new_no_shade %}checked{% endif %}> No shade</label>
+    <button type="submit" class="small">Add</button>
+  </form>
+</details>
+
+<p>{{ rows.len() }} colors.</p>
+<datalist id="palette-names">{% for name in names %}<option value="{{ name }}">{% endfor %}</datalist>
+<table class="palette-table">
+  <thead><tr><th>Color</th><th>Used by</th><th></th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td class="nowrap">{% let color = row.color %}{% include "color_chip.html" %}{% if let Some(hex) = row.color.hex %} <small class="muted">{{ hex }}</small>{% endif %}</td>
+      <td>{% if row.uses == 0 %}<span class="muted">nothing</span>{% else %}<details><summary>{{ row.uses }} {% if row.uses == 1 %}item{% else %}items{% endif %}</summary>{% for user in row.users %}{% if !loop.first %}, {% endif %}<a href="{{ user.href }}">{{ user.label }}</a>{% endfor %}</details>{% endif %}</td>
+      <td>
+        <details class="palette-actions">
+          <summary>Edit</summary>
+          <form method="post" action="/palette/{{ row.id }}" class="palette-edit">
+            <label>Name <input name="name" value="{{ row.color.name }}" required></label>
+            <label>Shade <input type="color" name="hex" value="{{ row.picker }}"></label>
+            <label class="inline-check"><input type="checkbox" name="no_shade" {% if row.color.hex.is_none() %}checked{% endif %}> No shade</label>
+            <button type="submit" class="small">Save</button>
+          </form>
+          <form method="get" action="/palette/{{ row.id }}/merge" class="palette-edit">
+            <label>Merge into <input name="into" list="palette-names" placeholder="another color's name" autocomplete="off"></label>
+            <button type="submit" class="outline small">Preview the merge</button>
+          </form>
+          {% if row.uses == 0 %}
+          <form method="post" action="/palette/{{ row.id }}/delete" onsubmit="return confirm('Delete this color?')">
+            <button type="submit" class="danger outline small">Delete (nothing uses it)</button>
+          </form>
+          {% endif %}
+        </details>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

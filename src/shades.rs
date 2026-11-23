@@ -3,20 +3,17 @@
 //!
 //! Picking a shade with the color picker almost never lands on exactly the
 //! same value twice, so over time one "black" becomes fifteen slightly
-//! different blacks. This module groups them:
-//! - [`families`]: for the Shades page, one card per color name with all
-//!   its shades, plus lone shades of other names that look like it, so
-//!   every shade appears exactly once;
-//! - [`look_alike_groups`]: shades that look alike, whatever they're called
-//!   (used for the "Pick from your shades" chips).
+//! different blacks. Since the palette (M15a) every item uses palette
+//! colors, so this module now only:
+//! - collects the shades in use ([`collect`]);
+//! - groups look-alikes ([`look_alike_groups`], for "Pick from your shades");
+//! - matches a color found in a photo to one in use ([`match_shade`]).
 //!
-//! and works out what a merge would change ([`MergePlan`]), without touching
-//! a database: the caller saves the result. Like `planner` and `suggest`, it's
-//! pure, so it's easy to test.
+//! Like `planner` and `suggest`, it's pure, so it's easy to test.
 
 use std::collections::BTreeMap;
 
-use crate::models::{Accessory, AccessoryId, Color, Fabric, FabricId};
+use crate::models::{Accessory, AccessoryId, Fabric, FabricId};
 use crate::palette;
 
 /// Whose color list a color is in.
@@ -168,91 +165,6 @@ pub fn look_alike_groups(shades: &[Shade], closeness: Closeness) -> Vec<ShadeGro
     groups
 }
 
-/// One color family on the Shades page: every shade used under one name,
-/// plus lone shades of other names that look like it.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Family {
-    /// The family's name ("charcoal"); merged colors take it.
-    pub name: String,
-    /// Its shades, most used first: ticked for merging by default.
-    pub shades: Vec<Shade>,
-    /// Shades with another name that are the only shade of that name and
-    /// look like this family's main shade ("pumpkin" next to the oranges):
-    /// offered, but not ticked.
-    pub similar: Vec<Shade>,
-}
-
-impl Family {
-    pub fn leader(&self) -> &Shade {
-        &self.shades[0]
-    }
-}
-
-/// Color families with something to merge, each shade in exactly one.
-///
-/// Splitting by look alone (as [`look_alike_groups`] does) cuts a name with
-/// many shades into several groups (11 charcoals spread over 3 groups,
-/// each mixed with different neighbors), so the same name keeps coming
-/// back. Here a shade belongs to the family of its most used name. A shade
-/// that's the only one with its name joins the family whose main shade it
-/// looks most like (within `closeness`), as a "similar" one; lone shades
-/// that look like each other but like no family form a family of their own,
-/// named after the most used. Families with nothing to merge are left out.
-/// Biggest first.
-pub fn families(shades: &[Shade], closeness: Closeness) -> Vec<Family> {
-    let mut by_name: BTreeMap<&str, Vec<&Shade>> = BTreeMap::new();
-    for shade in shades {
-        by_name.entry(shade.name()).or_default().push(shade);
-    }
-    let mut families: Vec<Family> = Vec::new();
-    let mut lone: Vec<Shade> = Vec::new();
-    for (name, list) in by_name {
-        if list.len() > 1 {
-            // `shades` is most used first, so the lists are too.
-            families.push(Family {
-                name: name.to_string(),
-                shades: list.into_iter().cloned().collect(),
-                similar: Vec::new(),
-            });
-        } else {
-            lone.extend(list.into_iter().cloned());
-        }
-    }
-
-    // Lone shades join the nearest family, or group among themselves.
-    let mut unplaced = Vec::new();
-    for shade in lone {
-        let nearest = families
-            .iter_mut()
-            .map(|f| (palette::difference(f.leader().rgb, shade.rgb), f))
-            .filter(|(d, _)| *d < closeness.limit())
-            .min_by(|a, b| a.0.total_cmp(&b.0));
-        match nearest {
-            Some((_, family)) => family.similar.push(shade),
-            None => unplaced.push(shade),
-        }
-    }
-    unplaced.sort_by_key(|s| std::cmp::Reverse(s.uses.len()));
-    for group in look_alike_groups(&unplaced, closeness) {
-        if group.shades.len() > 1 {
-            let mut shades = group.shades.into_iter();
-            let leader = shades.next().unwrap();
-            families.push(Family {
-                name: leader.name().to_string(),
-                shades: vec![leader],
-                similar: shades.collect(),
-            });
-        }
-    }
-
-    families.sort_by(|a, b| {
-        (b.shades.len() + b.similar.len())
-            .cmp(&(a.shades.len() + a.similar.len()))
-            .then(a.name.cmp(&b.name))
-    });
-    families
-}
-
 /// How a newly found color (from a photo) compares with the stash's shades.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ShadeMatch<'a> {
@@ -278,103 +190,10 @@ pub fn match_shade(rgb: [u8; 3], stash: &[Shade]) -> ShadeMatch<'_> {
     }
 }
 
-/// Names to offer for (part of) a family, so names stay consistent: first
-/// the names it already uses, then names used anywhere in the stash (`all`)
-/// on a shade that looks like one of its shades (within `Closeness::Medium`),
-/// then the built-in names closest to its shades. Each once.
-pub fn name_ideas(family: &[&Shade], all: &[Shade]) -> Vec<String> {
-    let mut ideas: Vec<String> = Vec::new();
-    let mut add = |name: &str| {
-        if !ideas.iter().any(|n| n == name) {
-            ideas.push(name.to_string());
-        }
-    };
-    for shade in family {
-        for name in &shade.names {
-            add(name);
-        }
-    }
-    for other in all {
-        let near = family
-            .iter()
-            .any(|s| palette::difference(s.rgb, other.rgb) < Closeness::Medium.limit());
-        if near {
-            for name in &other.names {
-                add(name);
-            }
-        }
-    }
-    for shade in family {
-        for name in palette::nearest_names(shade.rgb, 2) {
-            add(name);
-        }
-    }
-    ideas
-}
-
-/// A change to some shades: every color using one of `from` takes `name`,
-/// and, for a merge, the one `shade` (the kept one). Without a `shade` it's
-/// a rename that keeps each color's own shade: that's how a subgroup is
-/// split off ("light sage" out of "sage").
-#[derive(Debug, Clone, PartialEq)]
-pub struct MergePlan {
-    /// The shades to change, including the kept one for a merge.
-    pub from: Vec<String>,
-    pub name: String,
-    /// `Some` merges into this shade; `None` only renames.
-    pub shade: Option<String>,
-}
-
-impl MergePlan {
-    /// `colors` after the change, or `None` if nothing in it changes. If it
-    /// leaves two colors with the same name, the first one stays.
-    pub fn apply(&self, colors: &[Color]) -> Option<Vec<Color>> {
-        let mut changed = false;
-        let mut result: Vec<Color> = Vec::new();
-        for color in colors {
-            let hit = color.hex.as_ref().is_some_and(|h| self.from.contains(h));
-            let color = if hit {
-                let new = Color {
-                    name: self.name.clone(),
-                    hex: self.shade.clone().or_else(|| color.hex.clone()),
-                };
-                changed |= new != *color;
-                new
-            } else {
-                color.clone()
-            };
-            if result.iter().any(|c| c.name == color.name) {
-                changed = true; // a repeat left by the change
-            } else {
-                result.push(color);
-            }
-        }
-        changed.then_some(result)
-    }
-
-    /// Every fabric and accessory whose colors change, with their new colors.
-    pub fn changes(
-        &self,
-        fabrics: &[Fabric],
-        accessories: &[Accessory],
-    ) -> Vec<(Owner, Vec<Color>)> {
-        let lists = fabrics
-            .iter()
-            .map(|f| (Owner::Fabric(f.id), &f.colors))
-            .chain(
-                accessories
-                    .iter()
-                    .map(|a| (Owner::Accessory(a.id), &a.colors)),
-            );
-        lists
-            .filter_map(|(owner, colors)| self.apply(colors).map(|new| (owner, new)))
-            .collect()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::Color;
 
     fn fabric(id: i64, colors: Vec<Color>) -> Fabric {
         Fabric {
@@ -430,127 +249,6 @@ mod tests {
     }
 
     #[test]
-    fn each_shade_is_in_one_family() {
-        // Two blacks and a lone, black-looking charcoal; a red with a lone
-        // "cherry" next to it; and a lone "sparkle" gold that looks like nothing.
-        let fabrics = vec![
-            fabric(1, vec![c("black", "#101010"), c("red", "#cc0000")]),
-            fabric(2, vec![c("black", "#101010"), c("red", "#cd0102")]),
-            fabric(3, vec![c("black", "#141414"), c("charcoal", "#121212")]),
-            fabric(4, vec![c("cherry", "#c80505"), c("gold", "#d4af37")]),
-            fabric(5, vec![c("plum", "#5a2050"), c("aubergine", "#5c2252")]),
-        ];
-        let families = families(&collect(&fabrics, &[]), Closeness::Medium);
-        let summary: Vec<(String, Vec<&str>, Vec<&str>)> = families
-            .iter()
-            .map(|f| {
-                (
-                    f.name.clone(),
-                    f.shades.iter().map(|s| s.hex.as_str()).collect(),
-                    f.similar.iter().map(|s| s.hex.as_str()).collect(),
-                )
-            })
-            .collect();
-        assert_eq!(
-            summary,
-            [
-                (
-                    "black".to_string(),
-                    vec!["#101010", "#141414"],
-                    vec!["#121212"]
-                ),
-                (
-                    "red".to_string(),
-                    vec!["#cd0102", "#cc0000"], // equally used: rainbow order leads
-                    vec!["#c80505"]
-                ),
-                // Two lone look-alikes with no family make one.
-                ("aubergine".to_string(), vec!["#5c2252"], vec!["#5a2050"]),
-            ],
-            "gold looks like nothing: nothing to merge"
-        );
-        let all: Vec<&str> = families
-            .iter()
-            .flat_map(|f| f.shades.iter().chain(&f.similar))
-            .map(|s| s.hex.as_str())
-            .collect();
-        let mut unique = all.clone();
-        unique.sort();
-        unique.dedup();
-        assert_eq!(all.len(), unique.len(), "no shade twice");
-    }
-
-    #[test]
-    fn a_merge_renames_and_reshades_and_drops_repeats() {
-        let plan = MergePlan {
-            from: vec!["#101010".into(), "#121212".into(), "#141414".into()],
-            name: "black".into(),
-            shade: Some("#101010".into()),
-        };
-        let changes = plan.changes(&stash(), &[]);
-        let owners: Vec<Owner> = changes.iter().map(|(o, _)| *o).collect();
-        assert_eq!(
-            owners,
-            [Owner::Fabric(FabricId(3)), Owner::Fabric(FabricId(4))]
-        );
-        // Fabric 4's near-black "charcoal" becomes black (the kept name).
-        assert_eq!(
-            changes[1].1,
-            [c("black", "#101010"), Color::from("sparkly")]
-        );
-
-        // Two colors that end up with one name: the first stays.
-        let both = [
-            c("black", "#141414"),
-            c("black", "#101010"),
-            c("red", "#cc0000"),
-        ];
-        assert_eq!(
-            plan.apply(&both).unwrap(),
-            [c("black", "#101010"), c("red", "#cc0000")]
-        );
-        // Nothing to do: None.
-        assert_eq!(plan.apply(&[c("red", "#cc0000")]), None);
-    }
-
-    #[test]
-    fn a_rename_splits_shades_off_and_keeps_them() {
-        // Two pale sages become "light sage"; the dark one stays "sage".
-        let fabrics = vec![
-            fabric(1, vec![c("sage", "#c0cc97"), c("red", "#cc0000")]),
-            fabric(2, vec![c("sage", "#bebd78")]),
-            fabric(3, vec![c("sage", "#629370")]),
-        ];
-        let plan = MergePlan {
-            from: vec!["#c0cc97".into(), "#bebd78".into()],
-            name: "light sage".into(),
-            shade: None,
-        };
-        let changes = plan.changes(&fabrics, &[]);
-        assert_eq!(changes.len(), 2);
-        assert_eq!(
-            changes[0].1,
-            [c("light sage", "#c0cc97"), c("red", "#cc0000")],
-            "own shade kept"
-        );
-        assert_eq!(changes[1].1, [c("light sage", "#bebd78")]);
-
-        // Merging under a new name renames the kept shade's colors too.
-        let merge = MergePlan {
-            shade: Some("#c0cc97".into()),
-            ..plan
-        };
-        assert_eq!(
-            merge.changes(&fabrics, &[])[1].1,
-            [c("light sage", "#c0cc97")]
-        );
-        assert_eq!(
-            merge.apply(&[c("sage", "#c0cc97")]).unwrap(),
-            [c("light sage", "#c0cc97")]
-        );
-    }
-
-    #[test]
     fn found_colors_reuse_a_matching_shade() {
         let stash = collect(&[fabric(1, vec![c("sage", "#a3a264")])], &[]);
         let sage = &stash[0];
@@ -567,26 +265,5 @@ mod tests {
         // Nothing like it.
         assert_eq!(match_shade([0, 0, 200], &stash), ShadeMatch::New);
         assert_eq!(match_shade([0, 0, 200], &[]), ShadeMatch::New);
-    }
-
-    #[test]
-    fn name_ideas_put_your_own_names_first() {
-        let stash = collect(
-            &[
-                fabric(1, vec![c("sage", "#a3a264"), c("sage", "#c0cc97")]),
-                // Looks like the pale sage, called something else elsewhere.
-                fabric(2, vec![c("light sage", "#c2cd99")]),
-                fabric(3, vec![c("navy", "#1f2531")]),
-            ],
-            &[],
-        );
-        let sages: Vec<&Shade> = stash.iter().filter(|s| s.name() == "sage").collect();
-        let ideas = name_ideas(&sages, &stash);
-        assert_eq!(&ideas[..2], ["sage", "light sage"], "{ideas:?}");
-        assert!(
-            !ideas.contains(&"navy".to_string()),
-            "not near: not offered"
-        );
-        assert!(ideas.len() > 2, "built-in names come after");
     }
 }

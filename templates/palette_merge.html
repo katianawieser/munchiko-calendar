@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Merge colors{% endblock %}
+{% block content %}
+{% if let Some(problem) = problem %}
+<h2>Merge {% let color = from %}{% include "color_chip.html" %}</h2>
+<p class="notice bad">{{ problem }}</p>
+<p><a href="/palette" role="button" class="secondary outline">Back to the palette</a></p>
+{% else %}
+<h2>Merge {% let color = from %}{% include "color_chip.html" %} into {% let color = into %}{% include "color_chip.html" %}</h2>
+<p>Every item using “{{ from.name }}” will use “{{ into.name }}” instead, and “{{ from.name }}” leaves the palette. {% if rows.is_empty() %}Nothing uses it yet.{% else %}This changes <strong>{{ rows.len() }} {% if rows.len() == 1 %}item{% else %}items{% endif %}</strong> (the merged color is outlined).{% endif %} A copy of the database is saved in the <code>backups</code> folder first.</p>
+{% if !rows.is_empty() %}
+<table>
+  <thead><tr><th>Item</th><th>Colors now</th><th>After the merge</th></tr></thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td><a href="{{ row.link.href }}">{{ row.link.label }}</a></td>
+      <td>{% for color in row.before %}{% include "color_chip.html" %} {% endfor %}</td>
+      <td>{% for (color, merged) in row.after %}<span class="{% if merged %}merged-chip{% endif %}">{% include "color_chip.html" %}</span> {% endfor %}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+<form method="post" action="/palette/{{ id }}/merge" class="form-actions">
+  <input type="hidden" name="into" value="{{ into_name }}">
+  <button type="submit">Merge</button>
+  <a href="/palette" role="button" class="secondary outline">Cancel</a>
+</form>
+{% endif %}
+{% endblock %}

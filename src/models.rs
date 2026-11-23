@@ -36,6 +36,30 @@ pub struct SeriesId(pub i64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct OutfitId(pub i64);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct PaletteColorId(pub i64);
+
+/// One of the palette's colors. Fabrics and accessories use palette colors
+/// (by reference: editing one changes it everywhere); everything that reads
+/// an item's colors sees them as plain [`Color`] values.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PaletteColor {
+    pub id: PaletteColorId,
+    /// Unique, ignoring capitals.
+    pub name: String,
+    /// `#rrggbb`, or `None` for a name-only color ("sparkly").
+    pub hex: Option<String>,
+}
+
+impl PaletteColor {
+    pub fn color(&self) -> Color {
+        Color {
+            name: self.name.clone(),
+            hex: self.hex.clone(),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // The models
 // ---------------------------------------------------------------------------

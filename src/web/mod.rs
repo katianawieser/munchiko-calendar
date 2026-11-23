@@ -26,10 +26,10 @@ pub mod forms;
 pub mod ideas;
 pub mod month;
 mod outfits;
+mod palette;
 mod photos;
 mod posts;
 mod series;
-mod shades;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -104,8 +104,13 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .merge(uploads)
         .route("/colors/name", get(colors::name_for_hex))
-        .route("/shades", get(shades::list))
-        .route("/shades/merge", get(shades::preview).post(shades::apply))
+        .route("/palette", get(palette::list).post(palette::create))
+        .route("/palette/{id}", post(palette::update))
+        .route("/palette/{id}/delete", post(palette::delete))
+        .route(
+            "/palette/{id}/merge",
+            get(palette::merge_preview).post(palette::merge),
+        )
         .route(
             "/colors/from-photos",
             post(colors::from_photos).layer(DefaultBodyLimit::max(photos::MAX_UPLOAD_BYTES)),

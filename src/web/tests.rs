@@ -2683,11 +2683,12 @@ async fn chosen_photos_offer_their_colors_before_saving() {
 }
 
 // ---------------------------------------------------------------------------
-// Shades: look-alikes, same names, merging (M13c)
+// The palette (M15a)
 // ---------------------------------------------------------------------------
 
 /// The app on a real database file (backups need one) with a backups folder,
-/// and four fabrics: three near-blacks under two names, and a red.
+/// and four fabrics: blacks, a charcoal and a red (the palette has three
+/// colors: "black" keeps the first shade it was saved with).
 async fn setup_shades() -> (Router, Repository, TempDir) {
     let dir = tempfile::tempdir().unwrap();
     let url = format!("sqlite://{}", dir.path().join("live.db").display());
@@ -2719,212 +2720,178 @@ async fn setup_shades() -> (Router, Repository, TempDir) {
     (router(state), db, dir)
 }
 
-#[tokio::test]
-async fn each_shade_is_shown_once_in_its_color_family() {
-    let (app, _, _dir) = setup_shades().await;
-    let (status, html) = get(&app, "/shades").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        html.contains("4 shades; 1 color has shades to merge"),
-        "{html}"
-    );
-    // The blacks, ticked; the most used one kept.
-    assert!(html.contains("<strong>black</strong>: 2 shades, 1 similar"));
-    assert!(html.contains("name=\"from\" value=\"#101010\" checked"));
-    assert!(html.contains("name=\"keep\" value=\"#101010\" checked"));
-    assert!(html.contains("name=\"from\" value=\"#141414\" checked"));
-    // The lone near-black "charcoal" is offered but not ticked.
-    assert!(
-        html.contains("name=\"from\" value=\"#121212\"  aria-label"),
-        "{html}"
-    );
-    assert!(html.contains("<a href=\"/fabrics/3\">Tweed</a>"));
-    // Each shade once.
-    assert_eq!(html.matches("name=\"from\" value=\"#101010\"").count(), 1);
-    // The red is alone and looks like nothing: no card.
-    assert!(!html.contains("value=\"#cc0000\""));
+/// The palette color called `name`.
+async fn palette_id(db: &Repository, name: &str) -> i64 {
+    db.list_palette()
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|c| c.name == name)
+        .unwrap()
+        .id
+        .0
 }
 
 #[tokio::test]
-async fn merging_look_alikes_previews_backs_up_and_applies() {
-    let (app, db, dir) = setup_shades().await;
-    let fields = "closeness=medium&from=%23101010&from=%23121212&from=%23141414&keep=%23101010";
-
-    // The preview changes nothing yet.
-    let (status, html) = get(&app, &format!("/shades/merge?{fields}")).await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(
-        html.contains("This changes <strong>2 colors on 2 items</strong>"),
-        "{html}"
-    );
-    assert!(html.contains(">Tweed</a>") && html.contains(">Felt</a>"));
-    assert!(!html.contains(">Velvet</a>"), "already that shade");
-    assert_eq!(
-        db.get_fabric(FabricId(3)).await.unwrap().colors[0].name,
-        "charcoal"
-    );
-
-    // Merge: a backup first, then every look-alike becomes the kept black.
-    let reply = post(&app, "/shades/merge", fields).await;
-    assert_eq!(reply.status, StatusCode::SEE_OTHER);
-    let location = reply.location.unwrap();
-    assert!(
-        location.starts_with(
-            "/shades?closeness=medium&merged=2+colors+on+2+items&backup=munchiko-before-merge-"
-        ),
-        "{location}"
-    );
-    let backups: Vec<_> = std::fs::read_dir(dir.path().join("backups"))
-        .unwrap()
-        .collect();
-    assert_eq!(backups.len(), 1);
-    assert_eq!(
-        db.get_fabric(FabricId(3)).await.unwrap().colors,
-        [
-            Color::with_hex("black", "#101010"),
-            Color::with_hex("red", "#cc0000")
-        ],
-        "renamed to the kept shade's name"
-    );
+async fn the_palette_lists_each_color_once_with_what_uses_it() {
+    let (app, db, _dir) = setup_shades().await;
+    // Felt's black was saved with another shade, but "black" is one color.
     assert_eq!(
         db.get_fabric(FabricId(4)).await.unwrap().colors,
         [Color::with_hex("black", "#101010")]
     );
-    let (_, html) = get(&app, &location).await;
-    assert!(html.contains("Done: 2 colors on 2 items changed"));
-    assert!(html.contains("Nothing to merge."));
+    let (status, html) = get(&app, "/palette").await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(html.contains("<p>3 colors.</p>"), "{html}");
+    assert!(
+        html.contains("<summary>3 items</summary>"),
+        "black: Velvet, Satin, Felt"
+    );
+    assert!(html.contains("<a href=\"/fabrics/3\">Tweed</a>"));
+    assert!(html.contains("<option value=\"charcoal\">"));
+    // Red before black and charcoal: rainbow order, greys last.
+    assert!(html.find(">red</span>").unwrap() < html.find(">black</span>").unwrap());
+}
 
-    // Again: nothing to change, so no second backup.
-    post(&app, "/shades/merge", fields).await;
+#[tokio::test]
+async fn palette_colors_are_added_edited_and_deleted() {
+    let (app, db, _dir) = setup_shades().await;
+    let reply = post(&app, "/palette", "name=Teal&hex=%23008080").await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert!(
+        db.list_palette()
+            .await
+            .unwrap()
+            .iter()
+            .any(|c| c.name == "teal" && c.hex.as_deref() == Some("#008080"))
+    );
+    let reply = post(&app, "/palette", "name=Glitter&hex=%23ffffff&no_shade=on").await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert!(
+        db.list_palette()
+            .await
+            .unwrap()
+            .iter()
+            .any(|c| c.name == "glitter" && c.hex.is_none())
+    );
+
+    // Mistakes are explained.
+    let reply = post(&app, "/palette", "name=BLACK&hex=%23000000").await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(
+        reply
+            .html
+            .contains("There&#39;s already a color called “black”."),
+        "{}",
+        reply.html
+    );
+    let reply = post(&app, "/palette", "name=&hex=%23000000").await;
+    assert!(reply.html.contains("Give the color a name."));
+
+    // Reshading changes every item using it.
+    let charcoal = palette_id(&db, "charcoal").await;
+    let reply = post(
+        &app,
+        &format!("/palette/{charcoal}"),
+        "name=charcoal&hex=%23333333",
+    )
+    .await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    assert_eq!(
+        db.get_fabric(FabricId(3)).await.unwrap().colors[0]
+            .hex
+            .as_deref(),
+        Some("#333333")
+    );
+    let reply = post(
+        &app,
+        &format!("/palette/{charcoal}"),
+        "name=black&hex=%23333333",
+    )
+    .await;
+    assert!(reply.html.contains("merge them instead"));
+
+    // In use: not deleted. Unused: deleted.
+    let reply = post(&app, &format!("/palette/{charcoal}/delete"), "").await;
+    assert_eq!(reply.status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert!(reply.html.contains("still used"));
+    let teal = palette_id(&db, "teal").await;
+    let reply = post(&app, &format!("/palette/{teal}/delete"), "").await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+}
+
+#[tokio::test]
+async fn merging_palette_colors_previews_backs_up_and_applies() {
+    let (app, db, dir) = setup_shades().await;
+    let charcoal = palette_id(&db, "charcoal").await;
+
+    let (_, html) = get(&app, &format!("/palette/{charcoal}/merge?into=nobody")).await;
+    assert!(html.contains("There&#39;s no color called “nobody”."));
+    let (_, html) = get(&app, &format!("/palette/{charcoal}/merge?into=charcoal")).await;
+    assert!(html.contains("That&#39;s the same color."));
+
+    // The preview changes nothing yet.
+    let (_, html) = get(&app, &format!("/palette/{charcoal}/merge?into=Black")).await;
+    assert!(
+        html.contains("This changes <strong>1 item</strong>"),
+        "{html}"
+    );
+    assert!(html.contains(">Tweed</a>"));
+    assert_eq!(db.list_palette().await.unwrap().len(), 3);
+
+    let reply = post(&app, &format!("/palette/{charcoal}/merge"), "into=Black").await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+    let location = reply.location.unwrap();
+    assert!(
+        location
+            .starts_with("/palette?done=Merged+charcoal+into+black&backup=munchiko-before-merge-"),
+        "{location}"
+    );
     assert_eq!(
         std::fs::read_dir(dir.path().join("backups"))
             .unwrap()
             .count(),
         1
     );
+    assert_eq!(
+        db.get_fabric(FabricId(3)).await.unwrap().colors,
+        [
+            Color::with_hex("black", "#101010"),
+            Color::with_hex("red", "#cc0000")
+        ]
+    );
+    assert_eq!(db.list_palette().await.unwrap().len(), 2);
+    let (_, html) = get(&app, &location).await;
+    assert!(html.contains("Merged charcoal into black. A copy of the database from before was saved as backups/munchiko-before-merge-"));
 }
 
 #[tokio::test]
-async fn unticked_shades_stay_as_they_are() {
-    let (app, db, _dir) = setup_shades().await;
-    // Merge only Felt's black into the kept one; Tweed's charcoal stays.
-    let fields = "closeness=medium&from=%23101010&from=%23141414&keep=%23101010";
-    let reply = post(&app, "/shades/merge", fields).await;
-    assert_eq!(reply.status, StatusCode::SEE_OTHER);
-    assert_eq!(
-        db.get_fabric(FabricId(4)).await.unwrap().colors[0]
-            .hex
-            .as_deref(),
-        Some("#101010")
-    );
-    assert_eq!(
-        db.get_fabric(FabricId(3)).await.unwrap().colors[0],
-        Color::with_hex("charcoal", "#121212")
-    );
-}
-
-#[tokio::test]
-async fn merge_requests_are_checked() {
-    let (app, _, _dir) = setup_shades().await;
-    // The kept shade must be a real one in the stash...
-    let (status, _) = get(&app, "/shades/merge?from=%23121212&keep=%23abcdef").await;
-    assert_eq!(status, StatusCode::NOT_FOUND);
-    // ...but it counts as ticked even if its box wasn't.
-    let (status, html) = get(&app, "/shades/merge?from=%23121212&keep=%23101010").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(html.contains("1 color on 1 item"), "{html}");
-    let (status, _) = get(&app, "/shades/merge?from=red&keep=red").await;
-    assert_eq!(status, StatusCode::BAD_REQUEST);
-
-    // Without a backups folder (the in-memory test app), merging is refused
-    // and nothing changes.
+async fn merging_needs_a_backups_folder() {
+    // The in-memory test app has none: refused, nothing changes.
     let (app, db, _) = setup(d(2026, 10, 5)).await;
-    db.create_fabric(&crate::db::NewFabric {
-        name: "Felt".into(),
-        description: String::new(),
-        colors: vec![Color::with_hex("black", "#141414")],
-        keywords: vec![],
-        in_stock: true,
-    })
-    .await
-    .unwrap();
-    let felt = db
-        .list_fabrics()
+    for name in ["Felt", "Velvet"] {
+        db.create_fabric(&crate::db::NewFabric {
+            name: name.into(),
+            description: String::new(),
+            colors: vec![Color::with_hex(name.to_lowercase(), "#141414")],
+            keywords: vec![],
+            in_stock: true,
+        })
         .await
-        .unwrap()
-        .into_iter()
-        .find(|f| f.name == "Felt")
         .unwrap();
-    db.create_fabric(&crate::db::NewFabric {
-        name: "Velvet".into(),
-        description: String::new(),
-        colors: vec![Color::with_hex("black", "#101010")],
-        keywords: vec![],
-        in_stock: true,
-    })
-    .await
-    .unwrap();
-    let reply = post(
-        &app,
-        "/shades/merge",
-        "from=%23101010&from=%23141414&keep=%23101010",
-    )
-    .await;
+    }
+    let felt = palette_id(&db, "felt").await;
+    let reply = post(&app, &format!("/palette/{felt}/merge"), "into=velvet").await;
     assert_eq!(reply.status, StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(
-        db.get_fabric(felt.id).await.unwrap().colors[0]
-            .hex
-            .as_deref(),
-        Some("#141414")
+        db.list_palette()
+            .await
+            .unwrap()
+            .iter()
+            .filter(|c| c.name == "felt")
+            .count(),
+        1
     );
-}
-
-#[tokio::test]
-async fn shades_can_be_renamed_to_split_them_off_or_merged_under_a_new_name() {
-    let (app, db, _dir) = setup_shades().await;
-    // The card has a Name box with suggestions and both buttons.
-    let (_, html) = get(&app, "/shades").await;
-    assert!(html.contains("name=\"new_name\" list=\"names-0\" placeholder=\"black\""));
-    assert!(
-        html.contains("<datalist id=\"names-0\"><option value=\"black\">"),
-        "{html}"
-    );
-    assert!(html.contains("name=\"action\" value=\"rename\""));
-    // A "tick all" box per card (shown by page.js); it has no name, so it's
-    // never sent with the form.
-    assert!(html.contains("class=\"toggle-all\" data-boxes=\"from\" checked hidden"));
-
-    // Rename without a name: explained, nothing changes.
-    let (status, html) = get(&app, "/shades/merge?action=rename&from=%23141414&new_name=").await;
-    assert_eq!(status, StatusCode::OK);
-    assert!(html.contains("Type the new name for the ticked shades."));
-
-    // Rename Felt's black to "soft black": its own shade stays.
-    let rename = "closeness=medium&action=rename&from=%23141414&keep=%23101010&new_name=Soft+Black";
-    let (_, html) = get(&app, &format!("/shades/merge?{rename}")).await;
-    assert!(html.contains("Rename to “soft black”"), "{html}");
-    assert!(html.contains("1 color on 1 item"));
-    let reply = post(&app, "/shades/merge", rename).await;
-    assert_eq!(reply.status, StatusCode::SEE_OTHER);
-    assert_eq!(
-        db.get_fabric(FabricId(4)).await.unwrap().colors,
-        [Color::with_hex("soft black", "#141414")]
-    );
-    assert_eq!(
-        db.get_fabric(FabricId(1)).await.unwrap().colors[0].name,
-        "black",
-        "unticked: untouched"
-    );
-
-    // Merge under a new name: the kept shade's own colors are renamed too.
-    let merge = "closeness=medium&action=merge&from=%23101010&keep=%23101010&new_name=jet";
-    post(&app, "/shades/merge", merge).await;
-    for id in [1, 2] {
-        assert_eq!(
-            db.get_fabric(FabricId(id)).await.unwrap().colors[0],
-            Color::with_hex("jet", "#101010")
-        );
-    }
 }
 
 // ---------------------------------------------------------------------------

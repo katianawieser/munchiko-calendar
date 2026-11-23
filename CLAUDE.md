@@ -517,6 +517,27 @@ See README.md for the planning rules, data model and roadmap.
   datalist; unknown name → "+ new palette color" with shade, added on save), photo
   ideas map to palette, Your shades → palette chips, Shades page removed. **M15c**
   polish from real use. Check in after each; test migration on copies.
+- **M15a done:** migration 0013 `palette_colors` (name UNIQUE NOCASE, hex NULL or
+  lowercase `#rrggbb` GLOB) + `fabric_colors` / `accessory_colors` (owner, position,
+  palette_color_id; owner CASCADE, palette NO ACTION); lossless move: one entry per
+  lower(name)+hex (most used first, extra shades "name (2)"…; shadeless uses join
+  the name's first entry), positions kept, then `ALTER TABLE … DROP COLUMN colors`
+  (no rebuild, so no cascade traps). Real data: 372 uses → 271+101 links, 95 palette
+  colors, 1 without a shade, 0 differences (checked position-by-position on copies,
+  also via the app's own migration). Rust: `models::{PaletteColorId, PaletteColor}`;
+  items still READ `Vec<Color>` (loaded through links); saving resolves each Color
+  BY NAME (`palette_ids_for`: existing name → that color, palette shade wins, a
+  shadeless palette color takes the given shade; new name → added); same color twice
+  kept once. Repository: `list_palette`, `palette_uses`, `create/update/
+  delete_palette_color` (`DbError::Duplicate`, InUse), `merge_palette_colors`
+  (repoint links, drop repeats keeping the first by position, delete merged).
+  `web/palette.rs` + `palette.html`/`palette_merge.html`: rainbow list (no-shade
+  last), uses with links, per-row Edit fold-out (rename/reshade with "No shade",
+  Merge into (datalist) → preview → POST does `backup` (VACUUM INTO) then merge),
+  delete if unused, add form. Shades page REMOVED (web/shades.rs + 3 templates);
+  `shades.rs` keeps collect / look_alike_groups / match_shade. Interim until M15b:
+  color rows still have pickers, but an existing name uses the palette's shade (note
+  under the rows says so). Old 0004 test now migrates a version-3 DB all the way.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
