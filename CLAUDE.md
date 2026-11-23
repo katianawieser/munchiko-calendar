@@ -589,6 +589,21 @@ See README.md for the planning rules, data model and roadmap.
   `suggested_name` (nearest_name of its hex, if different) and renames keeping
   the hex; if the name is taken (`DbError::Duplicate`) it redirects to the merge
   preview, and the page labels that link "merge into “X”" (`everyday_taken`).
+- **Backups tidy (2026-11-23):** `web/palette.rs::backups_to_remove` (pure, tested)
+  + `prune_backups` after each merge backup: keep the 10 newest
+  `munchiko-before-merge-*.db` (with -wal/-shm); never touches other files. One-time
+  cleanup of Katiana's folder: 121 → 10 merge backups (26 MB → 2.5 MB), kept
+  `munchiko-before-palette-2026-11-23-123623.db` (integrity ok).
+- **Portfolio refresh plan (her answers):** R1 = ~8 screenshots (Firefox, 2x, her
+  real data on a scratch copy) + README pitch/highlights; R2 = DESIGN.md update
+  (outfits as copies + offers, Done buttons change items, Shades → measured drift →
+  palette migration, measure-before-build partner ideas, logic-in-Rust/JS-for-
+  presentation rule, Firefox testing + bugs it caught, VACUUM INTO + in-memory trap,
+  xkcd vs Wikipedia names; fix "one optional script") + tag v2.0 locally. She sets
+  up the demo posts herself in the app first; push to GitHub only after she reviews.
+  Shot list: calendar (Done buttons), post with outfit, suggestions, accessory grid,
+  accessory form (name boxes/palette/partner ideas), colors from a photo, Palette
+  page, guided deletes.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
