@@ -5,9 +5,9 @@
 //! same value twice, so over time one "black" becomes fifteen slightly
 //! different blacks. Since the palette (M15a) every item uses palette
 //! colors, so this module now only:
-//! - collects the shades in use ([`collect`]);
-//! - groups look-alikes ([`look_alike_groups`], for "Pick from your shades");
-//! - matches a color found in a photo to one in use ([`match_shade`]).
+//! - collects the shades in use ([`collect`]) or in the palette
+//!   ([`from_palette`]);
+//! - matches a color found in a photo to one of them ([`match_shade`]).
 //!
 //! Like `planner` and `suggest`, it's pure, so it's easy to test.
 
@@ -41,28 +41,7 @@ impl Shade {
     }
 }
 
-/// Shades shown together, most used first.
-#[derive(Debug, Clone, PartialEq)]
-pub struct ShadeGroup {
-    /// Set for a "same name" group: only uses under this name count, and a
-    /// merge only changes those.
-    pub name: Option<String>,
-    pub shades: Vec<Shade>,
-}
-
-impl ShadeGroup {
-    /// The most used shade: the one to keep unless chosen otherwise.
-    pub fn leader(&self) -> &Shade {
-        &self.shades[0]
-    }
-
-    /// How many colors use a shade in this group.
-    pub fn use_count(&self) -> usize {
-        self.shades.iter().map(|s| s.uses.len()).sum()
-    }
-}
-
-/// How close two shades must be to count as look-alikes.
+/// How close two shades must be to count as the same or as close.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Closeness {
     /// ΔE under 5: only differences that are barely visible.
@@ -137,32 +116,6 @@ fn most_used_names(uses: &[(Owner, String)]) -> Vec<String> {
     let mut names: Vec<(&str, usize)> = counts.into_iter().collect();
     names.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(b.0)));
     names.into_iter().map(|(n, _)| n.to_string()).collect()
-}
-
-/// Shades that look alike, grouped. Going from the most used shade down,
-/// each shade joins the group whose leader (its most used shade) is closest,
-/// if that's within `closeness`; otherwise it starts a group of its own. So
-/// every shade in a group looks like the leader, and the leader is the
-/// shade people have used most. `shades` must be in [`collect`]'s order.
-/// Groups come back in rainbow order of their leaders.
-pub fn look_alike_groups(shades: &[Shade], closeness: Closeness) -> Vec<ShadeGroup> {
-    let mut groups: Vec<ShadeGroup> = Vec::new();
-    for shade in shades {
-        let nearest = groups
-            .iter_mut()
-            .map(|g| (palette::difference(g.leader().rgb, shade.rgb), g))
-            .filter(|(d, _)| *d < closeness.limit())
-            .min_by(|a, b| a.0.total_cmp(&b.0));
-        match nearest {
-            Some((_, group)) => group.shades.push(shade.clone()),
-            None => groups.push(ShadeGroup {
-                name: None,
-                shades: vec![shade.clone()],
-            }),
-        }
-    }
-    groups.sort_by_key(|g| palette::rainbow_order(g.leader().rgb));
-    groups
 }
 
 /// The palette's shaded colors as shades (with no uses), for matching a
@@ -246,24 +199,6 @@ mod tests {
         assert_eq!(shades[0].hex, "#101010", "most used first");
         assert_eq!(shades[0].uses.len(), 2);
         assert_eq!(shades[0].name(), "black");
-    }
-
-    #[test]
-    fn look_alikes_group_around_the_most_used_shade() {
-        let shades = collect(&stash(), &[]);
-        let groups = look_alike_groups(&shades, Closeness::Medium);
-        let blacks = groups.iter().find(|g| g.leader().hex == "#101010").unwrap();
-        let mut hexes: Vec<&str> = blacks.shades.iter().map(|s| s.hex.as_str()).collect();
-        assert_eq!(hexes[0], "#101010", "the most used leads");
-        hexes.sort();
-        // Both near-blacks join, whatever they're called; #333333 is too far.
-        assert_eq!(hexes, ["#101010", "#121212", "#141414"]);
-        assert_eq!(blacks.use_count(), 4);
-        // Tight keeps more apart than loose.
-        assert!(
-            look_alike_groups(&shades, Closeness::Tight).len()
-                >= look_alike_groups(&shades, Closeness::Loose).len()
-        );
     }
 
     #[test]
