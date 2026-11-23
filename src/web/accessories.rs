@@ -34,23 +34,40 @@ fn describe_source(source: &Source) -> String {
     }
 }
 
-/// "Orange velvet (main), Black satin (middle)"
-fn describe_fabrics(accessory: &Accessory, fabrics: &[Fabric]) -> String {
+/// One of an accessory's fabrics in the list: its photo if it has one (the
+/// name is the tooltip), else its name.
+#[derive(Debug, Clone, PartialEq)]
+struct FabricLink {
+    /// "Orange velvet (main)", for the tooltip and the photo's alt text.
+    title: String,
+    name: String,
+    href: String,
+    thumb: Option<String>,
+}
+
+/// An accessory's fabrics in role order (main first), with thumbnails from
+/// `thumbnails` (fabric photo owner → thumbnail address).
+fn fabric_links(
+    accessory: &Accessory,
+    fabrics: &[Fabric],
+    thumbnails: &HashMap<PhotoOwner, String>,
+) -> Vec<FabricLink> {
     accessory
         .fabrics
         .iter()
-        .map(|u| {
-            let name = fabrics
-                .iter()
-                .find(|f| f.id == u.fabric_id)
-                .map_or("?", |f| f.name.as_str());
+        .filter_map(|u| {
+            let fabric = fabrics.iter().find(|f| f.id == u.fabric_id)?;
             let role = label_of(&ROLES, u.role)
                 .trim_end_matches(" fabric")
                 .to_lowercase();
-            format!("{name} ({role})")
+            Some(FabricLink {
+                title: format!("{} ({role})", fabric.name),
+                name: fabric.name.clone(),
+                href: format!("/fabrics/{}", fabric.id.0),
+                thumb: thumbnails.get(&PhotoOwner::Fabric(fabric.id)).cloned(),
+            })
         })
-        .collect::<Vec<_>>()
-        .join(", ")
+        .collect()
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +92,7 @@ struct AccessoryRow {
     status: &'static str,
     status_class: &'static str,
     next_step: Option<NextStep>,
-    fabrics: String,
+    fabrics: Vec<FabricLink>,
     partner: String,
     source: String,
     colors: Vec<Color>,
@@ -151,7 +168,7 @@ pub async fn list(
                     AccessoryStatus::Ready => "good",
                 },
                 next_step,
-                fabrics: describe_fabrics(a, &fabrics),
+                fabrics: fabric_links(a, &fabrics, &thumbnails),
                 partner: a
                     .pair_id
                     .and_then(|p| accessories.iter().find(|x| x.id == p))
@@ -864,6 +881,51 @@ mod tests {
             FabricPick::New("Polka dots".into()),
             "trimmed, capitals kept"
         );
+    }
+
+    #[test]
+    fn fabrics_show_their_photo_or_their_name_main_first() {
+        let stash = [fabric(1, "Orange velvet"), fabric(2, "Black satin")];
+        let bow = Accessory {
+            fabrics: vec![
+                FabricUse {
+                    fabric_id: FabricId(2),
+                    role: FabricRole::Middle,
+                },
+                FabricUse {
+                    fabric_id: FabricId(1),
+                    role: FabricRole::Main,
+                },
+            ],
+            ..ghost_scarf()
+        };
+        let thumbs = HashMap::from([(
+            PhotoOwner::Fabric(FabricId(2)),
+            "/photos/9/thumb".to_string(),
+        )]);
+        let links = fabric_links(&bow, &stash, &thumbs);
+        assert_eq!(links[0].title, "Black satin (middle)", "in the saved order");
+        assert_eq!(links[0].thumb.as_deref(), Some("/photos/9/thumb"));
+        assert_eq!(links[1].thumb, None, "no photo: shown by name");
+        assert_eq!(links[1].href, "/fabrics/1");
+    }
+
+    fn ghost_scarf() -> Accessory {
+        Accessory {
+            id: AccessoryId(3),
+            kind: AccessoryKind::Scarf,
+            name: "Ghost scarf".into(),
+            description: String::new(),
+            colors: vec![],
+            colors_from_fabrics: false,
+            tags: vec![],
+            fabrics: vec![],
+            source: Source::Handmade,
+            status: AccessoryStatus::Ready,
+            pair_id: None,
+            make_days: None,
+            quantity: 1,
+        }
     }
 
     #[test]

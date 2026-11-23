@@ -26,7 +26,7 @@ take the photos, and it suggests what to wear from what's already in the stash.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
 templates · Pico CSS · a few small optional scripts · the `image` crate.
-231 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+232 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -318,7 +318,7 @@ Settings (all optional environment variables):
   - [x] **M13e**: colors from photos reuse your existing shades when they match (and ask when they're close)
 - [ ] **M14**: Finding things in long lists
   - [x] **M14a**: type-to-search when choosing fabrics and a matching partner
-  - [ ] **M14b**: fabric photos instead of long fabric names in the accessory list
+  - [x] **M14b**: fabric photos instead of long fabric names in the accessory list
   - [ ] **M14c**: suggest a matching partner from fabric pairings
 
 Ideas for later: a palette-first color model (a short list of your own

@@ -405,3 +405,9 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
 .idea-group { display: inline-block; margin: 0 0.25rem 0.25rem 0; }
 /* "your red · or new: dark red" is one choice: keep it together, framed. */
 .idea-choice { padding: 0.1rem 0.35rem; border: 1px dashed var(--pico-muted-border-color); border-radius: 1rem; white-space: nowrap; }
+
+/* Accessory list: its fabrics as small photos (name and role on hover). */
+.fabric-thumbs { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.fabric-thumbs a { text-decoration: none; }
+img.thumb.fabric-thumb { width: 2.25rem; height: 2.25rem; }
+.fabric-name-chip { font-size: 0.75rem; white-space: normal; }

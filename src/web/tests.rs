@@ -502,8 +502,13 @@ async fn accessory_list_filters_by_kind() {
     assert!(!html.contains("Pumpkin bow"));
     assert!(html.contains("<option value=\"scarf\" selected>"));
 
+    // Fabrics without photos show as names, linked, main first; the role
+    // is in the tooltip.
     let (_, html) = get(&app, "/accessories").await;
-    assert!(html.contains("Orange velvet (main), Black satin (middle)"));
+    assert!(html.contains(
+        "<a href=\"/fabrics/1\" title=\"Orange velvet (main)\"><span class=\"chip fabric-name-chip\">Orange velvet</span></a>\
+         <a href=\"/fabrics/2\" title=\"Black satin (middle)\">"
+    ), "{html}");
 }
 
 #[tokio::test]
