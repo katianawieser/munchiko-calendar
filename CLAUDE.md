@@ -503,6 +503,20 @@ See README.md for the planning rules, data model and roadmap.
   it (400 ms debounce, stale replies dropped), click fills the box, hidden while the
   box has a name. `button.partner-idea` needs its own colors (Pico made the text
   white). Verified in Firefox 160.
+- **M15 palette plan (2026-11-23, Katiana's answers):** palette ONLY (every item color
+  is a palette color; new ones can be added from the form); editing a palette color
+  updates every item; shade optional (name-only entries allowed); a Palette page
+  REPLACES the Shades page. Real data before: 129 items, 372 color uses, 84 names,
+  only 8 names with >1 shade (pink 3 shades up to ΔE 58, purple 4), 8 uses without
+  a shade, "reds" never shaded. Plan: **M15a** `palette_colors` table (unique name
+  NOCASE, optional hex) + item colors as ordered links (join tables, FK NO ACTION so
+  in-use colors can't be deleted); lossless migration (one entry per name+shade;
+  extra shades of a name become "pink 2"…); read logic keeps using Color
+  values; Palette page (rainbow list, uses + links, add/rename/reshade, merge with
+  preview + backup, delete unused). **M15b** forms pick from the palette (name box +
+  datalist; unknown name → "+ new palette color" with shade, added on save), photo
+  ideas map to palette, Your shades → palette chips, Shades page removed. **M15c**
+  polish from real use. Check in after each; test migration on copies.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
