@@ -369,6 +369,154 @@ fn start_by_for_new_bow(fabric: &Fabric, post_date: NaiveDate, lead: &LeadTimes)
         .earliest_start()
 }
 
+// ---------------------------------------------------------------------------
+// Matching partners (M14c)
+// ---------------------------------------------------------------------------
+
+/// Shares a fabric with the accessory: sets are usually cut from the same
+/// fabric (9 of Katiana's 12 sets).
+pub const SAME_FABRIC_POINTS: u32 = 3;
+/// Uses a fabric that pairs with one of the accessory's fabrics.
+pub const PAIRED_FABRIC_POINTS: u32 = 2;
+/// Each name word they share ("Embroidered Candy Canes - Small / - Large").
+pub const NAME_WORD_POINTS: u32 = 1;
+/// Bonus once something matched: the same kind (two bows, two scarves).
+pub const SAME_KIND_POINTS: u32 = 1;
+/// How many partner ideas to offer.
+const MAX_PARTNER_IDEAS: usize = 3;
+
+/// Words that don't tell two accessories' names apart: sizes, kinds and the
+/// pets' names (on top of [`FILLER`]).
+const NAME_FILLER: &[&str] = &[
+    "small", "large", "medium", "big", "little", "mini", "bow", "scarf", "bandana", "costume",
+    "hat", "prop", "tie", "print", "pattern", "mochi", "momo",
+];
+
+/// What the partner box's suggestions are worked out from: the accessory as
+/// it's being edited (its saved values, or what's typed in the form).
+pub struct PartnerQuery<'a> {
+    pub name: &'a str,
+    pub kind: AccessoryKind,
+    pub fabrics: &'a [FabricId],
+    /// The accessory itself, when editing: never its own partner.
+    pub editing: Option<AccessoryId>,
+}
+
+/// An accessory that might be the other half of a Mochi & Momo set.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PartnerIdea {
+    pub accessory: AccessoryId,
+    pub score: u32,
+    /// "same fabric: Baby Yoda Good Side", "name: candy, cane", "also a bow".
+    pub reasons: Vec<String>,
+    /// Already in a set with another accessory.
+    pub paired_with: Option<AccessoryId>,
+}
+
+/// The name's words in singular form, without sizes, kinds and filler.
+fn name_words(name: &str) -> BTreeSet<String> {
+    words(std::iter::once(&name.to_string()))
+        .into_iter()
+        .filter(|w| w.len() > 2 && !NAME_FILLER.contains(&w.as_str()))
+        .collect()
+}
+
+/// Accessories that could be `query`'s partner, best first (at most 3):
+/// shared fabric, a paired fabric, shared name words, then same kind as a
+/// bonus. Accessories already in another set are listed after free ones.
+/// Nothing in common: not offered.
+pub fn partner_ideas(
+    query: &PartnerQuery<'_>,
+    accessories: &[Accessory],
+    fabrics: &[Fabric],
+) -> Vec<PartnerIdea> {
+    let fabric_name = |id: &FabricId| {
+        fabrics
+            .iter()
+            .find(|f| f.id == *id)
+            .map_or_else(|| format!("fabric #{}", id.0), |f| f.name.clone())
+    };
+    let pairs_of = |id: &FabricId| -> Vec<FabricId> {
+        fabrics
+            .iter()
+            .find(|f| f.id == *id)
+            .map(|f| f.pairings.clone())
+            .unwrap_or_default()
+    };
+    let mine = name_words(query.name);
+
+    let mut ideas: Vec<PartnerIdea> = accessories
+        .iter()
+        .filter(|a| Some(a.id) != query.editing)
+        .filter_map(|other| {
+            let theirs: Vec<FabricId> = other.fabrics.iter().map(|u| u.fabric_id).collect();
+            let mut score = 0;
+            let mut reasons = Vec::new();
+
+            let shared: Vec<&FabricId> = query
+                .fabrics
+                .iter()
+                .filter(|f| theirs.contains(f))
+                .collect();
+            if !shared.is_empty() {
+                score += SAME_FABRIC_POINTS;
+                let names: Vec<String> = shared.iter().map(|f| fabric_name(f)).collect();
+                reasons.push(format!("same fabric: {}", names.join(", ")));
+            } else if let Some((mine, paired)) = query.fabrics.iter().find_map(|f| {
+                pairs_of(f)
+                    .into_iter()
+                    .find(|p| theirs.contains(p))
+                    .map(|p| (*f, p))
+            }) {
+                score += PAIRED_FABRIC_POINTS;
+                reasons.push(format!(
+                    "{} pairs with {}",
+                    fabric_name(&paired),
+                    fabric_name(&mine)
+                ));
+            }
+
+            let common: Vec<String> = mine
+                .intersection(&name_words(&other.name))
+                .cloned()
+                .collect();
+            if !common.is_empty() {
+                score += NAME_WORD_POINTS * common.len() as u32;
+                reasons.push(format!("name: {}", common.join(", ")));
+            }
+
+            if score == 0 {
+                return None;
+            }
+            if other.kind == query.kind {
+                score += SAME_KIND_POINTS;
+                reasons.push(format!("also a {}", other.kind.label()));
+            }
+            Some(PartnerIdea {
+                accessory: other.id,
+                score,
+                reasons,
+                paired_with: other.pair_id.filter(|p| Some(*p) != query.editing),
+            })
+        })
+        .collect();
+
+    let name_of = |id: AccessoryId| {
+        accessories
+            .iter()
+            .find(|a| a.id == id)
+            .map_or("", |a| a.name.as_str())
+    };
+    ideas.sort_by(|a, b| {
+        b.score
+            .cmp(&a.score)
+            .then(a.paired_with.is_some().cmp(&b.paired_with.is_some()))
+            .then(name_of(a.accessory).cmp(name_of(b.accessory)))
+    });
+    ideas.truncate(MAX_PARTNER_IDEAS);
+    ideas
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -706,5 +854,105 @@ mod tests {
         assert!(
             suggest_fabrics(&new_year, &fabrics, d(2026, 12, 31), &LeadTimes::default()).is_empty()
         );
+    }
+
+    fn partners(
+        query: &PartnerQuery<'_>,
+        accessories: &[Accessory],
+        fabrics: &[Fabric],
+    ) -> Vec<(String, Vec<String>)> {
+        partner_ideas(query, accessories, fabrics)
+            .into_iter()
+            .map(|idea| {
+                let name = accessories
+                    .iter()
+                    .find(|a| a.id == idea.accessory)
+                    .unwrap()
+                    .name
+                    .clone();
+                (name, idea.reasons)
+            })
+            .collect()
+    }
+
+    #[test]
+    fn partners_share_a_fabric_a_pairing_or_name_words() {
+        let mut good_side = fabric(1, "Baby Yoda Good Side", &[], &[], true);
+        let mut navy = fabric(2, "Baby Yoda Navy", &[], &[], true);
+        good_side.pairings = vec![FabricId(2)];
+        navy.pairings = vec![FabricId(1)];
+        let fabrics = [good_side, navy, fabric(3, "Gingham", &[], &[], true)];
+        let mut scarf = accessory(4, "Navy Yoda Scarf", &[], &[2]);
+        scarf.kind = AccessoryKind::Scarf;
+        let accessories = [
+            accessory(1, "Yoda Green Bow", &[], &[1]),
+            accessory(2, "Yoda Navy Bow", &[], &[1, 2]),
+            accessory(3, "Gingham Bow", &[], &[3]),
+            scarf,
+            accessory(5, "Embroidered Candy Canes - Large", &[], &[]),
+        ];
+        // Editing the green bow: the navy bow shares its fabric (and a word
+        // and the kind); the scarf only has the paired fabric (and a word).
+        let query = PartnerQuery {
+            name: "Yoda Green Bow",
+            kind: AccessoryKind::Bow,
+            fabrics: &[FabricId(1)],
+            editing: Some(AccessoryId(1)),
+        };
+        let found = partners(&query, &accessories, &fabrics);
+        assert_eq!(
+            found,
+            [
+                (
+                    "Yoda Navy Bow".to_string(),
+                    list(&[
+                        "same fabric: Baby Yoda Good Side",
+                        "name: yoda",
+                        "also a bow"
+                    ])
+                ),
+                (
+                    "Navy Yoda Scarf".to_string(),
+                    list(&[
+                        "Baby Yoda Navy pairs with Baby Yoda Good Side",
+                        "name: yoda"
+                    ])
+                ),
+            ],
+            "never itself; gingham has nothing in common"
+        );
+
+        // A new accessory with no fabrics yet: the name alone finds its set,
+        // with sizes and plurals not mattering.
+        let query = PartnerQuery {
+            name: "Embroidered candy cane (small)",
+            kind: AccessoryKind::Bow,
+            fabrics: &[],
+            editing: None,
+        };
+        let found = partners(&query, &accessories, &fabrics);
+        assert_eq!(found[0].0, "Embroidered Candy Canes - Large");
+        assert_eq!(found[0].1[0], "name: candy, cane, embroidered");
+    }
+
+    #[test]
+    fn partners_already_in_a_set_come_after_free_ones() {
+        let fabrics = [fabric(1, "Velvet", &[], &[], true)];
+        let mut taken = accessory(2, "A velvet bow", &[], &[1]);
+        taken.pair_id = Some(AccessoryId(9));
+        let accessories = [taken, accessory(3, "B velvet bow", &[], &[1])];
+        let query = PartnerQuery {
+            name: "New bow",
+            kind: AccessoryKind::Bow,
+            fabrics: &[FabricId(1)],
+            editing: None,
+        };
+        let ideas = partner_ideas(&query, &accessories, &fabrics);
+        assert_eq!(
+            ideas[0].accessory,
+            AccessoryId(3),
+            "free first, though A sorts first by name"
+        );
+        assert_eq!(ideas[1].paired_with, Some(AccessoryId(9)));
     }
 }

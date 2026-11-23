@@ -25,6 +25,7 @@ use crate::models::{
     Accessory, AccessoryId, AccessoryKind, AccessoryStatus, Color, Fabric, FabricId, FabricRole,
     FabricUse, PhotoOwner, Source, without_repeats,
 };
+use crate::suggest::{self, PartnerQuery};
 
 fn describe_source(source: &Source) -> String {
     match source {
@@ -361,6 +362,10 @@ struct AccessoryFormPage {
     partner: String,
     /// Every other accessory, for the partner box's suggestions.
     partner_names: Vec<NameOption>,
+    /// Likely partners (shared fabric, paired fabric, name), while there's none.
+    partner_ideas: Vec<PartnerIdeaView>,
+    /// The accessory's id when editing, for the page script's idea requests.
+    editing_id: String,
     /// Outfits it's a piece of (edit page only).
     outfits: Vec<Link>,
     blocked: Blockers,
@@ -379,6 +384,92 @@ struct FabricChips {
     colors: Vec<Color>,
 }
 
+/// A likely partner, as shown under the partner box.
+struct PartnerIdeaView {
+    name: String,
+    /// "same fabric: Velvet · also a bow"
+    reasons: String,
+    /// "already in a set with Bat bow", if it is.
+    taken: String,
+}
+
+/// Partner ideas for `query`, ready to show.
+fn partner_idea_views(
+    query: &PartnerQuery<'_>,
+    accessories: &[Accessory],
+    fabrics: &[Fabric],
+) -> Vec<PartnerIdeaView> {
+    let name_of = |id: AccessoryId| {
+        accessories
+            .iter()
+            .find(|a| a.id == id)
+            .map(|a| a.name.clone())
+            .unwrap_or_default()
+    };
+    suggest::partner_ideas(query, accessories, fabrics)
+        .into_iter()
+        .map(|idea| PartnerIdeaView {
+            name: name_of(idea.accessory),
+            reasons: idea.reasons.join(" · "),
+            taken: idea
+                .paired_with
+                .map(|p| format!("already in a set with {}", name_of(p)))
+                .unwrap_or_default(),
+        })
+        .collect()
+}
+
+/// Partner ideas for what's typed in an accessory form (the fabric boxes'
+/// names that are fabrics already, the name and the kind).
+fn ideas_for_form(
+    form: &FormData,
+    editing: Option<AccessoryId>,
+    accessories: &[Accessory],
+    fabrics: &[Fabric],
+) -> Vec<PartnerIdeaView> {
+    let fabric_ids: Vec<FabricId> = ROLES
+        .iter()
+        .filter_map(
+            |(_, field, _)| match pick_fabric(&form.text(field), fabrics) {
+                FabricPick::Existing(id) => Some(id),
+                _ => None,
+            },
+        )
+        .collect();
+    let name = form.text("name");
+    let query = PartnerQuery {
+        name: &name,
+        kind: parse_choice(&KINDS, &form.text("kind")).unwrap_or(AccessoryKind::Bow),
+        fabrics: &fabric_ids,
+        editing,
+    };
+    partner_idea_views(&query, accessories, fabrics)
+}
+
+/// The partner ideas alone, for the page script.
+#[derive(Template)]
+#[template(path = "partner_ideas.html")]
+struct PartnerIdeasPart {
+    partner_ideas: Vec<PartnerIdeaView>,
+}
+
+/// `GET /accessories/partner-ideas?name=…&kind=…&main_fabric=…&editing=ID`:
+/// partner ideas for what's typed in the form, as a piece of HTML.
+pub async fn partner_ideas(
+    State(state): State<AppState>,
+    Query(query): Query<Vec<(String, String)>>,
+) -> Result<Response, AppError> {
+    let form = FormData::new(query);
+    let editing = form.text("editing").parse().ok().map(AccessoryId);
+    let accessories = state.db.list_accessories().await?;
+    let fabrics = state.db.list_fabrics().await?;
+    let ideas = ideas_for_form(&form, editing, &accessories, &fabrics);
+    Ok(render(PartnerIdeasPart {
+        partner_ideas: ideas,
+    })?
+    .into_response())
+}
+
 /// A suggestion in a name box's list, with a note the page script shows
 /// once it's chosen ("on the shopping list", "bow").
 struct NameOption {
@@ -387,6 +478,20 @@ struct NameOption {
 }
 
 impl AccessoryFormPage {
+    /// After a mistake: partner ideas for what was typed (if no partner was).
+    fn with_ideas_from(
+        mut self,
+        form: &FormData,
+        editing: Option<AccessoryId>,
+        accessories: &[Accessory],
+        fabrics: &[Fabric],
+    ) -> Self {
+        if form.text("partner").trim().is_empty() {
+            self.partner_ideas = ideas_for_form(form, editing, accessories, fabrics);
+        }
+        self
+    }
+
     fn new(editing: Option<&Accessory>, accessories: &[Accessory], fabrics: &[Fabric]) -> Self {
         let editing_id = editing.map(|a| a.id);
         let name_of = |id: FabricId| {
@@ -427,6 +532,20 @@ impl AccessoryFormPage {
             .and_then(|id| accessories.iter().find(|a| a.id == id))
             .map(|a| a.name.clone())
             .unwrap_or_default();
+        // Ideas only while there's no partner yet.
+        let partner_ideas = match editing {
+            Some(a) if a.pair_id.is_none() => {
+                let fabric_ids: Vec<FabricId> = a.fabrics.iter().map(|u| u.fabric_id).collect();
+                let query = PartnerQuery {
+                    name: &a.name,
+                    kind: a.kind,
+                    fabrics: &fabric_ids,
+                    editing: Some(a.id),
+                };
+                partner_idea_views(&query, accessories, fabrics)
+            }
+            _ => Vec::new(),
+        };
         let partner_names = accessories
             .iter()
             .filter(|a| Some(a.id) != editing_id)
@@ -478,6 +597,8 @@ impl AccessoryFormPage {
             fabric_names,
             partner,
             partner_names,
+            partner_ideas,
+            editing_id: editing_id.map(|id| id.0.to_string()).unwrap_or_default(),
             outfits: Vec::new(),
             blocked: Blockers::default(),
             photos: PhotoSection::unsaved(),
@@ -509,6 +630,7 @@ impl AccessoryFormPage {
         select(&mut self.kind_choices, form.text("kind"));
         select(&mut self.status_choices, form.text("status"));
         self.partner = form.text("partner");
+        self.partner_ideas = Vec::new(); // see `with_ideas_from`
         for b in &mut self.fabric_boxes {
             b.value = form.text(b.field);
             b.buy = form.checked(&b.buy_field);
@@ -772,7 +894,9 @@ pub async fn create(
     let (input, files) = match checked {
         Ok(ok) => ok,
         Err(errors) => {
-            let page = AccessoryFormPage::new(None, &accessories, &stash).refill(&form, errors);
+            let page = AccessoryFormPage::new(None, &accessories, &stash)
+                .refill(&form, errors)
+                .with_ideas_from(&form, None, &accessories, &stash);
             return form_response(&state, StatusCode::UNPROCESSABLE_ENTITY, page).await;
         }
     };
@@ -809,7 +933,10 @@ pub async fn update(
     let (input, files) = match checked {
         Ok(ok) => ok,
         Err(errors) => {
-            let page = edit_page(&state, &accessory).await?.refill(&form, errors);
+            let page = edit_page(&state, &accessory)
+                .await?
+                .refill(&form, errors)
+                .with_ideas_from(&form, Some(accessory.id), &accessories, &stash);
             return form_response(&state, StatusCode::UNPROCESSABLE_ENTITY, page).await;
         }
     };

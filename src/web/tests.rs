@@ -2958,3 +2958,57 @@ async fn photo_colors_reuse_a_shade_you_already_have() {
     let builtin = crate::palette::nearest_name([200, 100, 50]);
     assert!(!reply.html.contains(&format!("data-name=\"{builtin}\"")) || builtin == "rust");
 }
+
+// ---------------------------------------------------------------------------
+// Partner ideas (M14c)
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn partner_ideas_come_from_fabrics_and_names() {
+    let (app, db, _) = setup(d(2026, 10, 5)).await;
+    // In the demo, the Pumpkin bow (Orange velvet + Black satin) and the Bat
+    // bow are a set. A new bow of orange velvet, with no partner yet:
+    let id = db
+        .create_accessory(&crate::db::NewAccessory {
+            kind: crate::models::AccessoryKind::Bow,
+            name: "Pumpkin bow for Momo".into(),
+            description: String::new(),
+            colors: vec![],
+            colors_from_fabrics: true,
+            tags: vec![],
+            fabrics: vec![crate::models::FabricUse {
+                fabric_id: FabricId(1),
+                role: FabricRole::Main,
+            }],
+            source: Source::Handmade,
+            status: AccessoryStatus::Idea,
+            make_days: None,
+            quantity: 1,
+        })
+        .await
+        .unwrap();
+
+    let (_, html) = get(&app, &format!("/accessories/{}", id.0)).await;
+    assert!(html.contains("Maybe the other half of this set"), "{html}");
+    assert!(html.contains("data-name=\"Pumpkin bow\""));
+    assert!(html.contains("same fabric: Orange velvet · name: pumpkin · also a bow"));
+    assert!(html.contains("already in a set with Bat bow"));
+
+    // An accessory that has a partner gets no ideas.
+    let (_, html) = get(&app, "/accessories/1").await;
+    assert!(!html.contains("Maybe the other half of this set"));
+
+    // What's typed in the form: just the ideas, as a piece of HTML.
+    let (status, part) = get(
+        &app,
+        "/accessories/partner-ideas?name=Ghost+costume&kind=costume&main_fabric=&middle_fabric=&accent_fabric=",
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(part.contains("data-name=\"Ghost scarf\""), "{part}");
+    assert!(part.contains("name: ghost"));
+    assert!(!part.contains("<html"));
+    // Nothing in common: nothing offered.
+    let (_, part) = get(&app, "/accessories/partner-ideas?name=Zebra&kind=hat").await;
+    assert!(!part.contains("partner-idea"));
+}

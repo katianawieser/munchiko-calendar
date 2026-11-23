@@ -157,6 +157,10 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/accessories/new", get(accessories::new_form))
         .route(
+            "/accessories/partner-ideas",
+            get(accessories::partner_ideas),
+        )
+        .route(
             "/accessories/{id}",
             get(accessories::edit_form)
                 .post(accessories::update)

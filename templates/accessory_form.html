@@ -88,6 +88,7 @@
       <input name="partner" value="{{ partner }}" list="accessory-names" class="name-pick partner-pick" placeholder="type to search, or leave empty" autocomplete="off">
     </label>
     <small class="pick-hint muted" aria-live="polite"></small>
+    <div class="partner-ideas" data-editing="{{ editing_id }}">{% include "partner_ideas.html" %}</div>
     <datalist id="accessory-names">{% for a in partner_names %}<option value="{{ a.name }}" data-note="{{ a.note }}">{% endfor %}</datalist>
     <small>Pairing is two-way. Choosing a partner that's already in a set takes it out of that set.</small>
   </div>

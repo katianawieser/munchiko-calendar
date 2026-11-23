@@ -417,3 +417,21 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
 .fabric-thumbs a { text-decoration: none; }
 img.thumb.fabric-thumb { width: 2.25rem; height: 2.25rem; }
 .fabric-name-chip { font-size: 0.75rem; white-space: normal; }
+
+/* Partner ideas under the matching-set box. */
+.partner-ideas[hidden] { display: none; }
+.partner-idea-list { list-style: none; padding: 0; margin: 0.2rem 0 0.5rem; }
+.partner-idea-list li { list-style: none; margin-bottom: 0.25rem; }
+/* Same look as the color-idea chips: Pico's button styles would make the
+   text white on the pale chip. */
+button.partner-idea {
+  width: auto;
+  margin: 0 0.3rem 0 0;
+  padding: 0.1rem 0.6rem;
+  border: 1px solid var(--pico-muted-border-color);
+  background: var(--mc-muted-bg);
+  color: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+button.partner-idea:hover { border-color: var(--pico-primary); }

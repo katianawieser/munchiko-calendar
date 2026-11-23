@@ -489,6 +489,20 @@ See README.md for the planning rules, data model and roadmap.
   accessory and fabric TABLES show colors as dots (`.color-dots`, same CSS as small
   cards: chips with a swatch hide `.chip-name`; the chip's title is the name; colors
   without a swatch keep their name). Grid cards unchanged.
+- **M14c done (M14 complete):** checked first on real data: 12 sets, 9 share a fabric,
+  0 linked only via fabric pairings, 3 have no fabrics but share name words.
+  `suggest::partner_ideas(&PartnerQuery { name, kind, fabrics, editing }, accessories,
+  fabrics)` (pure, tested): same fabric 3, else a paired fabric 2, +1 per shared
+  name word (`name_words`: singular, len>2, minus FILLER + NAME_FILLER sizes/kinds/
+  pet names), +1 same kind only after a match; free accessories before ones already
+  in another set; top 3. Prototype found the real partner FIRST for 22/24 set
+  members (misses: Shark-cuterie/Cocktail Shrimp, nothing in common). Web: shown
+  under the partner box on edit pages while it has no partner (24 of 30 unpaired
+  real accessories get ideas); `GET /accessories/partner-ideas` → `partner_ideas.html`
+  fragment for what's typed (name/kind/fabric boxes, `editing`); colors.js refreshes
+  it (400 ms debounce, stale replies dropped), click fills the box, hidden while the
+  box has a name. `button.partner-idea` needs its own colors (Pico made the text
+  white). Verified in Firefox 160.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

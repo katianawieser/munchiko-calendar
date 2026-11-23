@@ -1,0 +1,12 @@
+{#- Likely partners under the accessory form's partner box (also sent alone
+    by GET /accessories/partner-ideas). Expects `partner_ideas`. Clicking one
+    fills in the box (colors.js); the reasons say why it's suggested. -#}
+{%- if !partner_ideas.is_empty() -%}
+<small class="muted">Maybe the other half of this set:</small>
+<ul class="partner-idea-list">
+  {% for idea in partner_ideas %}
+  <li><button type="button" class="chip partner-idea" data-name="{{ idea.name }}">{{ idea.name }}</button>
+    <small class="muted">{{ idea.reasons }}{% if !idea.taken.is_empty() %} · <em>{{ idea.taken }}</em>{% endif %}</small></li>
+  {% endfor %}
+</ul>
+{%- endif %}

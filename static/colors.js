@@ -320,3 +320,57 @@ document.querySelectorAll("input.name-pick").forEach((input) => {
   input.addEventListener("input", update);
   update();
 });
+
+// Accessory form: partner ideas under the matching-set box. Which accessories
+// fit is worked out in Rust (suggest::partner_ideas); this asks the server
+// again when the name, kind or fabrics change, shows the ideas only while
+// the partner box is empty, and fills the box when one is clicked.
+document.querySelectorAll(".partner-ideas").forEach((box) => {
+  const form = box.closest("form");
+  const partner = form.querySelector('input[name="partner"]');
+  const watched = [
+    ...form.querySelectorAll('input[name="name"], select[name="kind"], input.fabric-pick'),
+  ];
+  let latest = 0;
+  let timer;
+
+  function wire() {
+    box.querySelectorAll(".partner-idea").forEach((button) => {
+      button.addEventListener("click", () => {
+        partner.value = button.dataset.name;
+        partner.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+    });
+  }
+
+  function showOrHide() {
+    box.hidden = partner.value.trim() !== "" || !box.querySelector(".partner-idea");
+  }
+
+  async function refresh() {
+    const ask = ++latest;
+    const params = new URLSearchParams();
+    for (const el of watched) params.append(el.name, el.value);
+    params.append("editing", box.dataset.editing || "");
+    try {
+      const reply = await fetch(`/accessories/partner-ideas?${params}`);
+      if (!reply.ok || ask !== latest) return;
+      // Server-rendered (and escaped) by an Askama template.
+      box.innerHTML = await reply.text();
+      wire();
+      showOrHide();
+    } catch {
+      // No ideas is fine; the box works without them.
+    }
+  }
+
+  watched.forEach((el) =>
+    el.addEventListener(el.tagName === "SELECT" ? "change" : "input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(refresh, 400);
+    })
+  );
+  partner.addEventListener("input", showOrHide);
+  wire();
+  showOrHide();
+});
