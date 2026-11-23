@@ -571,6 +571,14 @@ See README.md for the planning rules, data model and roadmap.
   apart (N)" box (`close_pairs`, ΔE < 5, not kept apart) with both merge links +
   Keep apart (POST /palette/keep-apart); per row "closest everyday name" (xkcd)
   when it differs (on real data 57 of 59 differ; it's a second opinion).
+- **Name list tidied (her request):** 39 duplicate spellings removed (869 names
+  left), listed in the file header: separator variants (space/slash/joined)
+  keep the spaced form, except dictionary one-word names (aquamarine, eggshell,
+  goldenrod, terracotta, bubblegum pink); typos (terracota, burnt siena, forrest
+  green, kelley green, light lavendar, orangeish, purpleish*, robin egg blue,
+  purpley/purpley blue/purpley pink). One-letter-apart names that are different
+  colors stay (dusky/dusty, sea/tea green, bluey green). Test
+  `each_name_has_one_spelling` guards it.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.

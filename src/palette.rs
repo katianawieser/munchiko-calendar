@@ -431,13 +431,40 @@ mod tests {
 
     #[test]
     fn the_name_list_is_the_cleaned_xkcd_survey() {
-        assert!(NAMES.len() > 900, "{}", NAMES.len());
+        assert!(NAMES.len() > 850, "{}", NAMES.len());
         // Left out on purpose (see the top of data/color_names.txt).
         for gone in ["puke", "vomit", "poop", "shit brown", "ugly pink", "booger"] {
             assert!(!NAMES.iter().any(|(n, _)| *n == gone), "{gone}");
         }
         // Everyday names, and neutral ones like "mud", stay.
         for kept in ["orange", "teal", "navy", "mud", "blood orange"] {
+            assert!(NAMES.iter().any(|(n, _)| *n == kept), "{kept}");
+        }
+    }
+
+    #[test]
+    fn each_name_has_one_spelling() {
+        // No two names the same apart from spaces, slashes, hyphens and
+        // apostrophes ("blue/green", "bluegreen", "blue green").
+        let mut seen = std::collections::HashMap::new();
+        for (name, _) in NAMES.iter() {
+            let key: String = name
+                .chars()
+                .filter(|c| !matches!(c, ' ' | '/' | '-' | '\''))
+                .collect();
+            if let Some(other) = seen.insert(key, *name) {
+                panic!("{other:?} and {name:?} are one name spelled two ways");
+            }
+        }
+        // Misspellings are gone; the standard spelling stays.
+        for (gone, kept) in [
+            ("terracota", "terracotta"),
+            ("forrest green", "forest green"),
+            ("burnt siena", "burnt sienna"),
+            ("robin egg blue", "robin's egg blue"),
+            ("blue/green", "blue green"),
+        ] {
+            assert!(!NAMES.iter().any(|(n, _)| *n == gone), "{gone}");
             assert!(NAMES.iter().any(|(n, _)| *n == kept), "{kept}");
         }
     }

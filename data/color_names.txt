@@ -7,6 +7,8 @@
 #
 # Left out (41, vulgar or unhelpful): baby poo, baby poop, baby poop green, baby puke green, baby shit brown, baby shit green, barf green, bile, booger, booger green, bruise, diarrhea, dried blood, gross green, piss yellow, poo, poo brown, poop, poop brown, poop green, puke, puke brown, puke green, puke yellow, shit, shit brown, shit green, sick green, sickly green, sickly yellow, snot, snot green, ugly blue, ugly brown, ugly green, ugly pink, ugly purple, ugly yellow, vomit, vomit green, vomit yellow
 #
+# Spelling duplicates left out (39; one spelling kept for each): aqua marine, blue/green, blue/grey, blue/purple, bluegreen, bluegrey, bubble gum pink, burnt siena, darkblue, darkgreen, egg shell, forrest green, golden rod, green/blue, green/yellow, greenblue, grey/blue, grey/green, greyblue, kelley green, light lavendar, lightblue, lightgreen, orangeish, orangered, pink/purple, purple/blue, purple/pink, purpleish, purpleish blue, purpleish pink, purpley, purpley blue, purpley pink, robin egg blue, terra cotta, terracota, yellow/green, yellowgreen
+#
 # One color per line: name, a tab, #rrggbb. Edit freely (rebuild to apply).
 cloudy blue	#acc2d9
 dark pastel green	#56ae57
@@ -56,7 +58,6 @@ light grey green	#b7e1a1
 orange pink	#ff6f52
 tea green	#bdf8a3
 very light brown	#d3b683
-egg shell	#fffcc4
 eggplant purple	#430541
 powder pink	#ffb2d0
 reddish grey	#997570
@@ -70,11 +71,8 @@ manilla	#fffa86
 off blue	#5684ae
 battleship grey	#6b7c85
 browny green	#6f6c0a
-kelley green	#009337
 sunny yellow	#fff917
 azul	#1d5dec
-darkgreen	#054907
-green/yellow	#b5ce08
 lichen	#8fb67b
 light light green	#c8ffb0
 pale gold	#fdde6c
@@ -85,7 +83,6 @@ butterscotch	#fdb147
 toupe	#c7ac7d
 dark cream	#fff39a
 indian red	#850e04
-light lavendar	#efc0fe
 poison green	#40fd14
 bright yellow green	#9dff00
 charcoal grey	#3c4142
@@ -97,12 +94,10 @@ raw sienna	#9a6200
 baby purple	#ca9bf7
 cocoa	#875f42
 light royal blue	#3a2efe
-orangeish	#fd8d49
 rust brown	#8b3103
 sand brown	#cba560
 swamp	#698339
 tealish green	#0cdc73
-burnt siena	#b75203
 camo	#7f8f4e
 dusk blue	#26538d
 fern	#63a950
@@ -124,11 +119,9 @@ orangey yellow	#fdb915
 parchment	#fefcaf
 straw	#fcf679
 very dark brown	#1d0200
-terracota	#cb6843
 clear blue	#247afd
 creme	#ffffb6
 foam green	#90fda9
-grey/green	#86a17d
 light gold	#fddc5c
 seafoam blue	#78d1b6
 topaz	#13bbaf
@@ -141,7 +134,6 @@ light yellowish green	#c2ff89
 pale magenta	#d767ad
 rich purple	#720058
 sunflower yellow	#ffda03
-green/blue	#01c08d
 leather	#ac7434
 racing green	#014600
 vivid purple	#9900fa
@@ -160,7 +152,6 @@ flat blue	#3c73a8
 mushroom	#ba9e88
 rich blue	#021bf9
 dirty purple	#734a65
-greenblue	#23c48b
 icky green	#8fae22
 light khaki	#e6f2a2
 warm blue	#4b57db
@@ -170,7 +161,6 @@ carmine	#9d0216
 dark yellow green	#728f02
 pale peach	#ffe5ad
 plum purple	#4e0550
-golden rod	#f9bc08
 neon red	#ff073a
 old pink	#c77986
 very pale blue	#d6fffe
@@ -202,13 +192,11 @@ mud green	#606602
 pinky	#fc86aa
 red wine	#8c0034
 tan brown	#ab7e4c
-darkblue	#030764
 rosa	#fe86a4
 lipstick	#d5174e
 pale mauve	#fed0fc
 claret	#680018
 dandelion	#fedf08
-orangered	#fe420f
 ruby	#ca0147
 dark	#1b2431
 greenish turquoise	#00fbb0
@@ -224,12 +212,9 @@ lawn green	#4da409
 putty	#beae8a
 vibrant blue	#0339f8
 dark sand	#a88f59
-purple/blue	#5d21d0
 saffron	#feb209
 twilight	#4e518b
 warm brown	#964e02
-bluegrey	#85a3b2
-bubble gum pink	#ff69af
 duck egg blue	#c3fbf4
 greenish cyan	#2afeb7
 petrol	#005f6a
@@ -259,9 +244,7 @@ muddy yellow	#bfac05
 dark seafoam green	#3eaf76
 deep rose	#c74767
 dusty red	#b9484e
-grey/blue	#647d8e
 lemon lime	#bffe28
-purple/pink	#d725de
 brown yellow	#b29705
 purple brown	#673a3f
 wisteria	#a87dc2
@@ -275,10 +258,7 @@ eggshell blue	#c4fff7
 sandy yellow	#fdee73
 cool green	#33b864
 pale	#fff9d0
-blue/grey	#758da3
 hot magenta	#f504c9
-greyblue	#77a1b5
-purpley	#8756e4
 brownish pink	#c27e79
 dark aquamarine	#017371
 light mustard	#f7d560
@@ -301,7 +281,6 @@ bright lime	#87fd05
 spearmint	#1ef876
 light aquamarine	#7bfdc7
 light sage	#bcecac
-yellowgreen	#bbf90f
 dark seafoam	#1fb57a
 deep teal	#00555a
 heather	#a484ac
@@ -323,14 +302,11 @@ purplish brown	#6b4247
 pale cyan	#b7fffa
 key lime	#aeff6e
 tomato red	#ec2d01
-lightgreen	#76ff7b
 merlot	#730039
 night blue	#040348
-purpleish pink	#df4ec8
 apple	#6ecb3c
 green apple	#5edc1f
 heliotrope	#d94ff5
-yellow/green	#c8fd3d
 almost black	#070d0d
 cool blue	#4984b8
 leafy green	#51b73b
@@ -377,7 +353,6 @@ muted blue	#3b719f
 pale rose	#fdc1c5
 dark mint green	#20c073
 amethyst	#9b5fc0
-blue/green	#0f9b8e
 chestnut	#742802
 pea	#a4bf20
 rusty orange	#cd5909
@@ -403,7 +378,6 @@ milk chocolate	#7f4e1e
 ocher	#bf9b0c
 off green	#6ba353
 purply pink	#f075e6
-lightblue	#7bc8f6
 dusky blue	#475f94
 golden	#f5bf03
 light beige	#fffeb6
@@ -417,7 +391,6 @@ orangish brown	#b25f03
 tree green	#2a7e19
 deep violet	#490648
 gunmetal	#536267
-blue/purple	#5a06ef
 cherry	#cf0234
 sandy brown	#c4a661
 warm grey	#978a84
@@ -430,7 +403,6 @@ blood	#770001
 brown red	#922b05
 medium grey	#7d7f7c
 berry	#990f4b
-purpley pink	#c83cb9
 light salmon	#fea993
 easter purple	#c071fe
 light yellow green	#ccfd7f
@@ -441,7 +413,6 @@ rouge	#ab1239
 purplish red	#b0054b
 slime green	#99cc04
 irish green	#019529
-pink/purple	#ef1de7
 dark navy	#000435
 greeny blue	#42b395
 light plum	#9d5783
@@ -508,8 +479,6 @@ british racing green	#05480d
 sandstone	#c9ae74
 mud brown	#60460f
 light sea green	#98f6b0
-robin egg blue	#8af1fe
-aqua marine	#2ee8bb
 dark sea green	#11875d
 soft pink	#fdb0c0
 orangey brown	#b16002
@@ -530,7 +499,6 @@ coffee	#a6814c
 bright magenta	#ff08e8
 mocha	#9d7651
 ecru	#feffca
-purpleish	#98568d
 cranberry	#9e003a
 darkish green	#287c37
 brown orange	#b96902
@@ -538,7 +506,6 @@ dusky rose	#ba6873
 melon	#ff7855
 silver	#c5c9c7
 purply blue	#661aee
-purpleish blue	#6140ef
 hospital green	#9be5aa
 mid blue	#276ab3
 amber	#feb308
@@ -585,7 +552,6 @@ dark lime green	#7ebd01
 denim blue	#3b5b92
 teal blue	#01889f
 lightish blue	#3d7afd
-purpley blue	#5f34e7
 light indigo	#6d5acf
 swamp green	#748500
 brown green	#706c11
@@ -630,7 +596,6 @@ periwinkle blue	#8f99fb
 light sky blue	#c6fcff
 blurple	#5539cc
 green brown	#544e03
-bluegreen	#017a79
 bright teal	#01f9c6
 brownish yellow	#c9b003
 pea soup	#929901
@@ -644,7 +609,6 @@ dark lilac	#9c6da5
 reddish	#c44240
 light maroon	#a24857
 dusty purple	#825f87
-terra cotta	#c9643b
 avocado	#90b134
 marine blue	#01386a
 teal green	#25a36f
@@ -756,7 +720,6 @@ green blue	#06b48b
 dark tan	#af884a
 greenish blue	#0b8b87
 pale orange	#ffa756
-forrest green	#154406
 dark lavender	#856798
 dark violet	#34013f
 purple blue	#632de9

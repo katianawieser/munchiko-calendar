@@ -26,7 +26,7 @@ take the photos, and it suggests what to wear from what's already in the stash.
 
 **Built with** Rust · Axum · SQLite (sqlx, migrations) · Askama server-rendered
 templates · Pico CSS · a few small optional scripts · the `image` crate.
-238 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
+239 tests. Design decisions and trade-offs: **[docs/DESIGN.md](docs/DESIGN.md)**.
 
 ## Quick start
 
@@ -182,9 +182,10 @@ out with both merge directions, or **Keep apart** when they really differ
 its **closest everyday name** as a second opinion.
 
 **Color names** come from `data/color_names.txt`: the
-[xkcd color survey](https://xkcd.com/color/rgb.txt) (about 950 names people
-actually use, public domain under CC0), with vulgar and unhelpful names left
-out (they're listed at the top of the file). Suggested names, photo colors
+[xkcd color survey](https://xkcd.com/color/rgb.txt) (about 870 names people
+actually use, public domain under CC0), with vulgar and unhelpful names and
+duplicate spellings ("blue/green", "terracota") left out (they're listed at
+the top of the file). Suggested names, photo colors
 and the Palette page's hints all use it; edit it freely (rebuild to apply).
 
 **"From your photos"** offers the main colors of an item's photos (including
