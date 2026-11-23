@@ -3109,3 +3109,52 @@ async fn a_color_can_take_its_suggested_name_in_one_click() {
             .any(|c| c.name == "charcoal")
     );
 }
+
+#[tokio::test]
+async fn merging_keeps_only_the_newest_ten_backups() {
+    let (app, db, dir) = setup_shades().await;
+    let folder = dir.path().join("backups");
+    std::fs::create_dir_all(&folder).unwrap();
+    for i in 0..12 {
+        std::fs::write(
+            folder.join(format!(
+                "munchiko-before-merge-2026-01-{:02}-000000000.db",
+                i + 1
+            )),
+            "old",
+        )
+        .unwrap();
+    }
+    std::fs::write(
+        folder.join("munchiko-before-palette-2026-11-23.db"),
+        "keep me",
+    )
+    .unwrap();
+
+    let charcoal = palette_id(&db, "charcoal").await;
+    let reply = post(&app, &format!("/palette/{charcoal}/merge"), "into=black").await;
+    assert_eq!(reply.status, StatusCode::SEE_OTHER);
+
+    let mut names: Vec<String> = std::fs::read_dir(&folder)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    let merges: Vec<&String> = names
+        .iter()
+        .filter(|n| n.starts_with("munchiko-before-merge-"))
+        .collect();
+    assert_eq!(merges.len(), 10, "{names:?}");
+    assert!(
+        !names.contains(&"munchiko-before-merge-2026-01-01-000000000.db".to_string()),
+        "oldest gone"
+    );
+    // The backup just made (named in the redirect) is one of the ten.
+    let location = reply.location.unwrap();
+    let made = location.split("backup=").nth(1).unwrap();
+    assert!(names.iter().any(|n| n == made), "{made} kept");
+    assert!(
+        names.contains(&"munchiko-before-palette-2026-11-23.db".to_string()),
+        "not the app's: kept"
+    );
+}

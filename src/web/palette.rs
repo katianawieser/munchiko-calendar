@@ -544,7 +544,55 @@ pub async fn merge_preview(
     .into_response())
 }
 
-/// Save a copy of the database in the backups folder; its file name.
+/// How many automatic merge backups to keep; older ones are deleted after
+/// each new one. Other files in the folder are never touched.
+const KEEP_BACKUPS: usize = 10;
+
+/// The start of an automatic merge backup's file name.
+const BACKUP_PREFIX: &str = "munchiko-before-merge-";
+
+/// Which files in the backups folder to delete so that only the newest `keep`
+/// automatic merge backups stay. Their names end in a timestamp, so newest
+/// sorts last. A backup's leftover SQLite side files (`-wal`, `-shm`) go with
+/// it. Files the app didn't make are never on the list.
+fn backups_to_remove(files: &[String], keep: usize) -> Vec<String> {
+    let is_backup = |f: &str| f.starts_with(BACKUP_PREFIX) && f.ends_with(".db");
+    let mut backups: Vec<&String> = files.iter().filter(|f| is_backup(f)).collect();
+    backups.sort();
+    let old = backups.len().saturating_sub(keep);
+    let mut remove = Vec::new();
+    for db in &backups[..old] {
+        remove.push((*db).clone());
+        for side in ["-wal", "-shm"] {
+            let side = format!("{db}{side}");
+            if files.contains(&side) {
+                remove.push(side);
+            }
+        }
+    }
+    remove
+}
+
+/// Delete old automatic backups (see [`backups_to_remove`]). Problems are
+/// only logged: the backup that matters was just made.
+async fn prune_backups(folder: &std::path::Path) {
+    let mut files = Vec::new();
+    if let Ok(mut entries) = tokio::fs::read_dir(folder).await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if let Some(name) = entry.file_name().to_str() {
+                files.push(name.to_string());
+            }
+        }
+    }
+    for file in backups_to_remove(&files, KEEP_BACKUPS) {
+        if let Err(e) = tokio::fs::remove_file(folder.join(&file)).await {
+            eprintln!("couldn't remove old backup {file}: {e}");
+        }
+    }
+}
+
+/// Save a copy of the database in the backups folder, then delete old
+/// automatic ones; its file name.
 async fn backup(state: &AppState) -> Result<String, AppError> {
     let folder = state.backups.as_ref().ok_or_else(|| {
         AppError::Internal("no backups folder is set, so merging is switched off".into())
@@ -553,10 +601,11 @@ async fn backup(state: &AppState) -> Result<String, AppError> {
         .await
         .map_err(|e| AppError::Internal(format!("making {}: {e}", folder.display())))?;
     let file = format!(
-        "munchiko-before-merge-{}.db",
+        "{BACKUP_PREFIX}{}.db",
         Local::now().format("%Y-%m-%d-%H%M%S%3f")
     );
     state.db.backup_to(&folder.join(&file)).await?;
+    prune_backups(folder).await;
     Ok(file)
 }
 
@@ -667,5 +716,30 @@ mod tests {
         let kept = names(&[(PaletteColorId(2), PaletteColorId(1))]);
         assert_eq!(kept.len(), 2);
         assert!(!kept.contains(&("white".to_string(), "white sparkle".to_string())));
+    }
+
+    #[test]
+    fn only_the_newest_automatic_backups_are_kept() {
+        let files: Vec<String> = [
+            "munchiko-before-merge-2026-11-20-123322335.db",
+            "munchiko-before-merge-2026-11-20-123337096.db",
+            "munchiko-before-merge-2026-11-20-123337096.db-wal",
+            "munchiko-before-merge-2026-11-23-090000000.db",
+            "munchiko-before-palette-2026-11-23-123623.db",
+            "notes.txt",
+        ]
+        .iter()
+        .map(|f| f.to_string())
+        .collect();
+        assert_eq!(
+            backups_to_remove(&files, 1),
+            [
+                "munchiko-before-merge-2026-11-20-123322335.db",
+                "munchiko-before-merge-2026-11-20-123337096.db",
+                "munchiko-before-merge-2026-11-20-123337096.db-wal",
+            ],
+            "oldest first; the newest stays; other files are never touched"
+        );
+        assert!(backups_to_remove(&files, 10).is_empty());
     }
 }
