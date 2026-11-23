@@ -57,7 +57,7 @@
         {% endif %}
       </td>
       <td><span class="fabric-thumbs">{% for f in row.fabrics %}<a href="{{ f.href }}" title="{{ f.title }}">{% if let Some(src) = f.thumb %}<img class="thumb fabric-thumb" src="{{ src }}" alt="{{ f.title }}" loading="lazy">{% else %}<span class="chip fabric-name-chip">{{ f.name }}</span>{% endif %}</a>{% endfor %}</span></td>
-      <td>{% for color in row.colors %}{% include "color_chip.html" %} {% endfor %}</td>
+      <td><span class="color-dots">{% for color in row.colors %}{% include "color_chip.html" %}{% endfor %}</span></td>
       <td>{{ row.tags }}</td>
       <td>{{ row.partner }}</td>
       <td>{{ row.source }}</td>

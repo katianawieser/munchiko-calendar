@@ -502,6 +502,9 @@ async fn accessory_list_filters_by_kind() {
     assert!(!html.contains("Pumpkin bow"));
     assert!(html.contains("<option value=\"scarf\" selected>"));
 
+    // Colors are dots in the table; the name is each chip's tooltip.
+    let (_, html) = get(&app, "/accessories").await;
+    assert!(html.contains("<td><span class=\"color-dots\"><span class=\"chip\" title=\""));
     // Fabrics without photos show as names, linked, main first; the role
     // is in the tooltip.
     let (_, html) = get(&app, "/accessories").await;

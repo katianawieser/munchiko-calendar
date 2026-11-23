@@ -337,10 +337,16 @@ button.color-idea:disabled { opacity: 0.45; cursor: default; }
 .card-grid.size-small .card-body { font-size: 0.8rem; }
 /* Small cards skip the tag line, so a row of them stays short. */
 .card-grid.size-small .card-tags { display: none; }
-/* ...and show colors as dots only (a color with no picked shade keeps its name). */
-.card-grid.size-small .chip:has(.swatch) .chip-name { display: none; }
-.card-grid.size-small .chip:has(.swatch) { padding: 0.15rem; }
-.card-grid.size-small .chip:has(.swatch) .swatch { margin: 0; }
+/* ...and show colors as dots only (a color with no picked shade keeps its
+   name). The table views do the same; the name is the chip's hover title. */
+.card-grid.size-small .chip:has(.swatch) .chip-name,
+.color-dots .chip:has(.swatch) .chip-name { display: none; }
+.card-grid.size-small .chip:has(.swatch),
+.color-dots .chip:has(.swatch) { padding: 0.15rem; }
+.card-grid.size-small .chip:has(.swatch) .swatch,
+.color-dots .chip:has(.swatch) .swatch { margin: 0; }
+.color-dots { display: flex; flex-wrap: wrap; gap: 0.15rem; align-items: center; max-width: 9rem; }
+.color-dots .swatch { width: 1rem; height: 1rem; }
 .card-grid.size-large { grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); }
 @media (max-width: 30rem) {
   /* Two narrower cards side by side on a phone. */

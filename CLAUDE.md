@@ -485,9 +485,10 @@ See README.md for the planning rules, data model and roadmap.
   thumbnails)` (pure, tested): per fabric in saved order a link to /fabrics/{id},
   title "Name (role)", thumbnail if it has a photo, else a small name chip
   (`.fabric-thumbs`, 2.25rem thumbs). `describe_fabrics` removed. Real data: 41
-  fabric photos + 12 name chips. Checked in Firefox 160. Noticed: the Colors column
-  (names on every chip) now makes table rows tall; could show dots like small cards
-  (not done, offer).
+  fabric photos + 12 name chips. Checked in Firefox 160. Then (her choice) the
+  accessory and fabric TABLES show colors as dots (`.color-dots`, same CSS as small
+  cards: chips with a swatch hide `.chip-name`; the chip's title is the name; colors
+  without a swatch keep their name). Grid cards unchanged.
 - **Possible next steps (not started; ask first):** photo thumbnails in the ideas box; drop "(bow)" from planner task
   titles; "upcoming events with no post yet" nudge on
   the calendar; deploying/screenshots for the portfolio.
